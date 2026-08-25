@@ -1,7 +1,7 @@
 'use client';
 
-import type { ChangeEvent, CSSProperties } from 'react';
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent, CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import { FormEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type Trade = {
   id: number;
@@ -26,8 +26,9 @@ type Trade = {
 type RangeMode = 'week' | 'month' | 'year';
 type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock';
 type PositionViewMode = 'visual' | 'details';
+type AllocationChartMode = 'donut' | 'bars';
 type SymbolSuggestion = { symbol: string; name: string; exchange: string; type: string };
-type LiveQuote = { ticker: string; price: number; marketTime: number | null; session: 'regular' | 'extended'; currency: string };
+type LiveQuote = { ticker: string; price: number; marketTime: number | null; session: 'regular' | 'extended'; currency: string; previousClose: number | null; change: number | null; changePercent: number | null; sparkline: number[] };
 type AllocationHistory = {
   date: string;
   positions: Array<{ label: string; value: number; tradeCount: number; estimated: boolean }>;
@@ -82,6 +83,7 @@ const monthsBefore = (dateString: string, months: number) => {
 };
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 const percent = new Intl.NumberFormat('zh-TW', { style: 'percent', maximumFractionDigits: 1 });
+const precisePercent = new Intl.NumberFormat('zh-TW', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dateLabel = (date: string | null) => date ? new Intl.DateTimeFormat('zh-TW', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${date}T00:00:00Z`)) : '—';
 
 function blankTrade(): Trade {
@@ -152,13 +154,13 @@ function buildReturnSeries(trades: Trade[], mode: RangeMode) {
   return buckets.map((bucket) => ({ ...bucket, value: bucket.capital > 0 ? bucket.pnl / bucket.capital : 0 }));
 }
 
-function CompanyLogo({ ticker, compact = false }: { ticker: string; compact?: boolean }) {
+const CompanyLogo = memo(function CompanyLogo({ ticker, compact = false }: { ticker: string; compact?: boolean }) {
   return <span className={`company-logo ${compact ? 'compact' : ''}`} aria-hidden="true">
     <span>{ticker.slice(0, compact ? 1 : 2)}</span>
     {/* eslint-disable-next-line @next/next/no-img-element */}
     <img
       key={ticker}
-      src={`/api/logo?ticker=${encodeURIComponent(ticker)}&v=2`}
+      src={`/api/logo?ticker=${encodeURIComponent(ticker)}&v=5`}
       alt=""
       loading="lazy"
       decoding="async"
@@ -166,7 +168,22 @@ function CompanyLogo({ ticker, compact = false }: { ticker: string; compact?: bo
       onError={(event) => { event.currentTarget.hidden = true; }}
     />
   </span>;
-}
+});
+
+const PriceSparkline = memo(function PriceSparkline({ ticker, values, changePercent }: { ticker: string; values: number[]; changePercent: number | null }) {
+  const finite = values.filter((value) => Number.isFinite(value));
+  if (finite.length < 2) return <span className="sparkline-placeholder">等待走勢</span>;
+  const min = Math.min(...finite);
+  const max = Math.max(...finite);
+  const spread = Math.max(max - min, Math.max(Math.abs(max), 1) * .002);
+  const points = finite.map((value, index) => `${(index / (finite.length - 1)) * 100},${39 - ((value - min) / spread) * 34}`).join(' ');
+  const positive = (changePercent ?? finite.at(-1)! - finite[0]) >= 0;
+  return <svg className={`price-sparkline ${positive ? 'positive' : 'negative'}`} viewBox="0 0 100 44" preserveAspectRatio="none" role="img" aria-label={`${ticker} 當日價格波動`}>
+    <line x1="0" x2="100" y1="39" y2="39" className="sparkline-baseline" />
+    <polygon points={`0,39 ${points} 100,39`} className="sparkline-fill" />
+    <polyline points={points} className="sparkline-line" />
+  </svg>;
+});
 
 function chartBounds(values: Array<number | null>, includeZero = false) {
   const valid = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
@@ -193,7 +210,7 @@ function lastIndicator(values: Array<number | null>) {
   return values.findLast((value): value is number => typeof value === 'number' && Number.isFinite(value)) ?? null;
 }
 
-function StockTechnicalPanel({ symbol, range, data, loading, error, stockTrades, lotSavingId, onRangeChange, onClose, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
+const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, data, loading, error, stockTrades, lotSavingId, onRangeChange, onClose, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
   symbol: string;
   range: TechnicalRange;
   data: TechnicalData | null;
@@ -259,7 +276,7 @@ function StockTechnicalPanel({ symbol, range, data, loading, error, stockTrades,
     </div>}
     <section className="stock-lots-section">
       <div className="stock-lots-heading"><div><p className="eyebrow">Cost basis</p><h3>買入均價與購買紀錄</h3><span>直接修改日期或均價；儲存後持倉、損益與圖表會立即重算。</span></div><button type="button" onClick={onAddLot}>＋新增 {symbol} 買入紀錄</button></div>
-      <div className="stock-lot-summary"><div><span>目前平均買入價</span><strong>{summaryLots.length ? money.format(averageEntry) : '—'}</strong></div><div><span>持股數量</span><strong>{totalQuantity || '—'}</strong></div><div><span>首次買入日期</span><strong>{firstPurchaseDate ? dateLabel(firstPurchaseDate) : '—'}</strong></div><div><span>購買紀錄</span><strong>{stockTrades.length} 筆</strong></div></div>
+      <div className="stock-lot-summary"><div><span>股票加權均價</span><strong>{summaryLots.length ? money.format(averageEntry) : '—'}</strong></div><div><span>持股數量</span><strong>{totalQuantity || '—'}</strong></div><div><span>首次買入日期</span><strong>{firstPurchaseDate ? dateLabel(firstPurchaseDate) : '—'}</strong></div><div><span>購買紀錄</span><strong>{stockTrades.length} 筆</strong></div></div>
       <div className="stock-lot-list">
         {!stockTrades.length && <div className="stock-lot-empty">這個標的目前沒有股票買入紀錄；可使用右上角按鈕新增。</div>}
         {stockTrades.map((trade) => <form key={`${trade.id}-${trade.openDate}-${trade.entryPrice}`} className="stock-lot-row" onSubmit={(event) => {
@@ -278,7 +295,13 @@ function StockTechnicalPanel({ symbol, range, data, loading, error, stockTrades,
     </section>
     <footer className="technical-note">技術指標依美股每日調整收盤價計算，僅供持倉追蹤，不構成投資建議。</footer>
   </section>;
-}
+}, (previous, next) => previous.symbol === next.symbol
+  && previous.range === next.range
+  && previous.data === next.data
+  && previous.loading === next.loading
+  && previous.error === next.error
+  && previous.stockTrades === next.stockTrades
+  && previous.lotSavingId === next.lotSavingId);
 
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -287,6 +310,8 @@ export default function Home() {
   const [lotSavingId, setLotSavingId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [rangeMode, setRangeMode] = useState<RangeMode>('month');
+  const [allocationChartMode, setAllocationChartMode] = useState<AllocationChartMode>('donut');
+  const [allocationGroupSelection, setAllocationGroupSelection] = useState<{ label: string; members: string[] } | null>(null);
   const [filter, setFilter] = useState<FilterMode>('all');
   const [positionView, setPositionView] = useState<PositionViewMode>('visual');
   const [query, setQuery] = useState('');
@@ -298,6 +323,7 @@ export default function Home() {
   const [priceInput, setPriceInput] = useState('');
   const [toast, setToast] = useState('');
   const [lastQuoteAt, setLastQuoteAt] = useState<string | null>(null);
+  const [marketSnapshots, setMarketSnapshots] = useState<Record<string, LiveQuote>>({});
   const [benchmarks, setBenchmarks] = useState<{ mode: RangeMode | null; SPY: number[]; BOXX: number[] }>({ mode: null, SPY: [], BOXX: [] });
   const [symbolSuggestions, setSymbolSuggestions] = useState<SymbolSuggestion[]>([]);
   const [symbolLoading, setSymbolLoading] = useState(false);
@@ -323,10 +349,19 @@ export default function Home() {
   const panelRatioRef = useRef(panelRatio);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const editorQuoteCacheRef = useRef(new Map<string, { quote: LiveQuote; fetchedAt: number }>());
+  const benchmarkCacheRef = useRef(new Map<RangeMode, { SPY: number[]; BOXX: number[] }>());
+  const technicalCacheRef = useRef(new Map<string, TechnicalData>());
+  const allocationHistoryCacheRef = useRef(new Map<string, AllocationHistory>());
+  const quoteRefreshInFlightRef = useRef(false);
+  const toastTimerRef = useRef<number | null>(null);
 
   const notify = useCallback((message: string) => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     setToast(message);
-    window.setTimeout(() => setToast(''), 3200);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast('');
+      toastTimerRef.current = null;
+    }, 3200);
   }, []);
 
   const handleBackgroundUpload = useCallback((event: ChangeEvent<HTMLInputElement>) => {
@@ -386,19 +421,27 @@ export default function Home() {
   }, []);
 
   const refreshQuotes = useCallback(async (announce = true) => {
-    setRefreshing(true);
+    if (quoteRefreshInFlightRef.current) {
+      if (announce) notify('報價正在更新中');
+      return;
+    }
+    quoteRefreshInFlightRef.current = true;
+    if (announce) setRefreshing(true);
     try {
       const response = await fetch('/api/quotes', { method: 'POST' });
-      const payload = await response.json() as { quotes?: Array<{ marketTime?: number | null }>; failed?: number; updatedAt?: string; error?: string };
+      const payload = await response.json() as { quotes?: LiveQuote[]; failed?: number; updatedAt?: string; error?: string };
       if (!response.ok) throw new Error(payload.error ?? '報價更新失敗');
-      const marketTimes = payload.quotes?.flatMap((quote) => typeof quote.marketTime === 'number' ? [quote.marketTime] : []) ?? [];
+      const quotes = payload.quotes ?? [];
+      const marketTimes = quotes.flatMap((quote) => typeof quote.marketTime === 'number' ? [quote.marketTime] : []);
+      setMarketSnapshots((current) => ({ ...current, ...Object.fromEntries(quotes.map((quote) => [quote.ticker, quote])) }));
       setLastQuoteAt(marketTimes.length ? new Date(Math.max(...marketTimes) * 1000).toISOString() : payload.updatedAt ?? new Date().toISOString());
       await fetchTrades();
-      if (announce) notify(`已更新 ${payload.quotes?.length ?? 0} 個股票報價${payload.failed ? `，${payload.failed} 個暫時無法取得` : ''}`);
+      if (announce) notify(`已更新 ${quotes.length} 個股票報價${payload.failed ? `，${payload.failed} 個暫時無法取得` : ''}`);
     } catch (error) {
       if (announce) notify(error instanceof Error ? error.message : '報價更新失敗');
     } finally {
-      setRefreshing(false);
+      quoteRefreshInFlightRef.current = false;
+      if (announce) setRefreshing(false);
     }
   }, [fetchTrades, notify]);
 
@@ -406,30 +449,43 @@ export default function Home() {
     const initialLoad = window.setTimeout(() => {
       fetchTrades().then(() => refreshQuotes(false)).catch((error) => { setLoading(false); notify(error.message); });
     }, 0);
-    const timer = window.setInterval(() => refreshQuotes(false), 60_000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refreshQuotes(false);
+    }, 60_000);
     return () => { window.clearTimeout(initialLoad); window.clearInterval(timer); };
   }, [fetchTrades, notify, refreshQuotes]);
 
   useEffect(() => {
-    let active = true;
-    fetch(`/api/benchmarks?mode=${rangeMode}`, { cache: 'no-store' })
+    const cached = benchmarkCacheRef.current.get(rangeMode);
+    if (cached) {
+      setBenchmarks({ mode: rangeMode, ...cached });
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`/api/benchmarks?mode=${rangeMode}`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json() as { SPY?: number[]; BOXX?: number[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? '基準資料暫時無法取得');
-        if (active) setBenchmarks({ mode: rangeMode, SPY: payload.SPY ?? [], BOXX: payload.BOXX ?? [] });
+        if (!controller.signal.aborted) {
+          const next = { SPY: payload.SPY ?? [], BOXX: payload.BOXX ?? [] };
+          benchmarkCacheRef.current.set(rangeMode, next);
+          setBenchmarks({ mode: rangeMode, ...next });
+        }
       })
-      .catch(() => { if (active) setBenchmarks({ mode: rangeMode, SPY: [], BOXX: [] }); });
-    return () => { active = false; };
+      .catch(() => { if (!controller.signal.aborted) setBenchmarks({ mode: rangeMode, SPY: [], BOXX: [] }); });
+    return () => controller.abort();
   }, [rangeMode]);
 
   useEffect(() => {
     const currentDate = today();
     if (allocationDate === currentDate) return;
+    if (allocationHistory?.date === allocationDate) return;
     const controller = new AbortController();
     fetch(`/api/allocation-history?date=${encodeURIComponent(allocationDate)}`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json() as AllocationHistory & { error?: string };
         if (!response.ok) throw new Error(payload.error ?? '無法載入歷史持倉');
+        allocationHistoryCacheRef.current.set(allocationDate, payload);
         setAllocationHistory(payload);
       })
       .catch((error) => {
@@ -440,7 +496,7 @@ export default function Home() {
       })
       .finally(() => { if (!controller.signal.aborted) setAllocationLoading(false); });
     return () => controller.abort();
-  }, [allocationDate, notify]);
+  }, [allocationDate, allocationHistory?.date, notify]);
 
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
@@ -469,7 +525,7 @@ export default function Home() {
     if (!bounds || bounds.width <= 0) return;
     const nextRatio = clampPanelRatio(((clientX - bounds.left) / bounds.width) * 100);
     panelRatioRef.current = nextRatio;
-    setPanelRatio(nextRatio);
+    contentGridRef.current?.style.setProperty('--return-panel-ratio', `${nextRatio}%`);
   }, []);
 
   const adjustPanelRatio = useCallback((delta: number) => {
@@ -483,6 +539,7 @@ export default function Home() {
     if (!resizingPanels) return;
     const move = (event: PointerEvent) => updatePanelRatio(event.clientX);
     const finish = () => {
+      setPanelRatio(panelRatioRef.current);
       window.localStorage.setItem(panelRatioKey, String(panelRatioRef.current));
       setResizingPanels(false);
     };
@@ -586,12 +643,21 @@ export default function Home() {
 
   useEffect(() => {
     if (!drilledTicker) return;
+    const cacheKey = `${drilledTicker}:${technicalRange}`;
+    const cached = technicalCacheRef.current.get(cacheKey);
+    if (cached) {
+      setTechnicalData(cached);
+      setTechnicalError('');
+      setTechnicalLoading(false);
+      return;
+    }
     const controller = new AbortController();
     fetch(`/api/technical?symbol=${encodeURIComponent(drilledTicker)}&range=${technicalRange}`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json() as TechnicalData & { error?: string };
         if (!response.ok) throw new Error(payload.error ?? '技術指標暫時無法取得');
         if (!controller.signal.aborted) {
+          technicalCacheRef.current.set(cacheKey, payload);
           setTechnicalData(payload);
           setTechnicalError('');
         }
@@ -661,14 +727,15 @@ export default function Home() {
     }
     const sorted = [...groups.values()].sort((a, b) => b.value - a.value);
     const total = sorted.reduce((sum, item) => sum + item.value, 0);
-    const top = sorted.slice(0, 5);
+    const top = sorted.slice(0, 5).map((item) => ({ ...item, members: [item.label] }));
     if (sorted.length > 5) {
       top.push(sorted.slice(5).reduce((other, item) => ({
         label: '其他',
         value: other.value + item.value,
         tradeCount: other.tradeCount + item.tradeCount,
         estimated: other.estimated || item.estimated,
-      }), { label: '其他', value: 0, tradeCount: 0, estimated: false }));
+        members: [...other.members, item.label],
+      }), { label: '其他', value: 0, tradeCount: 0, estimated: false, members: [] as string[] }));
     }
     return {
       items: top.map((item, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: palette[index % palette.length] })),
@@ -684,16 +751,34 @@ export default function Home() {
     gradientStart += item.share * 100;
     return `${item.color} ${start}% ${gradientStart}%`;
   }).join(', ')})` : '#e8eef7';
+  let labelStart = 0;
+  const donutLabels = allocation.map((item) => {
+    const midpoint = labelStart + item.share / 2;
+    labelStart += item.share;
+    const angle = midpoint * Math.PI * 2 - Math.PI / 2;
+    const isCompact = item.share < 0.04;
+    const radius = isCompact ? 0.49 : 0.39;
+    return {
+      ...item,
+      isCompact,
+      position: {
+        left: `${50 + Math.cos(angle) * radius * 100}%`,
+        top: `${50 + Math.sin(angle) * radius * 100}%`,
+        '--segment-color': item.color,
+      } as CSSProperties,
+    };
+  });
 
   const filteredTrades = useMemo(() => enriched.filter((item) => {
     const matchesQuery = !query || `${item.trade.ticker} ${item.trade.event} ${item.trade.notes}`.toLowerCase().includes(query.toLowerCase());
+    const matchesAllocationGroup = !allocationGroupSelection || allocationGroupSelection.members.includes((item.trade.ticker || 'OTHER').toUpperCase());
     const matchesFilter = filter === 'all' ||
       (filter === 'open' && item.trade.status === 'open') ||
       (filter === 'closed' && item.trade.status === 'closed') ||
       (filter === 'options' && item.trade.type !== 'SDI') ||
       (filter === 'stock' && item.trade.type === 'SDI');
-    return matchesQuery && matchesFilter;
-  }), [enriched, filter, query]);
+    return matchesQuery && matchesAllocationGroup && matchesFilter;
+  }), [allocationGroupSelection, enriched, filter, query]);
 
   const visualPositions = useMemo(() => {
     const groups = new Map<string, {
@@ -818,21 +903,25 @@ export default function Home() {
   function selectAllocationDate(date: string) {
     if (!date || date === allocationDate) return;
     const currentDate = today();
+    const cached = allocationHistoryCacheRef.current.get(date);
     setAllocationDate(date);
-    setAllocationLoading(date !== currentDate);
+    setAllocationLoading(date !== currentDate && !cached);
     if (date === currentDate) setAllocationHistory(null);
+    else if (cached) setAllocationHistory(cached);
   }
 
   function openTickerDetails(ticker: string) {
     const tickerChanged = ticker !== drilledTicker;
+    setAllocationGroupSelection(null);
     setDrilledTicker(ticker);
     setQuery(ticker);
+    setFilter('all');
     setPositionView('details');
     if (tickerChanged) {
       setTechnicalLoading(true);
       setTechnicalError('');
     }
-    window.setTimeout(() => document.getElementById('stock-analysis')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    window.requestAnimationFrame(() => document.getElementById('stock-analysis')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
   function selectTechnicalRange(range: TechnicalRange) {
@@ -843,13 +932,46 @@ export default function Home() {
   }
 
   function returnToPositionsOverview() {
+    setAllocationGroupSelection(null);
     setDrilledTicker(null);
     setQuery('');
     setPositionView('visual');
     setTechnicalData(null);
     setTechnicalLoading(false);
     setTechnicalError('');
-    window.setTimeout(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    window.requestAnimationFrame(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
+
+  function selectAllocationItem(item: { label: string; members: string[] }) {
+    if (item.members.length === 1) {
+      openTickerDetails(item.members[0]);
+      return;
+    }
+    setAllocationGroupSelection({ label: item.label, members: item.members });
+    setDrilledTicker(null);
+    setQuery('');
+    setFilter('all');
+    setPositionView('visual');
+    setTechnicalData(null);
+    setTechnicalLoading(false);
+    setTechnicalError('');
+    window.requestAnimationFrame(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }
+
+  function selectDonutSegment(event: ReactMouseEvent<HTMLDivElement>) {
+    if (allocationLoading || !allocation.length) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - bounds.left - bounds.width / 2;
+    const y = event.clientY - bounds.top - bounds.height / 2;
+    const radius = Math.hypot(x, y);
+    if (radius < bounds.width * 0.28 || radius > bounds.width * 0.52) return;
+    const position = ((Math.atan2(y, x) + Math.PI / 2 + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2);
+    let end = 0;
+    const selected = allocation.find((item) => {
+      end += item.share;
+      return position <= end;
+    });
+    if (selected) selectAllocationItem(selected);
   }
 
   const marketOpen = (() => {
@@ -860,10 +982,10 @@ export default function Home() {
     const clock = hour * 60 + minute;
     return !['Sat', 'Sun'].includes(day) && clock >= 570 && clock < 960;
   })();
-  const contentGridStyle = { '--return-panel-ratio': `${panelRatio}%` } as CSSProperties;
+  const contentGridStyle = useMemo(() => ({ '--return-panel-ratio': `${panelRatio}%` }) as CSSProperties, [panelRatio]);
   const imageBackgroundActive = backgroundMode === 'image' && Boolean(backgroundImage);
-  const shellStyle = imageBackgroundActive ? { '--custom-background': `url("${backgroundImage}")` } as CSSProperties : undefined;
-  const selectedStockTrades = drilledTicker ? trades.filter((trade) => trade.ticker === drilledTicker && (trade.type === 'SDI' || trade.event === 'STOCK')) : [];
+  const shellStyle = useMemo(() => imageBackgroundActive ? { '--custom-background': `url("${backgroundImage}")` } as CSSProperties : undefined, [backgroundImage, imageBackgroundActive]);
+  const selectedStockTrades = useMemo(() => drilledTicker ? trades.filter((trade) => trade.ticker === drilledTicker && (trade.type === 'SDI' || trade.event === 'STOCK')) : [], [drilledTicker, trades]);
 
   return (
     <main className={`shell ${imageBackgroundActive ? 'has-custom-background' : ''}`} id="top" style={shellStyle}>
@@ -953,19 +1075,26 @@ export default function Home() {
           ><span /></div>
 
           <article className="panel allocation-panel">
-            <div className="panel-heading"><div><p className="eyebrow">Holdings</p><h2>持倉配置</h2></div><span className="count-badge">{allocationSnapshot.tradeCount} positions</span></div>
+            <div className="panel-heading"><div><p className="eyebrow">Holdings</p><h2>持倉配置</h2></div><div className="allocation-heading-actions"><div className="allocation-chart-switch" role="group" aria-label="持倉配置圖表類型"><button type="button" className={allocationChartMode === 'donut' ? 'active' : ''} aria-pressed={allocationChartMode === 'donut'} onClick={() => setAllocationChartMode('donut')}>圓餅圖</button><button type="button" className={allocationChartMode === 'bars' ? 'active' : ''} aria-pressed={allocationChartMode === 'bars'} onClick={() => setAllocationChartMode('bars')}>長條圖</button></div><span className="count-badge">{allocationSnapshot.tradeCount} positions</span></div></div>
             <div className="allocation-history-controls" aria-label="持倉配置歷史日期">
               <div>{allocationPresets.map((preset) => <button key={preset.label} className={allocationDate === preset.date ? 'active' : ''} onClick={() => selectAllocationDate(preset.date)}>{preset.label}</button>)}</div>
               <label><span>歷史日期</span><input type="date" min={earliestAllocationDate} max={currentAllocationDate} value={allocationDate} onChange={(event) => selectAllocationDate(event.target.value || currentAllocationDate)} /></label>
             </div>
-            <div className="allocation-content">
-              <div className={`donut ${allocationLoading ? 'is-loading' : ''}`} style={{ background: pieGradient }} aria-label={`${allocationDate} 按標的計算的持倉圓餅圖`}><span><strong>{allocationLoading ? '讀取中…' : money.format(allocationSnapshot.total)}</strong><small>{allocationDate === currentAllocationDate ? '目前曝險' : allocationDate}</small></span></div>
+            {allocationChartMode === 'donut' ? <div className="allocation-content">
+              <div className={`donut ${allocationLoading ? 'is-loading' : ''} ${allocation.length ? 'has-items' : ''}`} style={{ background: pieGradient }} role="img" aria-label={`${allocationDate} 按標的計算的持倉圓餅圖；點擊區塊可查看下方股票；${allocation.map((item) => `${item.label} ${percent.format(item.share)}`).join('、')}`} onClick={selectDonutSegment}>
+                {!allocationLoading && donutLabels.map((item) => <b className={`donut-segment-label ${item.isCompact ? 'is-compact' : ''}`} key={item.label} style={item.position} aria-hidden="true">{percent.format(item.share)}</b>)}
+                <span className="donut-center"><strong>{allocationLoading ? '讀取中…' : money.format(allocationSnapshot.total)}</strong><small>{allocationDate === currentAllocationDate ? '目前曝險' : allocationDate}</small></span>
+              </div>
               <div className="legend">
                 {allocationLoading && <p className="allocation-empty">正在讀取歷史持倉…</p>}
                 {!allocationLoading && !allocation.length && <p className="allocation-empty">這個日期沒有持倉紀錄</p>}
-                {!allocationLoading && allocation.map((item) => <p key={item.label}><i style={{ background: item.color }} /><span>{item.label}</span><b>{money.format(item.value)}</b><strong>{percent.format(item.share)}</strong></p>)}
+                {!allocationLoading && allocation.map((item) => <button type="button" className={`allocation-legend-item ${(drilledTicker === item.label || allocationGroupSelection?.label === item.label) ? 'is-selected' : ''}`} key={item.label} onClick={() => selectAllocationItem(item)} aria-label={`查看 ${item.label}，${money.format(item.value)}，占 ${percent.format(item.share)}`}><i style={{ background: item.color }} /><span>{item.label}</span><b>{money.format(item.value)}</b><strong>{percent.format(item.share)}</strong></button>)}
               </div>
-            </div>
+            </div> : <div className={`allocation-bars ${allocationLoading ? 'is-loading' : ''}`} role="list" aria-busy={allocationLoading} aria-label={`${allocationDate} 按標的計算的持倉長條圖`}>
+              {allocationLoading && <p className="allocation-empty" role="status">正在讀取歷史持倉…</p>}
+              {!allocationLoading && !allocation.length && <p className="allocation-empty">這個日期沒有持倉紀錄</p>}
+              {!allocationLoading && allocation.map((item) => <button type="button" className={`allocation-bar-row ${(drilledTicker === item.label || allocationGroupSelection?.label === item.label) ? 'is-selected' : ''}`} role="listitem" key={item.label} onClick={() => selectAllocationItem(item)} aria-label={`查看 ${item.label}，${money.format(item.value)}，占 ${percent.format(item.share)}`}><div><span><i style={{ background: item.color }} />{item.label}</span><b>{money.format(item.value)}</b><strong>{percent.format(item.share)}</strong></div><span className="allocation-bar-track" aria-hidden="true"><i style={{ width: `${item.share > 0 ? Math.max(1.5, Math.min(100, item.share * 100)) : 0}%`, background: item.color }} /></span></button>)}
+            </div>}
             <p className="panel-note">{allocationDate === currentAllocationDate
               ? '股票按目前價格、選擇權按擔保金計算；價格變動後自動重算。'
               : `股票使用所選日期以前最近一個交易日的收盤價，選擇權按當時擔保金計算${allocationSnapshot.estimatedTickers.length ? `；${allocationSnapshot.estimatedTickers.join('、')} 因缺少歷史報價而以成交價估算` : ''}。`}</p>
@@ -991,22 +1120,28 @@ export default function Home() {
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
             <div><p className="eyebrow">Active book</p><h2>交易與持倉</h2></div>
-            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => drilledTicker ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
+            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
           </div>
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
+          {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}
           <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? trades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : trades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : trade.type !== 'SDI').length}</span></button>)}</div>
           {positionView === 'visual' ? <div className="visual-positions">
-            <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>買入價 → 現價</span><span>損益／報酬率</span><span>組合占比</span></div>
+            <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>成本均價／現價</span><span>標的價格波動／今日漲跌</span><span>損益／報酬率</span><span>組合占比</span></div>
             {!loading && !visualPositions.length && <div className="visual-empty">沒有符合目前篩選條件的持倉。</div>}
             {loading && <div className="visual-empty">正在整理圖形化持倉…</div>}
-            {!loading && visualPositions.map((position, index) => <article className="visual-position-row" key={position.ticker}>
-              <span className="position-rank">{String(index + 1).padStart(2, '0')}</span>
-              <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · {position.strategy}</small></span></button>
-              <div className="visual-value"><span>持倉市值</span><strong>{money.format(position.marketValue)}</strong></div>
-              <div className="visual-price-flow"><div><span>買入／成交</span><strong>{money.format(position.entryPrice)}</strong></div><i>→</i><div><span>目前價格</span><strong>{money.format(position.currentPrice)}</strong></div></div>
-              <div className={`visual-gain ${position.pnl >= 0 ? 'positive' : 'negative'}`}><strong>{position.pnl >= 0 ? '+' : ''}{money.format(position.pnl)}</strong><span>{position.roc >= 0 ? '▲' : '▼'} {percent.format(Math.abs(position.roc))}</span></div>
-              <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%` }} /></b></div>
-            </article>)}
+            {!loading && visualPositions.map((position, index) => {
+              const snapshot = marketSnapshots[position.ticker];
+              const dailyChange = snapshot?.changePercent ?? null;
+              return <article className="visual-position-row" key={position.ticker}>
+                <span className="position-rank">{String(index + 1).padStart(2, '0')}</span>
+                <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · {position.strategy}</small></span></button>
+                <div className="visual-value"><span>持倉市值</span><strong>{money.format(position.marketValue)}</strong></div>
+                <div className="visual-price-flow"><div><span>{position.items.every((item) => item.trade.type === 'SDI' || item.trade.event === 'STOCK') ? '股票均價' : '成交均價'}</span><strong>{money.format(position.entryPrice)}</strong></div><div><span>目前價格</span><strong>{money.format(position.currentPrice)}</strong></div></div>
+                <div className={`visual-market-move ${dailyChange === null ? 'neutral' : dailyChange >= 0 ? 'positive' : 'negative'}`}><PriceSparkline ticker={position.ticker} values={snapshot?.sparkline ?? []} changePercent={dailyChange} /><div><span>標的今日漲跌</span><strong>{dailyChange === null ? '等待報價' : `${dailyChange >= 0 ? '+' : ''}${precisePercent.format(dailyChange)}`}</strong><small>{snapshot?.change === null || snapshot?.change === undefined ? '—' : `${money.format(snapshot.price)} · ${snapshot.change >= 0 ? '+' : ''}${money.format(snapshot.change)}`}</small></div></div>
+                <div className={`visual-gain ${position.pnl >= 0 ? 'positive' : 'negative'}`}><strong>{position.pnl >= 0 ? '+' : ''}{money.format(position.pnl)}</strong><span>{position.roc >= 0 ? '▲' : '▼'} {percent.format(Math.abs(position.roc))}</span></div>
+                <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%` }} /></b></div>
+              </article>;
+            })}
           </div> : <div className="table-wrap">
             <table>
               <thead><tr><th>標的</th><th>交易／策略</th><th>開倉／到期</th><th>履約價</th><th>數量</th><th>買入／成交價</th><th>目前價格</th><th>損益</th><th>ROC</th><th>狀態</th><th>操作</th></tr></thead>
@@ -1121,7 +1256,7 @@ export default function Home() {
                 <div className="summary-sticky">
                   <p className="eyebrow">Live preview</p><h3>交易預覽</h3>
                   <div className="summary-symbol"><span>{editor.ticker?.slice(0, 1) || '—'}</span><div><strong>{editor.ticker || '尚未選擇標的'}</strong><small>{editor.event || '選擇策略'}</small></div></div>
-                  <div className="summary-price-pair"><div><span>買入／成交價</span><strong>{money.format(editor.entryPrice)}</strong></div><i>→</i><div><span>目前價格</span><strong>{editor.currentPrice === null ? '尚未設定' : money.format(editor.currentPrice)}</strong></div></div>
+                  <div className="summary-price-pair"><div><span>買入／成交價</span><strong>{money.format(editor.entryPrice)}</strong></div><div><span>目前價格</span><strong>{editor.currentPrice === null ? '尚未設定' : money.format(editor.currentPrice)}</strong></div></div>
                   <div className="summary-result"><span>即時計算損益</span><strong className={metrics(editor).pnl >= 0 ? 'positive' : 'negative'}>{money.format(metrics(editor).pnl)}</strong></div>
                   <dl><div><dt>ROC</dt><dd className={metrics(editor).roc >= 0 ? 'positive' : 'negative'}>{percent.format(metrics(editor).roc)}</dd></div><div><dt>持有天數</dt><dd>{metrics(editor).days || 0} 天</dd></div><div><dt>狀態</dt><dd>{editor.status === 'open' ? '未平倉' : '已平倉'}</dd></div><div><dt>報價</dt><dd>{editorQuoteLoading ? '讀取中…' : editor.quoteMode === 'auto' && editorQuote?.ticker === editorAutoQuoteTicker ? `${editorQuote.session === 'extended' ? '延長時段' : '正常時段'} ${money.format(editorQuote.price)}` : editor.quoteMode === 'auto' ? '自動更新' : '手動價格'}</dd></div></dl>
                   <p className="summary-tip"><i>✓</i> 所有欄位可隨時回來修改，儲存後會同步更新圖表與持倉配置。</p>

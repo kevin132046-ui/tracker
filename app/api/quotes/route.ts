@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 type YahooChart = {
   chart?: { result?: Array<{
-    meta?: { regularMarketPrice?: number; regularMarketTime?: number; currency?: string };
+    meta?: { regularMarketPrice?: number; regularMarketTime?: number; chartPreviousClose?: number; previousClose?: number; currency?: string };
     timestamp?: number[];
     indicators?: { quote?: Array<{ close?: Array<number | null> }> };
   }> };
@@ -32,11 +32,23 @@ async function fetchLatestPrice(ticker: string) {
   const useIntraday = latestIntraday !== null && latestIntraday.marketTime >= regularTime;
   const price = useIntraday ? latestIntraday.price : regularPrice;
   if (!Number.isFinite(price) || Number(price) <= 0) throw new Error(`Quote unavailable for ${ticker}`);
+  const intradayValues = closes.filter((close): close is number => typeof close === 'number' && Number.isFinite(close) && close > 0);
+  const sampleSize = Math.min(48, intradayValues.length);
+  const sparkline = sampleSize <= 1
+    ? intradayValues
+    : Array.from({ length: sampleSize }, (_, index) => intradayValues[Math.round((index / (sampleSize - 1)) * (intradayValues.length - 1))]);
+  const previousCloseValue = result?.meta?.chartPreviousClose ?? result?.meta?.previousClose;
+  const previousClose = Number.isFinite(previousCloseValue) && Number(previousCloseValue) > 0 ? Number(previousCloseValue) : null;
+  const change = previousClose === null ? null : Number(price) - previousClose;
   return {
     price: Number(price),
     marketTime: useIntraday ? latestIntraday.marketTime : regularTime || null,
     session: useIntraday && latestIntraday.marketTime > regularTime ? 'extended' : 'regular',
     currency: result?.meta?.currency ?? 'USD',
+    previousClose,
+    change,
+    changePercent: change === null || previousClose === null ? null : change / previousClose,
+    sparkline,
   };
 }
 
@@ -59,7 +71,7 @@ export async function POST() {
   try {
     const db = await ensureDatabase();
     const tickerRows = await db.prepare(`SELECT DISTINCT ticker FROM trades
-      WHERE status = 'open' AND quote_mode = 'auto' AND type = 'SDI' AND ticker IS NOT NULL`).all<{ ticker: string }>();
+      WHERE status = 'open' AND ticker IS NOT NULL`).all<{ ticker: string }>();
     const tickers = tickerRows.results.map((row) => row.ticker).filter(Boolean);
     const settled = await Promise.allSettled(tickers.map(async (ticker) => ({ ticker, ...(await fetchLatestPrice(ticker)) })));
     const quotes = settled.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);

@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 const simpleIconSlugs: Record<string, string> = {
   KO: 'cocacola',
   NVDA: 'nvidia',
-  TTWO: '2k',
+  TTWO: 'taketwointeractivesoftware',
   V: 'visa',
 };
 const companyDomains: Record<string, string> = {
@@ -18,6 +18,11 @@ const companyDomains: Record<string, string> = {
   TTWO: 'take2games.com',
   V: 'visa.com',
 };
+const officialLogoSources: Record<string, string> = {
+  CNC: 'https://www.centene.com/content/dam/centenedotcom/logos/centene_logo_2023.jpg',
+  SPGI: 'https://upload.wikimedia.org/wikipedia/commons/e/ee/S%26P_Global_logo.svg',
+  TRV: 'https://www.travelers.com/ClientResources/tds-icons/assets/icons/logos/svg/trv-logo-2color-small.svg',
+};
 
 export async function GET(request: Request) {
   const ticker = new URL(request.url).searchParams.get('ticker')?.trim().toUpperCase() ?? '';
@@ -25,13 +30,18 @@ export async function GET(request: Request) {
 
   const companyImage = `https://financialmodelingprep.com/image-stock/${encodeURIComponent(ticker)}.png`;
   const brandImage = simpleIconSlugs[ticker] ? `https://cdn.simpleicons.org/${simpleIconSlugs[ticker]}` : null;
-  const domainImage = companyDomains[ticker] ? `https://icon.horse/icon/${companyDomains[ticker]}` : null;
-  const sources = [...(domainImage ? [domainImage] : []), ...(brandImage ? [brandImage] : []), companyImage];
+  const officialImage = officialLogoSources[ticker] ?? null;
+  const domainImage = companyDomains[ticker] ? `https://icon.horse/icon/${companyDomains[ticker]}?size=128` : null;
+  const sources = [...(brandImage ? [brandImage] : []), ...(officialImage ? [officialImage] : []), ...(domainImage ? [domainImage] : []), companyImage];
 
   for (const source of sources) {
     try {
       const response = await fetch(source, {
-        headers: { Accept: 'image/svg+xml,image/png,image/*;q=0.8' },
+        headers: {
+          Accept: 'image/svg+xml,image/png,image/jpeg,image/*;q=0.8',
+          Referer: `${new URL(source).origin}/`,
+          'User-Agent': 'Mozilla/5.0 (compatible; OptionFlow/1.0; +https://openai.com/)',
+        },
         signal: AbortSignal.timeout(5000),
       });
       const contentType = response.headers.get('content-type') ?? '';

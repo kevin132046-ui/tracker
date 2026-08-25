@@ -2,7 +2,6 @@
 
 import type { ChangeEvent, CSSProperties } from 'react';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
 
 type Trade = {
   id: number;
@@ -26,9 +25,15 @@ type Trade = {
 
 type RangeMode = 'week' | 'month' | 'year';
 type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock';
+type PositionViewMode = 'visual' | 'details';
 type SymbolSuggestion = { symbol: string; name: string; exchange: string; type: string };
 
 const palette = ['#2f73ed', '#3cc7df', '#7768e8', '#22b58b', '#f0a33a', '#e66878'];
+const companyNames: Record<string, string> = {
+  AAPL: 'Apple', AMZN: 'Amazon', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
+  META: 'Meta Platforms', MSFT: 'Microsoft', NVDA: 'NVIDIA', SPGI: 'S&P Global', SPY: 'SPDR S&P 500',
+  TRV: 'The Travelers Companies', TSLA: 'Tesla', TTWO: 'Take-Two Interactive', V: 'Visa',
+};
 const panelRatioKey = 'optionflow-analytics-panel-ratio';
 const backgroundImageKey = 'optionflow-custom-background';
 const clampPanelRatio = (value: number) => Math.min(72, Math.max(46, value));
@@ -117,6 +122,7 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [rangeMode, setRangeMode] = useState<RangeMode>('month');
   const [filter, setFilter] = useState<FilterMode>('all');
+  const [positionView, setPositionView] = useState<PositionViewMode>('visual');
   const [query, setQuery] = useState('');
   const [activeSection, setActiveSection] = useState<'overview' | 'positions' | 'returns'>('overview');
   const [editor, setEditor] = useState<Trade | null>(null);
@@ -362,6 +368,49 @@ export default function Home() {
     return matchesQuery && matchesFilter;
   }), [enriched, filter, query]);
 
+  const visualPositions = useMemo(() => {
+    const groups = new Map<string, {
+      ticker: string;
+      items: typeof filteredTrades;
+      marketValue: number;
+      pnl: number;
+      capital: number;
+      entryWeighted: number;
+      currentWeighted: number;
+      priceWeight: number;
+      strategies: Set<string>;
+    }>();
+    for (const item of filteredTrades) {
+      const ticker = item.trade.ticker || 'OTHER';
+      const group = groups.get(ticker) ?? {
+        ticker, items: [], marketValue: 0, pnl: 0, capital: 0, entryWeighted: 0,
+        currentWeighted: 0, priceWeight: 0, strategies: new Set<string>(),
+      };
+      const units = Math.max(.0001, Math.abs(item.trade.quantity));
+      const multiplier = item.trade.type === 'SDI' || item.trade.event === 'STOCK' ? 1 : 100;
+      group.items.push(item);
+      group.marketValue += item.marketValue;
+      group.pnl += item.pnl;
+      group.capital += item.trade.collateral || Math.abs(item.trade.entryPrice * item.trade.quantity * multiplier);
+      group.entryWeighted += item.trade.entryPrice * units;
+      group.currentWeighted += (item.trade.currentPrice ?? item.trade.entryPrice) * units;
+      group.priceWeight += units;
+      group.strategies.add(item.trade.event);
+      groups.set(ticker, group);
+    }
+    const grouped = [...groups.values()].sort((a, b) => b.marketValue - a.marketValue);
+    const total = grouped.reduce((sum, item) => sum + Math.max(0, item.marketValue), 0) || 1;
+    return grouped.map((group) => ({
+      ...group,
+      company: companyNames[group.ticker] ?? '美股／ETF 持倉',
+      entryPrice: group.entryWeighted / group.priceWeight,
+      currentPrice: group.currentWeighted / group.priceWeight,
+      roc: group.capital > 0 ? group.pnl / group.capital : 0,
+      share: Math.max(0, group.marketValue) / total,
+      strategy: [...group.strategies].slice(0, 2).join(' · '),
+    }));
+  }, [filteredTrades]);
+
   async function persistTrade(trade: Trade, method: 'POST' | 'PUT') {
     const response = await fetch('/api/trades', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(trade) });
     const payload = await response.json() as { trade?: Trade; error?: string };
@@ -410,7 +459,11 @@ export default function Home() {
   return (
     <main className={`shell ${backgroundImage ? 'has-custom-background' : ''}`} id="top" style={shellStyle}>
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="OptionFlow 首頁"><Image className="brand-logo" src="/optionflow-logo.jpg" alt="" width={40} height={40} priority /><span>OPTIONFLOW</span></a>
+        <a className="brand" href="#top" aria-label="OptionFlow 首頁">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="brand-logo" src="/optionflow-logo.jpg" alt="" width="40" height="40" />
+          <span>OPTIONFLOW</span>
+        </a>
         <div className="header-actions">
           <span className={`market-pill ${marketOpen ? 'is-open' : ''}`}><span />{marketOpen ? '美股交易中' : '非交易時段'}</span>
           <button className="secondary-button" type="button" onClick={() => refreshQuotes()} disabled={refreshing}>{refreshing ? '更新中…' : '↻ 更新報價'}</button>
@@ -429,7 +482,7 @@ export default function Home() {
         </nav>
         <div className="dashboard">
         <section className="hero" id="overview">
-          <div><p className="eyebrow">Portfolio command center</p><h1>反者<span>道之動</span></h1><p className="hero-copy">原始 Excel 欄位與計算邏輯已完整轉換。持倉可編輯、資料會保存，股票報價每 60 秒取得最新可用價格。</p></div>
+          <div><p className="eyebrow">Portfolio command center</p><h1>桐生<span>桔梗</span></h1><p className="hero-copy">原始 Excel 欄位與計算邏輯已完整轉換。持倉可編輯、資料會保存，股票報價每 60 秒取得最新可用價格。</p></div>
           <div className="as-of"><span>美東報價時間</span><strong>{lastQuoteAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'short' }).format(new Date(lastQuoteAt)) : '等待首次更新'}</strong></div>
         </section>
 
@@ -503,10 +556,26 @@ export default function Home() {
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
             <div><p className="eyebrow">Active book</p><h2>交易與持倉</h2></div>
-            <div className="toolbar-actions"><label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
+            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
           </div>
           <div className="filter-row">{([['all', '全部'], ['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? trades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : trades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : trade.type !== 'SDI').length}</span></button>)}</div>
-          <div className="table-wrap">
+          {positionView === 'visual' ? <div className="visual-positions">
+            <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>買入價 → 現價</span><span>損益／報酬率</span><span>組合占比</span><span /></div>
+            {!loading && !visualPositions.length && <div className="visual-empty">沒有符合目前篩選條件的持倉。</div>}
+            {loading && <div className="visual-empty">正在整理圖形化持倉…</div>}
+            {!loading && visualPositions.map((position, index) => <article className="visual-position-row" key={position.ticker}>
+              <span className="position-rank">{String(index + 1).padStart(2, '0')}</span>
+              <div className="visual-asset"><span className="visual-logo" style={{ background: `linear-gradient(145deg, ${palette[index % palette.length]}, #132c57)` }}>{position.ticker.slice(0, 2)}</span><div><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · {position.strategy}</small></div></div>
+              <div className="visual-value"><span>持倉市值</span><strong>{money.format(position.marketValue)}</strong></div>
+              <div className="visual-price-flow"><div><span>買入／成交</span><strong>{money.format(position.entryPrice)}</strong></div><i>→</i><div><span>目前價格</span><strong>{money.format(position.currentPrice)}</strong></div></div>
+              <div className={`visual-gain ${position.pnl >= 0 ? 'positive' : 'negative'}`}><strong>{position.pnl >= 0 ? '+' : ''}{money.format(position.pnl)}</strong><span>{position.roc >= 0 ? '▲' : '▼'} {percent.format(Math.abs(position.roc))}</span></div>
+              <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%` }} /></b></div>
+              <button className="visual-action" onClick={() => {
+                if (position.items.length === 1) setEditor({ ...position.items[0].trade });
+                else { setQuery(position.ticker); setPositionView('details'); }
+              }} aria-label={`查看 ${position.ticker} 明細`}>•••</button>
+            </article>)}
+          </div> : <div className="table-wrap">
             <table>
               <thead><tr><th>標的</th><th>交易／策略</th><th>開倉／到期</th><th>履約價</th><th>數量</th><th>買入／成交價</th><th>目前價格</th><th>損益</th><th>ROC</th><th>狀態</th><th /></tr></thead>
               <tbody>
@@ -525,7 +594,7 @@ export default function Home() {
                 </tr>)}
               </tbody>
             </table>
-          </div>
+          </div>}
           <footer className="table-footer"><span><i className="live-dot" />股票自動報價</span><span><i className="manual-dot" />手動價格</span><p>選擇權工作簿沒有 OCC 合約代碼，因此權利金保留手動更新；股票報價可能依來源或交易所延遲。</p></footer>
         </section>
         </div>

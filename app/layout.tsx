@@ -16,7 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
     title,
     description,
     icons: { icon: '/optionflow-logo.jpg', apple: '/optionflow-logo.jpg' },
-    openGraph: { title, description, type: 'website', images: [{ url: image, width: 1200, height: 630, alt: 'OPTIONFLOW — 反者道之動' }] },
+    openGraph: { title, description, type: 'website', images: [{ url: image, width: 1200, height: 630, alt: 'OPTIONFLOW — 桐生桔梗' }] },
     twitter: { card: 'summary_large_image', title, description, images: [image] },
   };
 }

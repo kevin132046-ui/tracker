@@ -23,7 +23,7 @@ type Trade = {
   sourceRow?: number | null;
 };
 
-type RangeMode = 'week' | 'month' | 'year';
+type RangeMode = 'day' | 'week' | 'month' | 'year';
 type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock';
 type PositionViewMode = 'visual' | 'details';
 type AllocationChartMode = 'donut' | 'bars';
@@ -54,9 +54,21 @@ type TechnicalData = {
   changePercent: number;
   updatedAt: string;
 };
+type BenchmarkMarket = {
+  id: 'USDJPY' | 'US10Y' | 'US30Y';
+  symbol: string;
+  label: string;
+  unit: string;
+  decimals: number;
+  values: Array<number | null>;
+  latest: number | null;
+  change: number | null;
+  changePercent: number | null;
+};
+type BenchmarkData = { SPY: number[]; BOXX: number[]; markets: BenchmarkMarket[] };
 type BackgroundMode = 'default' | 'image';
 
-const palette = ['#2f73ed', '#3cc7df', '#7768e8', '#22b58b', '#f0a33a', '#e66878'];
+const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
 const companyNames: Record<string, string> = {
   AAPL: 'Apple', AMZN: 'Amazon', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
   CNC: 'Centene', META: 'Meta Platforms', MSFT: 'Microsoft', NVDA: 'NVIDIA', SPGI: 'S&P Global', SPY: 'SPDR S&P 500',
@@ -85,6 +97,11 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
 const percent = new Intl.NumberFormat('zh-TW', { style: 'percent', maximumFractionDigits: 1 });
 const precisePercent = new Intl.NumberFormat('zh-TW', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dateLabel = (date: string | null) => date ? new Intl.DateTimeFormat('zh-TW', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${date}T00:00:00Z`)) : '—';
+
+function selectZeroNumberInput(target: EventTarget | null) {
+  if (!(target instanceof HTMLInputElement) || (target.type !== 'number' && target.inputMode !== 'decimal') || target.readOnly || target.disabled) return;
+  if (target.value !== '' && Number(target.value) === 0) target.select();
+}
 
 function blankTrade(): Trade {
   return {
@@ -121,7 +138,13 @@ function startOfWeek(date: Date) {
 function buildReturnSeries(trades: Trade[], mode: RangeMode) {
   const now = new Date(`${today()}T00:00:00Z`);
   const buckets: Array<{ key: string; label: string; pnl: number; capital: number }> = [];
-  if (mode === 'week') {
+  if (mode === 'day') {
+    for (let offset = 29; offset >= 0; offset -= 1) {
+      const date = new Date(now);
+      date.setUTCDate(now.getUTCDate() - offset);
+      buckets.push({ key: date.toISOString().slice(0, 10), label: `${date.getUTCMonth() + 1}/${date.getUTCDate()}`, pnl: 0, capital: 0 });
+    }
+  } else if (mode === 'week') {
     const current = startOfWeek(now);
     for (let offset = 11; offset >= 0; offset -= 1) {
       const date = new Date(current);
@@ -142,9 +165,10 @@ function buildReturnSeries(trades: Trade[], mode: RangeMode) {
 
   for (const trade of trades) {
     const activityDate = new Date(`${trade.closeDate ?? today()}T00:00:00Z`);
-    const key = mode === 'week'
-      ? startOfWeek(activityDate).toISOString().slice(0, 10)
-      : mode === 'month' ? activityDate.toISOString().slice(0, 7) : String(activityDate.getUTCFullYear());
+    const key = mode === 'day'
+      ? activityDate.toISOString().slice(0, 10)
+      : mode === 'week' ? startOfWeek(activityDate).toISOString().slice(0, 10)
+        : mode === 'month' ? activityDate.toISOString().slice(0, 7) : String(activityDate.getUTCFullYear());
     const bucket = buckets.find((item) => item.key === key);
     if (bucket) {
       bucket.pnl += metrics(trade).pnl;
@@ -183,6 +207,34 @@ const PriceSparkline = memo(function PriceSparkline({ ticker, values, changePerc
     <polygon points={`0,39 ${points} 100,39`} className="sparkline-fill" />
     <polyline points={points} className="sparkline-line" />
   </svg>;
+});
+
+const MacroMarketCard = memo(function MacroMarketCard({ market, startLabel, endLabel, rangeLabel }: { market: BenchmarkMarket; startLabel: string; endLabel: string; rangeLabel: string }) {
+  const plotted = market.values.flatMap((value, index) => typeof value === 'number' && Number.isFinite(value) ? [{ value, index }] : []);
+  const finite = plotted.map((point) => point.value);
+  const min = finite.length ? Math.min(...finite) : 0;
+  const max = finite.length ? Math.max(...finite) : 1;
+  const spread = Math.max(max - min, Math.max(Math.abs(max), 1) * .0025);
+  const low = min - spread * .12;
+  const high = max + spread * .12;
+  const points = plotted.map((point) => {
+    const x = market.values.length <= 1 ? 50 : point.index / (market.values.length - 1) * 100;
+    const y = 50 - ((point.value - low) / (high - low)) * 45;
+    return `${x},${y}`;
+  }).join(' ');
+  const direction = (market.changePercent ?? 0) > 0 ? 'positive' : (market.changePercent ?? 0) < 0 ? 'negative' : 'neutral';
+  const formatter = new Intl.NumberFormat('en-US', { minimumFractionDigits: market.decimals, maximumFractionDigits: market.decimals });
+  const latest = market.latest === null ? '—' : `${market.id === 'USDJPY' ? '¥' : ''}${formatter.format(market.latest)}`;
+  const change = market.change === null ? '等待更新' : `${market.change >= 0 ? '+' : ''}${formatter.format(market.change)} · ${market.changePercent === null ? '—' : `${market.changePercent >= 0 ? '+' : ''}${precisePercent.format(market.changePercent)}`}`;
+  const gradientId = `macro-fill-${market.id}`;
+  return <article className={`macro-market-card ${direction}`}>
+    <header><div><span>{market.id === 'USDJPY' ? 'FX' : 'UST'}</span><div><h4>{market.label}</h4><small>{market.unit}</small></div></div><b>{market.symbol}</b></header>
+    <div className="macro-market-quote"><strong>{latest}</strong><span>{change}</span></div>
+    <div className="macro-history-chart">
+      {points ? <svg viewBox="0 0 100 54" preserveAspectRatio="none" role="img" aria-label={`${market.label}${rangeLabel}價格走勢`}><defs><linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="currentColor" stopOpacity=".2"/><stop offset="100%" stopColor="currentColor" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="50" y2="50"/><polygon points={`0,50 ${points} 100,50`} fill={`url(#${gradientId})`}/><polyline points={points}/></svg> : <span>暫時沒有歷史資料</span>}
+    </div>
+    <footer><span>{startLabel}</span><b>{rangeLabel}走勢</b><span>{endLabel}</span></footer>
+  </article>;
 });
 
 function chartBounds(values: Array<number | null>, includeZero = false) {
@@ -324,7 +376,8 @@ export default function Home() {
   const [toast, setToast] = useState('');
   const [lastQuoteAt, setLastQuoteAt] = useState<string | null>(null);
   const [marketSnapshots, setMarketSnapshots] = useState<Record<string, LiveQuote>>({});
-  const [benchmarks, setBenchmarks] = useState<{ mode: RangeMode | null; SPY: number[]; BOXX: number[] }>({ mode: null, SPY: [], BOXX: [] });
+  const [benchmarks, setBenchmarks] = useState<{ mode: RangeMode | null } & BenchmarkData>({ mode: null, SPY: [], BOXX: [], markets: [] });
+  const [benchmarkLoading, setBenchmarkLoading] = useState(false);
   const [symbolSuggestions, setSymbolSuggestions] = useState<SymbolSuggestion[]>([]);
   const [symbolLoading, setSymbolLoading] = useState(false);
   const [symbolFocused, setSymbolFocused] = useState(false);
@@ -349,7 +402,7 @@ export default function Home() {
   const panelRatioRef = useRef(panelRatio);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const editorQuoteCacheRef = useRef(new Map<string, { quote: LiveQuote; fetchedAt: number }>());
-  const benchmarkCacheRef = useRef(new Map<RangeMode, { SPY: number[]; BOXX: number[] }>());
+  const benchmarkCacheRef = useRef(new Map<RangeMode, BenchmarkData>());
   const technicalCacheRef = useRef(new Map<string, TechnicalData>());
   const allocationHistoryCacheRef = useRef(new Map<string, AllocationHistory>());
   const quoteRefreshInFlightRef = useRef(false);
@@ -459,20 +512,23 @@ export default function Home() {
     const cached = benchmarkCacheRef.current.get(rangeMode);
     if (cached) {
       setBenchmarks({ mode: rangeMode, ...cached });
+      setBenchmarkLoading(false);
       return;
     }
     const controller = new AbortController();
+    setBenchmarkLoading(true);
     fetch(`/api/benchmarks?mode=${rangeMode}`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json() as { SPY?: number[]; BOXX?: number[]; error?: string };
+        const payload = await response.json() as { SPY?: number[]; BOXX?: number[]; markets?: BenchmarkMarket[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? '基準資料暫時無法取得');
         if (!controller.signal.aborted) {
-          const next = { SPY: payload.SPY ?? [], BOXX: payload.BOXX ?? [] };
+          const next = { SPY: payload.SPY ?? [], BOXX: payload.BOXX ?? [], markets: payload.markets ?? [] };
           benchmarkCacheRef.current.set(rangeMode, next);
           setBenchmarks({ mode: rangeMode, ...next });
         }
       })
-      .catch(() => { if (!controller.signal.aborted) setBenchmarks({ mode: rangeMode, SPY: [], BOXX: [] }); });
+      .catch(() => { if (!controller.signal.aborted) setBenchmarks({ mode: rangeMode, SPY: [], BOXX: [], markets: [] }); })
+      .finally(() => { if (!controller.signal.aborted) setBenchmarkLoading(false); });
     return () => controller.abort();
   }, [rangeMode]);
 
@@ -687,7 +743,7 @@ export default function Home() {
   const averageAnnualRoc = annualRocItems.length ? annualRocItems.reduce((sum, item) => sum + item.annualRoc, 0) / annualRocItems.length : 0;
 
   const returnSeries = useMemo(() => buildReturnSeries(trades, rangeMode), [trades, rangeMode]);
-  const activeBenchmarks = benchmarks.mode === rangeMode ? benchmarks : { mode: rangeMode, SPY: [], BOXX: [] };
+  const activeBenchmarks = benchmarks.mode === rangeMode ? benchmarks : { mode: rangeMode, SPY: [], BOXX: [], markets: [] };
   const chartStep = .05;
   const chartValues = [...returnSeries.map((item) => item.value), ...activeBenchmarks.SPY, ...activeBenchmarks.BOXX].filter(Number.isFinite);
   const chartStepCount = Math.max(1, Math.ceil(Math.max(0, ...chartValues.map(Math.abs)) / chartStep));
@@ -702,6 +758,8 @@ export default function Home() {
   const chartPoints = pointsFor(returnSeries.map((item) => item.value));
   const spyPoints = pointsFor(activeBenchmarks.SPY);
   const boxxPoints = pointsFor(activeBenchmarks.BOXX);
+  const rangeModeLabel = rangeMode === 'day' ? '日' : rangeMode === 'week' ? '週' : rangeMode === 'month' ? '月' : '年';
+  const chartDateStep = Math.max(1, Math.ceil((returnSeries.length - 1) / 5));
 
   const currentAllocationDate = today();
   const allocationPresets = [
@@ -988,7 +1046,13 @@ export default function Home() {
   const selectedStockTrades = useMemo(() => drilledTicker ? trades.filter((trade) => trade.ticker === drilledTicker && (trade.type === 'SDI' || trade.event === 'STOCK')) : [], [drilledTicker, trades]);
 
   return (
-    <main className={`shell ${imageBackgroundActive ? 'has-custom-background' : ''}`} id="top" style={shellStyle}>
+    <main
+      className={`shell ${imageBackgroundActive ? 'has-custom-background' : ''}`}
+      id="top"
+      style={shellStyle}
+      onFocusCapture={(event) => selectZeroNumberInput(event.target)}
+      onClickCapture={(event) => selectZeroNumberInput(event.target)}
+    >
       <header className="topbar">
         <a className="brand" href="#top" aria-label="OptionFlow 首頁">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1027,15 +1091,15 @@ export default function Home() {
         <section ref={contentGridRef} className={`content-grid ${resizingPanels ? 'is-resizing' : ''}`} style={contentGridStyle}>
           <article className="panel return-panel" id="returns">
             <div className="panel-heading">
-              <div><p className="eyebrow">Return analytics</p><h2>{rangeMode === 'week' ? '週' : rangeMode === 'month' ? '月' : '年'}收益率</h2></div>
-              <div className="segmented" aria-label="收益率期間">
-                {([['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button key={mode} className={rangeMode === mode ? 'selected' : ''} onClick={() => setRangeMode(mode)}>{label}</button>)}
+              <div><p className="eyebrow">Return analytics</p><h2>{rangeModeLabel}收益率</h2></div>
+              <div className="segmented" role="group" aria-label="收益率期間">
+                {([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={rangeMode === mode ? 'selected' : ''} aria-pressed={rangeMode === mode} onClick={() => setRangeMode(mode)}>{label}</button>)}
               </div>
             </div>
             <div className="return-summary"><strong>{percent.format(returnSeries.at(-1)?.value ?? 0)}</strong><span>最近一期報酬率</span><div className="benchmark-legend"><span><i className="portfolio-key" />我的組合</span><span><i className="spy-key" />SPY</span><span><i className="boxx-key" />BOXX</span></div></div>
             <div className="chart-shell">
               {chartTicks.map((tick) => <span key={`label-${tick.toFixed(4)}`} className="axis-label" style={{ top: `${chartY(tick)}%` }}>{tick > 0 ? '+' : ''}{Math.round(tick * 100)}%</span>)}
-              <svg className="return-chart" viewBox="0 0 100 100" role="img" aria-label="週月年收益率折線圖" preserveAspectRatio="none">
+              <svg className="return-chart" viewBox="0 0 100 100" role="img" aria-label="日週月年收益率折線圖" preserveAspectRatio="none">
                 <defs><linearGradient id="returnFade" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".24"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs>
                 {chartTicks.map((tick) => <line key={`grid-${tick.toFixed(4)}`} x1="0" x2="100" y1={chartY(tick)} y2={chartY(tick)} className={Math.abs(tick) < .0001 ? 'zero-line' : 'chart-grid-line'} />)}
                 {chartPoints && <><polygon points={`0,${chartY(0)} ${chartPoints} 100,${chartY(0)}`} fill="url(#returnFade)" /><polyline points={chartPoints} className="return-line portfolio-line" /></>}
@@ -1048,7 +1112,15 @@ export default function Home() {
                 return <span key={item.key} className={item.value >= 0 ? 'point-positive' : 'point-negative'} style={{ left: `${x}%`, top: `${y}%` }} title={`${item.label}: ${percent.format(item.value)}`} />;
               })}</div>
             </div>
-            <div className="chart-dates">{returnSeries.map((item, index) => <span key={item.key} className={index % Math.ceil(returnSeries.length / 6) ? 'hide-small-label' : ''}>{item.label}</span>)}</div>
+            <div className="chart-dates">{returnSeries.map((item, index) => <span key={item.key} className={index !== 0 && index !== returnSeries.length - 1 && index % chartDateStep !== 0 ? 'hide-small-label' : ''}>{item.label}</span>)}</div>
+            <section className="macro-market-section" aria-labelledby="macro-market-title">
+              <div className="macro-market-heading"><div><p className="eyebrow">Macro price monitor</p><h3 id="macro-market-title">匯率與美債價格波動</h3></div><span>歷史區間跟隨上方「{rangeModeLabel}」切換</span></div>
+              <div className={`macro-market-grid ${benchmarkLoading ? 'is-loading' : ''}`} aria-busy={benchmarkLoading}>
+                {activeBenchmarks.markets.map((market) => <MacroMarketCard key={market.id} market={market} startLabel={returnSeries[0]?.label ?? ''} endLabel={returnSeries.at(-1)?.label ?? ''} rangeLabel={rangeModeLabel} />)}
+                {!activeBenchmarks.markets.length && [0, 1, 2].map((item) => <article className="macro-market-card macro-market-placeholder" key={item}><span /><b /><i /></article>)}
+              </div>
+              <p className="macro-market-note">10 年與 30 年美債以 CBOT 連續近月期貨價格作為代理；換月時可能出現跳點。</p>
+            </section>
           </article>
 
           <div

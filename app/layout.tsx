@@ -15,7 +15,8 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: new URL(origin),
     title,
     description,
-    openGraph: { title, description, type: 'website', images: [{ url: image, width: 1200, height: 630, alt: 'OPTIONFLOW — Visual Options Tracking' }] },
+    icons: { icon: '/optionflow-logo.jpg', apple: '/optionflow-logo.jpg' },
+    openGraph: { title, description, type: 'website', images: [{ url: image, width: 1200, height: 630, alt: 'OPTIONFLOW — 反者道之動' }] },
     twitter: { card: 'summary_large_image', title, description, images: [image] },
   };
 }

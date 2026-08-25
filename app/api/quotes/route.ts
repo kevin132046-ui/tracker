@@ -15,6 +15,7 @@ async function fetchLatestPrice(ticker: string) {
   const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&includePrePost=true`, {
     headers: { Accept: 'application/json', 'User-Agent': 'OptionFlow/1.0' },
     cache: 'no-store',
+    signal: AbortSignal.timeout(6000),
   });
   if (!response.ok) throw new Error(`Quote unavailable for ${ticker}`);
   const payload = await response.json() as YahooChart;
@@ -30,13 +31,28 @@ async function fetchLatestPrice(ticker: string) {
   const regularTime = result?.meta?.regularMarketTime ?? 0;
   const useIntraday = latestIntraday !== null && latestIntraday.marketTime >= regularTime;
   const price = useIntraday ? latestIntraday.price : regularPrice;
-  if (!Number.isFinite(price)) throw new Error(`Quote unavailable for ${ticker}`);
+  if (!Number.isFinite(price) || Number(price) <= 0) throw new Error(`Quote unavailable for ${ticker}`);
   return {
     price: Number(price),
     marketTime: useIntraday ? latestIntraday.marketTime : regularTime || null,
     session: useIntraday && latestIntraday.marketTime > regularTime ? 'extended' : 'regular',
     currency: result?.meta?.currency ?? 'USD',
   };
+}
+
+export async function GET(request: Request) {
+  const symbol = new URL(request.url).searchParams.get('symbol')?.trim().toUpperCase() ?? '';
+  if (!/^[A-Z0-9.-]{1,12}$/.test(symbol)) {
+    return NextResponse.json({ error: '請輸入有效的股票代號。' }, { status: 400 });
+  }
+  try {
+    const quote = await fetchLatestPrice(symbol);
+    return NextResponse.json({ quote: { ticker: symbol, ...quote }, source: 'Yahoo Finance — latest regular or extended-hours quote' }, {
+      headers: { 'Cache-Control': 'no-store' },
+    });
+  } catch {
+    return NextResponse.json({ error: `暫時無法取得 ${symbol} 的即時報價。` }, { status: 502 });
+  }
 }
 
 export async function POST() {

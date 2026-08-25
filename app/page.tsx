@@ -27,6 +27,7 @@ type RangeMode = 'week' | 'month' | 'year';
 type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock';
 type PositionViewMode = 'visual' | 'details';
 type SymbolSuggestion = { symbol: string; name: string; exchange: string; type: string };
+type LiveQuote = { ticker: string; price: number; marketTime: number | null; session: 'regular' | 'extended'; currency: string };
 type AllocationHistory = {
   date: string;
   positions: Array<{ label: string; value: number; tradeCount: number; estimated: boolean }>;
@@ -302,6 +303,10 @@ export default function Home() {
   const [symbolLoading, setSymbolLoading] = useState(false);
   const [symbolFocused, setSymbolFocused] = useState(false);
   const [activeSymbolIndex, setActiveSymbolIndex] = useState(0);
+  const [editorQuoteLoading, setEditorQuoteLoading] = useState(false);
+  const [editorQuoteError, setEditorQuoteError] = useState('');
+  const [editorQuote, setEditorQuote] = useState<LiveQuote | null>(null);
+  const [editorQuoteRetry, setEditorQuoteRetry] = useState(0);
   const [panelRatio, setPanelRatio] = useState(initialPanelRatio);
   const [resizingPanels, setResizingPanels] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState('');
@@ -317,6 +322,7 @@ export default function Home() {
   const contentGridRef = useRef<HTMLElement>(null);
   const panelRatioRef = useRef(panelRatio);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
+  const editorQuoteCacheRef = useRef(new Map<string, { quote: LiveQuote; fetchedAt: number }>());
 
   const notify = useCallback((message: string) => {
     setToast(message);
@@ -493,6 +499,9 @@ export default function Home() {
   }, [resizingPanels, updatePanelRatio]);
 
   const tickerQuery = editor?.ticker?.trim() ?? '';
+  const editorAutoQuoteTicker = editor?.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto'
+    ? tickerQuery.toUpperCase()
+    : '';
   useEffect(() => {
     if (!symbolFocused || !tickerQuery) {
       const clearResults = window.setTimeout(() => {
@@ -521,6 +530,59 @@ export default function Home() {
       controller.abort();
     };
   }, [tickerQuery, symbolFocused]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      if (!editorAutoQuoteTicker || !/^[A-Z0-9.-]{1,12}$/.test(editorAutoQuoteTicker)) {
+        setEditorQuoteLoading(false);
+        setEditorQuoteError('');
+        setEditorQuote(null);
+        return;
+      }
+
+      const cached = editorQuoteCacheRef.current.get(editorAutoQuoteTicker);
+      if (cached && Date.now() - cached.fetchedAt < 45_000) {
+        setEditor((current) => current?.type === 'SDI' && current.status === 'open' && current.quoteMode === 'auto' && current.ticker?.trim().toUpperCase() === editorAutoQuoteTicker
+          ? { ...current, currentPrice: cached.quote.price }
+          : current);
+        setEditorQuote(cached.quote);
+        setEditorQuoteError('');
+        setEditorQuoteLoading(false);
+        if (cached.quote.marketTime) setLastQuoteAt(new Date(cached.quote.marketTime * 1000).toISOString());
+        return;
+      }
+
+      setEditorQuoteLoading(true);
+      setEditorQuoteError('');
+      setEditorQuote(null);
+      try {
+        const response = await fetch(`/api/quotes?symbol=${encodeURIComponent(editorAutoQuoteTicker)}`, { cache: 'no-store', signal: controller.signal });
+        const payload = await response.json() as { quote?: LiveQuote; error?: string };
+        if (!response.ok || !payload.quote || !Number.isFinite(payload.quote.price) || payload.quote.price <= 0) {
+          throw new Error(payload.error ?? '暫時無法取得最新報價');
+        }
+        const quote = payload.quote;
+        editorQuoteCacheRef.current.set(editorAutoQuoteTicker, { quote, fetchedAt: Date.now() });
+        setEditor((current) => current?.type === 'SDI' && current.status === 'open' && current.quoteMode === 'auto' && current.ticker?.trim().toUpperCase() === editorAutoQuoteTicker
+          ? { ...current, currentPrice: quote.price }
+          : current);
+        setEditorQuote(quote);
+        if (quote.marketTime) setLastQuoteAt(new Date(quote.marketTime * 1000).toISOString());
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setEditorQuoteError(error instanceof Error ? error.message : '暫時無法取得最新報價');
+        }
+      } finally {
+        if (!controller.signal.aborted) setEditorQuoteLoading(false);
+      }
+    }, editorAutoQuoteTicker ? 280 : 0);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [editorAutoQuoteTicker, editorQuoteRetry]);
 
   useEffect(() => {
     if (!drilledTicker) return;
@@ -686,6 +748,12 @@ export default function Home() {
   async function saveEditor(event: FormEvent) {
     event.preventDefault();
     if (!editor) return;
+    if (editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && editorQuoteLoading) {
+      return notify('正在取得最新報價，請稍候再儲存');
+    }
+    if (editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && (!editor.currentPrice || editor.currentPrice <= 0)) {
+      return notify(editorQuoteError || '請先取得有效的股票報價');
+    }
     setSaving(true);
     try {
       await persistTrade(editor, editor.id ? 'PUT' : 'POST');
@@ -1038,13 +1106,13 @@ export default function Home() {
                   <div className="editor-section-heading"><span>03</span><div><h3>價格與風險</h3><p>輸入價格、費用與投入資本，損益會立即重算。</p></div></div>
                   <div className="form-grid price-fields">
                     <label>成本／成交價<div className="money-input"><span>$</span><input min="0" step="0.01" type="number" value={editor.entryPrice} onChange={(event) => setEditor({ ...editor, entryPrice: Number(event.target.value) })} /></div></label>
-                    <label>持倉／平倉價<div className="money-input"><span>$</span><input min="0" step="0.01" type="number" value={editor.currentPrice ?? ''} onChange={(event) => setEditor({ ...editor, currentPrice: event.target.value === '' ? null : Number(event.target.value) })} /></div></label>
+                    <label><span className="field-label-row"><span>持倉／平倉價</span>{editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && <small>自動填入</small>}</span><div className={`money-input ${editorQuoteLoading ? 'is-quote-loading' : ''}`} aria-busy={editorQuoteLoading}><span>$</span><input min="0" step="0.01" type="number" readOnly={editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto'} value={editor.currentPrice ?? ''} onChange={(event) => setEditor({ ...editor, currentPrice: event.target.value === '' ? null : Number(event.target.value) })} />{editorQuoteLoading && <i className="quote-price-spinner" aria-label="正在取得報價" />}</div>{editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && <span className={`auto-quote-status ${editorQuoteError ? 'error' : ''}`} aria-live="polite">{editorQuoteLoading ? '正在取得最新可用報價…' : editorQuoteError ? <>{editorQuoteError}<button type="button" onClick={() => setEditorQuoteRetry((current) => current + 1)}>重試</button></> : editorQuote?.ticker === editorAutoQuoteTicker ? `${editorQuote.session === 'extended' ? '盤前／盤後' : '正常交易時段'} ${money.format(editorQuote.price)} 已填入` : '輸入 Ticker 後會自動填入'}</span>}</label>
                     <label>手續費<div className="money-input"><span>$</span><input min="0" step="0.01" type="number" value={editor.fees} onChange={(event) => setEditor({ ...editor, fees: Number(event.target.value) })} /></div></label>
                     <label>擔保／投入資本<div className="money-input"><span>$</span><input min="0" step="0.01" type="number" value={editor.collateral} onChange={(event) => setEditor({ ...editor, collateral: Number(event.target.value) })} /></div></label>
                   </div>
                   <div className="editor-choice-row">
-                    {editor.type === 'SDI' && <fieldset className="choice-field compact-choice"><legend>報價方式</legend><div><button type="button" className={editor.quoteMode === 'auto' ? 'active' : ''} onClick={() => setEditor({ ...editor, quoteMode: 'auto' })}>自動更新</button><button type="button" className={editor.quoteMode === 'manual' ? 'active' : ''} onClick={() => setEditor({ ...editor, quoteMode: 'manual' })}>手動輸入</button></div></fieldset>}
-                    <fieldset className="choice-field compact-choice"><legend>持倉狀態</legend><div><button type="button" className={editor.status === 'open' ? 'active' : ''} onClick={() => setEditor({ ...editor, status: 'open', closeDate: null })}>未平倉</button><button type="button" className={editor.status === 'closed' ? 'active' : ''} onClick={() => setEditor({ ...editor, status: 'closed' })}>已平倉</button></div></fieldset>
+                    {editor.type === 'SDI' && <fieldset className="choice-field compact-choice"><legend>報價方式</legend><div><button type="button" disabled={editor.status === 'closed'} className={editor.quoteMode === 'auto' ? 'active' : ''} onClick={() => { setEditor({ ...editor, quoteMode: 'auto' }); setEditorQuoteRetry((current) => current + 1); }}>自動更新</button><button type="button" className={editor.quoteMode === 'manual' ? 'active' : ''} onClick={() => setEditor({ ...editor, quoteMode: 'manual' })}>手動輸入</button></div></fieldset>}
+                    <fieldset className="choice-field compact-choice"><legend>持倉狀態</legend><div><button type="button" className={editor.status === 'open' ? 'active' : ''} onClick={() => setEditor({ ...editor, status: 'open', closeDate: null })}>未平倉</button><button type="button" className={editor.status === 'closed' ? 'active' : ''} onClick={() => setEditor({ ...editor, status: 'closed', quoteMode: editor.type === 'SDI' ? 'manual' : editor.quoteMode })}>已平倉</button></div></fieldset>
                   </div>
                   <label className="notes-field">備註<textarea rows={3} value={editor.notes} onChange={(event) => setEditor({ ...editor, notes: event.target.value })} placeholder="記錄交易想法、催化劑或檢討…" /></label>
                 </section>
@@ -1055,12 +1123,12 @@ export default function Home() {
                   <div className="summary-symbol"><span>{editor.ticker?.slice(0, 1) || '—'}</span><div><strong>{editor.ticker || '尚未選擇標的'}</strong><small>{editor.event || '選擇策略'}</small></div></div>
                   <div className="summary-price-pair"><div><span>買入／成交價</span><strong>{money.format(editor.entryPrice)}</strong></div><i>→</i><div><span>目前價格</span><strong>{editor.currentPrice === null ? '尚未設定' : money.format(editor.currentPrice)}</strong></div></div>
                   <div className="summary-result"><span>即時計算損益</span><strong className={metrics(editor).pnl >= 0 ? 'positive' : 'negative'}>{money.format(metrics(editor).pnl)}</strong></div>
-                  <dl><div><dt>ROC</dt><dd className={metrics(editor).roc >= 0 ? 'positive' : 'negative'}>{percent.format(metrics(editor).roc)}</dd></div><div><dt>持有天數</dt><dd>{metrics(editor).days || 0} 天</dd></div><div><dt>狀態</dt><dd>{editor.status === 'open' ? '未平倉' : '已平倉'}</dd></div><div><dt>報價</dt><dd>{editor.quoteMode === 'auto' ? '自動更新' : '手動價格'}</dd></div></dl>
+                  <dl><div><dt>ROC</dt><dd className={metrics(editor).roc >= 0 ? 'positive' : 'negative'}>{percent.format(metrics(editor).roc)}</dd></div><div><dt>持有天數</dt><dd>{metrics(editor).days || 0} 天</dd></div><div><dt>狀態</dt><dd>{editor.status === 'open' ? '未平倉' : '已平倉'}</dd></div><div><dt>報價</dt><dd>{editorQuoteLoading ? '讀取中…' : editor.quoteMode === 'auto' && editorQuote?.ticker === editorAutoQuoteTicker ? `${editorQuote.session === 'extended' ? '延長時段' : '正常時段'} ${money.format(editorQuote.price)}` : editor.quoteMode === 'auto' ? '自動更新' : '手動價格'}</dd></div></dl>
                   <p className="summary-tip"><i>✓</i> 所有欄位可隨時回來修改，儲存後會同步更新圖表與持倉配置。</p>
                 </div>
               </aside>
             </div>
-            <footer className="editor-actions">{editor.id > 0 && <button type="button" className="editor-delete-button" onClick={() => setDeleteCandidate(editor)}>刪除交易</button>}<p><span>●</span> 資料會安全儲存並立即更新儀表板</p><button type="button" className="cancel-button" onClick={() => setEditor(null)}>取消</button><button className="primary-button save-button" disabled={saving}>{saving ? '儲存中…' : '儲存交易'}</button></footer>
+            <footer className="editor-actions">{editor.id > 0 && <button type="button" className="editor-delete-button" onClick={() => setDeleteCandidate(editor)}>刪除交易</button>}<p><span>●</span> 資料會安全儲存並立即更新儀表板</p><button type="button" className="cancel-button" onClick={() => setEditor(null)}>取消</button><button className="primary-button save-button" disabled={saving || editorQuoteLoading}>{saving ? '儲存中…' : editorQuoteLoading ? '取得報價中…' : '儲存交易'}</button></footer>
           </form>
         </section>
       </div>}

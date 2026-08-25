@@ -823,8 +823,8 @@ export default function Home() {
         </nav>
         <div className="dashboard">
         <section className="hero" id="overview">
-          <div><p className="eyebrow">Portfolio command center</p><h1>桐生<span>桔梗</span></h1><p className="hero-copy">原始 Excel 欄位與計算邏輯已完整轉換。持倉可編輯、資料會保存，股票報價每 60 秒取得最新可用價格。</p></div>
-          <div className="as-of"><span>美東報價時間</span><strong>{lastQuoteAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'short' }).format(new Date(lastQuoteAt)) : '等待首次更新'}</strong></div>
+          <div><p className="eyebrow">Portfolio command center</p><h1>桐生<span>桔梗</span></h1></div>
+          <div className="as-of"><span>美東報價時間</span><div className="as-of-time"><strong>{lastQuoteAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'short' }).format(new Date(lastQuoteAt)) : '等待首次更新'}</strong><small>每 60 秒更新</small></div></div>
         </section>
 
         <section className="metric-grid" aria-label="投資組合摘要">

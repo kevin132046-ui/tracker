@@ -27,11 +27,18 @@ type RangeMode = 'week' | 'month' | 'year';
 type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock';
 type PositionViewMode = 'visual' | 'details';
 type SymbolSuggestion = { symbol: string; name: string; exchange: string; type: string };
+type AllocationHistory = {
+  date: string;
+  positions: Array<{ label: string; value: number; tradeCount: number; estimated: boolean }>;
+  total: number;
+  tradeCount: number;
+  estimatedTickers: string[];
+};
 
 const palette = ['#2f73ed', '#3cc7df', '#7768e8', '#22b58b', '#f0a33a', '#e66878'];
 const companyNames: Record<string, string> = {
   AAPL: 'Apple', AMZN: 'Amazon', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
-  META: 'Meta Platforms', MSFT: 'Microsoft', NVDA: 'NVIDIA', SPGI: 'S&P Global', SPY: 'SPDR S&P 500',
+  CNC: 'Centene', META: 'Meta Platforms', MSFT: 'Microsoft', NVDA: 'NVIDIA', SPGI: 'S&P Global', SPY: 'SPDR S&P 500',
   TRV: 'The Travelers Companies', TSLA: 'Tesla', TTWO: 'Take-Two Interactive', V: 'Visa',
 };
 const panelRatioKey = 'optionflow-analytics-panel-ratio';
@@ -43,6 +50,15 @@ const initialPanelRatio = () => {
   return Number.isFinite(savedRatio) && savedRatio > 0 ? clampPanelRatio(savedRatio) : 60;
 };
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+const monthsBefore = (dateString: string, months: number) => {
+  const date = new Date(`${dateString}T00:00:00Z`);
+  const originalDay = date.getUTCDate();
+  date.setUTCDate(1);
+  date.setUTCMonth(date.getUTCMonth() - months);
+  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+  date.setUTCDate(Math.min(originalDay, lastDay));
+  return date.toISOString().slice(0, 10);
+};
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 const percent = new Intl.NumberFormat('zh-TW', { style: 'percent', maximumFractionDigits: 1 });
 const dateLabel = (date: string | null) => date ? new Intl.DateTimeFormat('zh-TW', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${date}T00:00:00Z`)) : '—';
@@ -115,6 +131,20 @@ function buildReturnSeries(trades: Trade[], mode: RangeMode) {
   return buckets.map((bucket) => ({ ...bucket, value: bucket.capital > 0 ? bucket.pnl / bucket.capital : 0 }));
 }
 
+function CompanyLogo({ ticker, compact = false }: { ticker: string; compact?: boolean }) {
+  return <span className={`company-logo ${compact ? 'compact' : ''}`} aria-hidden="true">
+    <span>{ticker.slice(0, compact ? 1 : 2)}</span>
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img
+      src={`/api/logo?ticker=${encodeURIComponent(ticker)}`}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={(event) => { event.currentTarget.hidden = true; }}
+    />
+  </span>;
+}
+
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,11 +156,13 @@ export default function Home() {
   const [query, setQuery] = useState('');
   const [activeSection, setActiveSection] = useState<'overview' | 'positions' | 'returns'>('overview');
   const [editor, setEditor] = useState<Trade | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<Trade | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [priceEditId, setPriceEditId] = useState<number | null>(null);
   const [priceInput, setPriceInput] = useState('');
   const [toast, setToast] = useState('');
   const [lastQuoteAt, setLastQuoteAt] = useState<string | null>(null);
-  const [benchmarks, setBenchmarks] = useState<{ SPY: number[]; BOXX: number[] }>({ SPY: [], BOXX: [] });
+  const [benchmarks, setBenchmarks] = useState<{ mode: RangeMode | null; SPY: number[]; BOXX: number[] }>({ mode: null, SPY: [], BOXX: [] });
   const [symbolSuggestions, setSymbolSuggestions] = useState<SymbolSuggestion[]>([]);
   const [symbolLoading, setSymbolLoading] = useState(false);
   const [symbolFocused, setSymbolFocused] = useState(false);
@@ -138,6 +170,10 @@ export default function Home() {
   const [panelRatio, setPanelRatio] = useState(initialPanelRatio);
   const [resizingPanels, setResizingPanels] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState('');
+  const [drilledTicker, setDrilledTicker] = useState<string | null>(null);
+  const [allocationDate, setAllocationDate] = useState(today);
+  const [allocationHistory, setAllocationHistory] = useState<AllocationHistory | null>(null);
+  const [allocationLoading, setAllocationLoading] = useState(false);
   const contentGridRef = useRef<HTMLElement>(null);
   const panelRatioRef = useRef(panelRatio);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
@@ -225,11 +261,31 @@ export default function Home() {
       .then(async (response) => {
         const payload = await response.json() as { SPY?: number[]; BOXX?: number[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? '基準資料暫時無法取得');
-        if (active) setBenchmarks({ SPY: payload.SPY ?? [], BOXX: payload.BOXX ?? [] });
+        if (active) setBenchmarks({ mode: rangeMode, SPY: payload.SPY ?? [], BOXX: payload.BOXX ?? [] });
       })
-      .catch(() => { if (active) setBenchmarks({ SPY: [], BOXX: [] }); });
+      .catch(() => { if (active) setBenchmarks({ mode: rangeMode, SPY: [], BOXX: [] }); });
     return () => { active = false; };
   }, [rangeMode]);
+
+  useEffect(() => {
+    const currentDate = today();
+    if (allocationDate === currentDate) return;
+    const controller = new AbortController();
+    fetch(`/api/allocation-history?date=${encodeURIComponent(allocationDate)}`, { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as AllocationHistory & { error?: string };
+        if (!response.ok) throw new Error(payload.error ?? '無法載入歷史持倉');
+        setAllocationHistory(payload);
+      })
+      .catch((error) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setAllocationHistory(null);
+          notify(error instanceof Error ? error.message : '無法載入歷史持倉');
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setAllocationLoading(false); });
+    return () => controller.abort();
+  }, [allocationDate, notify]);
 
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
@@ -328,29 +384,63 @@ export default function Home() {
   const averageAnnualRoc = annualRocItems.length ? annualRocItems.reduce((sum, item) => sum + item.annualRoc, 0) / annualRocItems.length : 0;
 
   const returnSeries = useMemo(() => buildReturnSeries(trades, rangeMode), [trades, rangeMode]);
-  const maxAbsReturn = Math.max(.01, ...returnSeries.map((item) => Math.abs(item.value)), ...benchmarks.SPY.map(Math.abs), ...benchmarks.BOXX.map(Math.abs));
+  const activeBenchmarks = benchmarks.mode === rangeMode ? benchmarks : { mode: rangeMode, SPY: [], BOXX: [] };
+  const chartStep = .05;
+  const chartValues = [...returnSeries.map((item) => item.value), ...activeBenchmarks.SPY, ...activeBenchmarks.BOXX].filter(Number.isFinite);
+  const chartStepCount = Math.max(1, Math.ceil(Math.max(0, ...chartValues.map(Math.abs)) / chartStep));
+  const maxAbsReturn = chartStepCount * chartStep;
+  const chartY = (value: number) => 50 - (value / maxAbsReturn) * 50;
+  const chartTicks = Array.from({ length: chartStepCount * 2 + 1 }, (_, index) => (chartStepCount - index) * chartStep);
   const pointsFor = (values: number[]) => values.map((value, index) => {
-    const x = returnSeries.length === 1 ? 50 : (index / (returnSeries.length - 1)) * 100;
-    const y = 50 - (value / maxAbsReturn) * 38;
+    const x = values.length === 1 ? 50 : (index / (values.length - 1)) * 100;
+    const y = chartY(value);
     return `${x},${y}`;
   }).join(' ');
   const chartPoints = pointsFor(returnSeries.map((item) => item.value));
-  const spyPoints = pointsFor(benchmarks.SPY);
-  const boxxPoints = pointsFor(benchmarks.BOXX);
+  const spyPoints = pointsFor(activeBenchmarks.SPY);
+  const boxxPoints = pointsFor(activeBenchmarks.BOXX);
 
-  const allocation = useMemo(() => {
-    const groups = new Map<string, number>();
-    for (const item of openTrades) {
-      const ticker = item.trade.ticker || 'Other';
-      groups.set(ticker, (groups.get(ticker) ?? 0) + item.marketValue);
+  const currentAllocationDate = today();
+  const allocationPresets = [
+    { label: '目前', date: currentAllocationDate },
+    { label: '1 個月', date: monthsBefore(currentAllocationDate, 1) },
+    { label: '3 個月', date: monthsBefore(currentAllocationDate, 3) },
+    { label: '1 年', date: monthsBefore(currentAllocationDate, 12) },
+  ];
+  const earliestAllocationDate = trades.reduce((earliest, trade) => !earliest || trade.openDate < earliest ? trade.openDate : earliest, '') || currentAllocationDate;
+  const allocationSnapshot = useMemo(() => {
+    const current = allocationDate === currentAllocationDate;
+    const groups = new Map<string, { label: string; value: number; tradeCount: number; estimated: boolean }>();
+    if (current) {
+      for (const item of openTrades) {
+        const label = item.trade.ticker || '其他';
+        const group = groups.get(label) ?? { label, value: 0, tradeCount: 0, estimated: false };
+        group.value += Math.max(0, item.marketValue);
+        group.tradeCount += 1;
+        groups.set(label, group);
+      }
+    } else if (allocationHistory?.date === allocationDate) {
+      allocationHistory.positions.forEach((position) => groups.set(position.label, { ...position }));
     }
-    const sorted = [...groups.entries()].sort((a, b) => b[1] - a[1]);
+    const sorted = [...groups.values()].sort((a, b) => b.value - a.value);
+    const total = sorted.reduce((sum, item) => sum + item.value, 0);
     const top = sorted.slice(0, 5);
-    const other = sorted.slice(5).reduce((sum, item) => sum + item[1], 0);
-    if (other) top.push(['其他', other]);
-    const total = top.reduce((sum, item) => sum + item[1], 0) || 1;
-    return top.map(([label, value], index) => ({ label, value, share: value / total, color: palette[index % palette.length] }));
-  }, [openTrades]);
+    if (sorted.length > 5) {
+      top.push(sorted.slice(5).reduce((other, item) => ({
+        label: '其他',
+        value: other.value + item.value,
+        tradeCount: other.tradeCount + item.tradeCount,
+        estimated: other.estimated || item.estimated,
+      }), { label: '其他', value: 0, tradeCount: 0, estimated: false }));
+    }
+    return {
+      items: top.map((item, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: palette[index % palette.length] })),
+      total,
+      tradeCount: current ? openTrades.length : allocationHistory?.date === allocationDate ? allocationHistory.tradeCount : 0,
+      estimatedTickers: current ? [] : allocationHistory?.date === allocationDate ? allocationHistory.estimatedTickers : [],
+    };
+  }, [allocationDate, allocationHistory, currentAllocationDate, openTrades]);
+  const allocation = allocationSnapshot.items;
   let gradientStart = 0;
   const pieGradient = allocation.length ? `conic-gradient(${allocation.map((item) => {
     const start = gradientStart;
@@ -445,6 +535,51 @@ export default function Home() {
     }
   }
 
+  async function deleteTrade() {
+    if (!deleteCandidate) return;
+    setDeleting(true);
+    try {
+      const response = await fetch('/api/trades', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: deleteCandidate.id }),
+      });
+      const payload = await response.json() as { deletedId?: number; error?: string };
+      if (!response.ok || payload.deletedId !== deleteCandidate.id) throw new Error(payload.error ?? '刪除失敗');
+      setTrades((current) => current.filter((trade) => trade.id !== deleteCandidate.id));
+      if (editor?.id === deleteCandidate.id) setEditor(null);
+      if (priceEditId === deleteCandidate.id) setPriceEditId(null);
+      setDeleteCandidate(null);
+      notify(`${deleteCandidate.ticker ?? '交易'} 紀錄已刪除，圖表與持倉已重新計算`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '刪除失敗');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function selectAllocationDate(date: string) {
+    if (!date || date === allocationDate) return;
+    const currentDate = today();
+    setAllocationDate(date);
+    setAllocationLoading(date !== currentDate);
+    if (date === currentDate) setAllocationHistory(null);
+  }
+
+  function openTickerDetails(ticker: string) {
+    setDrilledTicker(ticker);
+    setQuery(ticker);
+    setPositionView('details');
+    window.setTimeout(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  }
+
+  function returnToPositionsOverview() {
+    setDrilledTicker(null);
+    setQuery('');
+    setPositionView('visual');
+    window.setTimeout(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  }
+
   const marketOpen = (() => {
     const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
     const day = parts.find((part) => part.type === 'weekday')?.value ?? '';
@@ -503,17 +638,17 @@ export default function Home() {
             </div>
             <div className="return-summary"><strong>{percent.format(returnSeries.at(-1)?.value ?? 0)}</strong><span>最近一期報酬率</span><div className="benchmark-legend"><span><i className="portfolio-key" />我的組合</span><span><i className="spy-key" />SPY</span><span><i className="boxx-key" />BOXX</span></div></div>
             <div className="chart-shell">
-              <div className="axis-label top">+{percent.format(maxAbsReturn)}</div><div className="axis-label middle">0%</div><div className="axis-label bottom">−{percent.format(maxAbsReturn)}</div>
+              {chartTicks.map((tick) => <span key={`label-${tick.toFixed(4)}`} className="axis-label" style={{ top: `${chartY(tick)}%` }}>{tick > 0 ? '+' : ''}{Math.round(tick * 100)}%</span>)}
               <svg className="return-chart" viewBox="0 0 100 100" role="img" aria-label="週月年收益率折線圖" preserveAspectRatio="none">
                 <defs><linearGradient id="returnFade" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".24"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs>
-                <line x1="0" x2="100" y1="50" y2="50" className="zero-line" />
-                {chartPoints && <><polygon points={`0,50 ${chartPoints} 100,50`} fill="url(#returnFade)" /><polyline points={chartPoints} className="return-line portfolio-line" /></>}
+                {chartTicks.map((tick) => <line key={`grid-${tick.toFixed(4)}`} x1="0" x2="100" y1={chartY(tick)} y2={chartY(tick)} className={Math.abs(tick) < .0001 ? 'zero-line' : 'chart-grid-line'} />)}
+                {chartPoints && <><polygon points={`0,${chartY(0)} ${chartPoints} 100,${chartY(0)}`} fill="url(#returnFade)" /><polyline points={chartPoints} className="return-line portfolio-line" /></>}
                 {spyPoints && <polyline points={spyPoints} className="return-line spy-line" />}
                 {boxxPoints && <polyline points={boxxPoints} className="return-line boxx-line" />}
               </svg>
               <div className="return-markers" aria-hidden="true">{returnSeries.map((item, index) => {
                 const x = returnSeries.length === 1 ? 50 : (index / (returnSeries.length - 1)) * 100;
-                const y = 50 - (item.value / maxAbsReturn) * 38;
+                const y = chartY(item.value);
                 return <span key={item.key} className={item.value >= 0 ? 'point-positive' : 'point-negative'} style={{ left: `${x}%`, top: `${y}%` }} title={`${item.label}: ${percent.format(item.value)}`} />;
               })}</div>
             </div>
@@ -544,20 +679,31 @@ export default function Home() {
           ><span /></div>
 
           <article className="panel allocation-panel">
-            <div className="panel-heading"><div><p className="eyebrow">Holdings</p><h2>持倉配置</h2></div><span className="count-badge">{openTrades.length} positions</span></div>
-            <div className="allocation-content">
-              <div className="donut" style={{ background: pieGradient }} aria-label="按標的計算的持倉圓餅圖"><span><strong>{money.format(trackedValue)}</strong>曝險</span></div>
-              <div className="legend">{allocation.map((item) => <p key={item.label}><i style={{ background: item.color }} />{item.label}<strong>{percent.format(item.share)}</strong></p>)}</div>
+            <div className="panel-heading"><div><p className="eyebrow">Holdings</p><h2>持倉配置</h2></div><span className="count-badge">{allocationSnapshot.tradeCount} positions</span></div>
+            <div className="allocation-history-controls" aria-label="持倉配置歷史日期">
+              <div>{allocationPresets.map((preset) => <button key={preset.label} className={allocationDate === preset.date ? 'active' : ''} onClick={() => selectAllocationDate(preset.date)}>{preset.label}</button>)}</div>
+              <label><span>歷史日期</span><input type="date" min={earliestAllocationDate} max={currentAllocationDate} value={allocationDate} onChange={(event) => selectAllocationDate(event.target.value || currentAllocationDate)} /></label>
             </div>
-            <p className="panel-note">股票按現值、選擇權按擔保金計算；價格變動後自動重算。</p>
+            <div className="allocation-content">
+              <div className={`donut ${allocationLoading ? 'is-loading' : ''}`} style={{ background: pieGradient }} aria-label={`${allocationDate} 按標的計算的持倉圓餅圖`}><span><strong>{allocationLoading ? '讀取中…' : money.format(allocationSnapshot.total)}</strong><small>{allocationDate === currentAllocationDate ? '目前曝險' : allocationDate}</small></span></div>
+              <div className="legend">
+                {allocationLoading && <p className="allocation-empty">正在讀取歷史持倉…</p>}
+                {!allocationLoading && !allocation.length && <p className="allocation-empty">這個日期沒有持倉紀錄</p>}
+                {!allocationLoading && allocation.map((item) => <p key={item.label}><i style={{ background: item.color }} /><span>{item.label}</span><b>{money.format(item.value)}</b><strong>{percent.format(item.share)}</strong></p>)}
+              </div>
+            </div>
+            <p className="panel-note">{allocationDate === currentAllocationDate
+              ? '股票按目前價格、選擇權按擔保金計算；價格變動後自動重算。'
+              : `股票使用所選日期以前最近一個交易日的收盤價，選擇權按當時擔保金計算${allocationSnapshot.estimatedTickers.length ? `；${allocationSnapshot.estimatedTickers.join('、')} 因缺少歷史報價而以成交價估算` : ''}。`}</p>
           </article>
         </section>
 
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
             <div><p className="eyebrow">Active book</p><h2>交易與持倉</h2></div>
-            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
+            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => drilledTicker ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
           </div>
+          {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
           <div className="filter-row">{([['all', '全部'], ['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? trades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : trades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : trade.type !== 'SDI').length}</span></button>)}</div>
           {positionView === 'visual' ? <div className="visual-positions">
             <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>買入價 → 現價</span><span>損益／報酬率</span><span>組合占比</span><span /></div>
@@ -565,24 +711,21 @@ export default function Home() {
             {loading && <div className="visual-empty">正在整理圖形化持倉…</div>}
             {!loading && visualPositions.map((position, index) => <article className="visual-position-row" key={position.ticker}>
               <span className="position-rank">{String(index + 1).padStart(2, '0')}</span>
-              <div className="visual-asset"><span className="visual-logo" style={{ background: `linear-gradient(145deg, ${palette[index % palette.length]}, #132c57)` }}>{position.ticker.slice(0, 2)}</span><div><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · {position.strategy}</small></div></div>
+              <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · {position.strategy}</small></span></button>
               <div className="visual-value"><span>持倉市值</span><strong>{money.format(position.marketValue)}</strong></div>
               <div className="visual-price-flow"><div><span>買入／成交</span><strong>{money.format(position.entryPrice)}</strong></div><i>→</i><div><span>目前價格</span><strong>{money.format(position.currentPrice)}</strong></div></div>
               <div className={`visual-gain ${position.pnl >= 0 ? 'positive' : 'negative'}`}><strong>{position.pnl >= 0 ? '+' : ''}{money.format(position.pnl)}</strong><span>{position.roc >= 0 ? '▲' : '▼'} {percent.format(Math.abs(position.roc))}</span></div>
               <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%` }} /></b></div>
-              <button className="visual-action" onClick={() => {
-                if (position.items.length === 1) setEditor({ ...position.items[0].trade });
-                else { setQuery(position.ticker); setPositionView('details'); }
-              }} aria-label={`查看 ${position.ticker} 明細`}>•••</button>
+              <button className="visual-action" onClick={() => openTickerDetails(position.ticker)} aria-label={`查看 ${position.ticker} 明細`}>→</button>
             </article>)}
           </div> : <div className="table-wrap">
             <table>
-              <thead><tr><th>標的</th><th>交易／策略</th><th>開倉／到期</th><th>履約價</th><th>數量</th><th>買入／成交價</th><th>目前價格</th><th>損益</th><th>ROC</th><th>狀態</th><th /></tr></thead>
+              <thead><tr><th>標的</th><th>交易／策略</th><th>開倉／到期</th><th>履約價</th><th>數量</th><th>買入／成交價</th><th>目前價格</th><th>損益</th><th>ROC</th><th>狀態</th><th>操作</th></tr></thead>
               <tbody>
                 {loading && <tr><td colSpan={11} className="empty-state">正在載入你的交易紀錄…</td></tr>}
                 {!loading && !filteredTrades.length && <tr><td colSpan={11} className="empty-state">沒有符合目前篩選條件的交易。</td></tr>}
                 {filteredTrades.map(({ trade, pnl, roc }) => <tr key={trade.id}>
-                  <td><span className="symbol-cell"><span className="symbol">{trade.ticker?.slice(0, 1) ?? '—'}</span><strong>{trade.ticker || '—'}</strong></span></td>
+                  <td><span className="symbol-cell"><CompanyLogo ticker={trade.ticker || 'OTHER'} compact /><strong>{trade.ticker || '—'}</strong></span></td>
                   <td><strong className="strategy-name">{trade.event}</strong><span className="subtle">{trade.type === 'SDI' ? 'Stock' : trade.type}</span></td>
                   <td><strong>{dateLabel(trade.openDate)}</strong><span className="subtle">Exp {dateLabel(trade.expiryDate)}</span></td>
                   <td>{trade.strike || '—'}</td><td>{trade.quantity}</td><td>{money.format(trade.entryPrice)}</td>
@@ -590,7 +733,7 @@ export default function Home() {
                   <td className={pnl >= 0 ? 'positive' : 'negative'}><strong>{money.format(pnl)}</strong></td>
                   <td className={roc >= 0 ? 'positive' : 'negative'}>{percent.format(roc)}</td>
                   <td><span className={`status ${trade.status}`}><i />{trade.status === 'open' ? '未平倉' : '已平倉'}</span></td>
-                  <td><button className="icon-button" onClick={() => setEditor({ ...trade })} aria-label={`編輯 ${trade.ticker ?? '交易'}`}>•••</button></td>
+                  <td><span className="row-actions"><button className="row-action-button" onClick={() => setEditor({ ...trade })} aria-label={`編輯 ${trade.ticker ?? '交易'}`}>編輯</button><button className="row-action-button delete" onClick={() => setDeleteCandidate(trade)} aria-label={`刪除 ${trade.ticker ?? '交易'}`}>刪除</button></span></td>
                 </tr>)}
               </tbody>
             </table>
@@ -696,8 +839,18 @@ export default function Home() {
                 </div>
               </aside>
             </div>
-            <footer className="editor-actions"><p><span>●</span> 資料會安全儲存並立即更新儀表板</p><button type="button" className="cancel-button" onClick={() => setEditor(null)}>取消</button><button className="primary-button save-button" disabled={saving}>{saving ? '儲存中…' : '儲存交易'}</button></footer>
+            <footer className="editor-actions">{editor.id > 0 && <button type="button" className="editor-delete-button" onClick={() => setDeleteCandidate(editor)}>刪除交易</button>}<p><span>●</span> 資料會安全儲存並立即更新儀表板</p><button type="button" className="cancel-button" onClick={() => setEditor(null)}>取消</button><button className="primary-button save-button" disabled={saving}>{saving ? '儲存中…' : '儲存交易'}</button></footer>
           </form>
+        </section>
+      </div>}
+      {deleteCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!deleting && event.target === event.currentTarget) setDeleteCandidate(null); }}>
+        <section className="delete-confirm" role="alertdialog" aria-modal="true" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-copy">
+          <span className="delete-confirm-icon" aria-hidden="true">!</span>
+          <p className="eyebrow">Permanent action</p>
+          <h2 id="delete-confirm-title">刪除這筆交易紀錄？</h2>
+          <p id="delete-confirm-copy">刪除後會立即從持倉、損益與收益圖表中移除，這個動作無法復原。</p>
+          <div className="delete-trade-summary"><strong>{deleteCandidate.ticker || '未命名標的'}</strong><span>{deleteCandidate.event} · {dateLabel(deleteCandidate.openDate)} · {money.format(deleteCandidate.entryPrice)}</span></div>
+          <footer><button type="button" className="cancel-button" disabled={deleting} onClick={() => setDeleteCandidate(null)}>保留紀錄</button><button type="button" className="confirm-delete-button" disabled={deleting} onClick={deleteTrade}>{deleting ? '刪除中…' : '永久刪除'}</button></footer>
         </section>
       </div>}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}

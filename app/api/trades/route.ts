@@ -91,3 +91,17 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to update trade.' }, { status: 400 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json() as { id?: number };
+    const id = Number(body.id);
+    if (!Number.isInteger(id) || id < 1) throw new Error('A valid trade id is required.');
+    const db = await ensureDatabase();
+    const result = await db.prepare('DELETE FROM trades WHERE id = ?').bind(id).run();
+    if (!result.meta.changes) return NextResponse.json({ error: 'Trade not found.' }, { status: 404 });
+    return NextResponse.json({ deletedId: id });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to delete trade.' }, { status: 400 });
+  }
+}

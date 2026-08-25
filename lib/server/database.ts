@@ -73,21 +73,31 @@ export async function ensureDatabase() {
     )`),
     db.prepare('CREATE INDEX IF NOT EXISTS idx_trades_status_open_date ON trades(status, open_date)'),
     db.prepare('CREATE INDEX IF NOT EXISTS idx_trades_ticker_quote_mode ON trades(ticker, quote_mode)'),
+    db.prepare(`CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )`),
   ]);
 
-  const count = await db.prepare('SELECT COUNT(*) AS count FROM trades').first<{ count: number }>();
-  if (Number(count?.count ?? 0) === 0) {
-    const now = new Date().toISOString();
-    await db.batch(seedTrades.map((trade) => db.prepare(`INSERT INTO trades (
-      type, open_date, expiry_date, close_date, ticker, event, strike, quantity,
-      entry_price, current_price, fees, collateral, notes, status, quote_mode,
-      source_row, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
-      trade.type, trade.openDate, trade.expiryDate, trade.closeDate, trade.ticker,
-      trade.event, trade.strike, trade.quantity, trade.entryPrice, trade.currentPrice,
-      trade.fees, trade.collateral, trade.notes, trade.status, trade.quoteMode,
-      trade.sourceRow, now, now,
-    )));
+  const seedMarker = await db.prepare("SELECT value FROM app_meta WHERE key = 'seed_trades_v1'").first<{ value: string }>();
+  if (!seedMarker) {
+    const count = await db.prepare('SELECT COUNT(*) AS count FROM trades').first<{ count: number }>();
+    const statements = [];
+    if (Number(count?.count ?? 0) === 0) {
+      const now = new Date().toISOString();
+      statements.push(...seedTrades.map((trade) => db.prepare(`INSERT INTO trades (
+        type, open_date, expiry_date, close_date, ticker, event, strike, quantity,
+        entry_price, current_price, fees, collateral, notes, status, quote_mode,
+        source_row, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+        trade.type, trade.openDate, trade.expiryDate, trade.closeDate, trade.ticker,
+        trade.event, trade.strike, trade.quantity, trade.entryPrice, trade.currentPrice,
+        trade.fees, trade.collateral, trade.notes, trade.status, trade.quoteMode,
+        trade.sourceRow, now, now,
+      )));
+    }
+    statements.push(db.prepare("INSERT INTO app_meta (key, value) VALUES ('seed_trades_v1', 'complete')"));
+    await db.batch(statements);
   }
 
   await db.prepare('PRAGMA optimize').run();

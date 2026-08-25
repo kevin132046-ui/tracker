@@ -34,6 +34,25 @@ type AllocationHistory = {
   tradeCount: number;
   estimatedTickers: string[];
 };
+type TechnicalRange = '3mo' | '6mo' | '1y';
+type TechnicalPoint = {
+  date: string;
+  close: number;
+  rsi: number | null;
+  macd: number | null;
+  signal: number | null;
+  histogram: number | null;
+};
+type TechnicalData = {
+  symbol: string;
+  range: TechnicalRange;
+  points: TechnicalPoint[];
+  latestPrice: number;
+  change: number;
+  changePercent: number;
+  updatedAt: string;
+};
+type BackgroundMode = 'default' | 'image';
 
 const palette = ['#2f73ed', '#3cc7df', '#7768e8', '#22b58b', '#f0a33a', '#e66878'];
 const companyNames: Record<string, string> = {
@@ -43,6 +62,7 @@ const companyNames: Record<string, string> = {
 };
 const panelRatioKey = 'optionflow-analytics-panel-ratio';
 const backgroundImageKey = 'optionflow-custom-background';
+const backgroundModeKey = 'optionflow-background-mode';
 const clampPanelRatio = (value: number) => Math.min(72, Math.max(46, value));
 const initialPanelRatio = () => {
   if (typeof window === 'undefined') return 60;
@@ -136,19 +156,134 @@ function CompanyLogo({ ticker, compact = false }: { ticker: string; compact?: bo
     <span>{ticker.slice(0, compact ? 1 : 2)}</span>
     {/* eslint-disable-next-line @next/next/no-img-element */}
     <img
-      src={`/api/logo?ticker=${encodeURIComponent(ticker)}`}
+      key={ticker}
+      src={`/api/logo?ticker=${encodeURIComponent(ticker)}&v=2`}
       alt=""
       loading="lazy"
       decoding="async"
+      onLoad={(event) => { event.currentTarget.hidden = false; }}
       onError={(event) => { event.currentTarget.hidden = true; }}
     />
   </span>;
+}
+
+function chartBounds(values: Array<number | null>, includeZero = false) {
+  const valid = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  if (!valid.length) return { min: 0, max: 1 };
+  let min = Math.min(...valid, ...(includeZero ? [0] : []));
+  let max = Math.max(...valid, ...(includeZero ? [0] : []));
+  const padding = (max - min || Math.abs(max) * .04 || 1) * .1;
+  min -= padding;
+  max += padding;
+  return { min, max };
+}
+
+function technicalY(value: number, min: number, max: number) {
+  return 7 + ((max - value) / (max - min || 1)) * 86;
+}
+
+function technicalPoints(values: Array<number | null>, min: number, max: number) {
+  return values.flatMap((value, index) => typeof value === 'number' && Number.isFinite(value)
+    ? [`${values.length === 1 ? 50 : index / (values.length - 1) * 100},${technicalY(value, min, max)}`]
+    : []).join(' ');
+}
+
+function lastIndicator(values: Array<number | null>) {
+  return values.findLast((value): value is number => typeof value === 'number' && Number.isFinite(value)) ?? null;
+}
+
+function StockTechnicalPanel({ symbol, range, data, loading, error, stockTrades, lotSavingId, onRangeChange, onClose, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
+  symbol: string;
+  range: TechnicalRange;
+  data: TechnicalData | null;
+  loading: boolean;
+  error: string;
+  stockTrades: Trade[];
+  lotSavingId: number | null;
+  onRangeChange: (range: TechnicalRange) => void;
+  onClose: () => void;
+  onAddLot: () => void;
+  onSaveLot: (trade: Trade, openDate: string, entryPrice: number) => void;
+  onEditLot: (trade: Trade) => void;
+  onDeleteLot: (trade: Trade) => void;
+}) {
+  const activeData = data?.symbol === symbol && data.range === range ? data : null;
+  const points = activeData?.points ?? [];
+  const closes = points.map((point) => point.close);
+  const rsi = points.map((point) => point.rsi);
+  const macd = points.map((point) => point.macd);
+  const signal = points.map((point) => point.signal);
+  const histogram = points.map((point) => point.histogram);
+  const priceBounds = chartBounds(closes);
+  const macdBounds = chartBounds([...macd, ...signal, ...histogram], true);
+  const dateIndexes = points.length ? [...new Set([0, Math.round((points.length - 1) * .25), Math.round((points.length - 1) * .5), Math.round((points.length - 1) * .75), points.length - 1])] : [];
+  const latestRsi = lastIndicator(rsi);
+  const latestMacd = lastIndicator(macd);
+  const latestSignal = lastIndicator(signal);
+  const openLots = stockTrades.filter((trade) => trade.status === 'open');
+  const summaryLots = openLots.length ? openLots : stockTrades;
+  const totalQuantity = summaryLots.reduce((sum, trade) => sum + Math.abs(trade.quantity), 0);
+  const averageEntry = totalQuantity ? summaryLots.reduce((sum, trade) => sum + trade.entryPrice * Math.abs(trade.quantity), 0) / totalQuantity : 0;
+  const firstPurchaseDate = summaryLots.reduce((first, trade) => !first || trade.openDate < first ? trade.openDate : first, '');
+
+  return <section className="panel stock-analysis-panel" id="stock-analysis" aria-live="polite">
+    <header className="technical-header">
+      <div className="technical-title"><CompanyLogo ticker={symbol} /><div><p className="eyebrow">Technical view</p><h2>{symbol} 股票走勢</h2><span>日線價格 · RSI 14 · MACD 12/26/9</span></div></div>
+      {activeData && <div className="technical-quote"><span>最新收盤</span><strong>{money.format(activeData.latestPrice)}</strong><b className={activeData.change >= 0 ? 'positive' : 'negative'}>{activeData.change >= 0 ? '+' : ''}{money.format(activeData.change)} · {percent.format(activeData.changePercent)}</b></div>}
+      <div className="technical-actions"><div className="segmented" aria-label="技術走勢期間">{([['3mo', '3月'], ['6mo', '6月'], ['1y', '1年']] as const).map(([value, label]) => <button key={value} className={range === value ? 'selected' : ''} onClick={() => onRangeChange(value)}>{label}</button>)}</div><button type="button" className="technical-close" onClick={onClose}>返回持倉總覽</button></div>
+    </header>
+    {loading && !activeData && <div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 日線資料…</div>}
+    {!loading && error && <div className="technical-state error">{error}</div>}
+    {activeData && <div className={`technical-grid ${loading ? 'is-refreshing' : ''}`}>
+      <article className="technical-card price-card">
+        <div className="technical-card-heading"><div><span>Price trend</span><h3>價格走勢</h3></div><p><strong>{money.format(Math.max(...closes))}</strong>期間高點</p></div>
+        <div className="technical-chart large"><span className="technical-axis top">{money.format(priceBounds.max)}</span><span className="technical-axis bottom">{money.format(priceBounds.min)}</span><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`${symbol} 日線價格走勢`}><defs><linearGradient id={`price-fill-${symbol}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".25"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="93" y2="93" className="technical-grid-line"/><polygon points={`0,93 ${technicalPoints(closes, priceBounds.min, priceBounds.max)} 100,93`} fill={`url(#price-fill-${symbol})`}/><polyline points={technicalPoints(closes, priceBounds.min, priceBounds.max)} className="technical-price-line"/></svg></div>
+        <div className="technical-dates">{dateIndexes.map((index) => <span key={points[index].date}>{new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric' }).format(new Date(`${points[index].date}T00:00:00Z`))}</span>)}</div>
+      </article>
+      <article className="technical-card indicator-card">
+        <div className="technical-card-heading"><div><span>Momentum</span><h3>RSI（14）</h3></div><p className={latestRsi !== null && latestRsi >= 70 ? 'negative' : latestRsi !== null && latestRsi <= 30 ? 'positive' : ''}><strong>{latestRsi?.toFixed(1) ?? '—'}</strong>{latestRsi !== null && latestRsi >= 70 ? '偏熱' : latestRsi !== null && latestRsi <= 30 ? '偏弱' : '中性區間'}</p></div>
+        <div className="technical-chart"><span className="rsi-label overbought">70</span><span className="rsi-label oversold">30</span><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`${symbol} RSI 14`}><rect x="0" y="7" width="100" height="25.8" className="rsi-hot-zone"/><rect x="0" y="67.2" width="100" height="25.8" className="rsi-cool-zone"/><line x1="0" x2="100" y1={technicalY(70, 0, 100)} y2={technicalY(70, 0, 100)} className="technical-threshold"/><line x1="0" x2="100" y1={technicalY(30, 0, 100)} y2={technicalY(30, 0, 100)} className="technical-threshold"/><polyline points={technicalPoints(rsi, 0, 100)} className="technical-rsi-line"/></svg></div>
+      </article>
+      <article className="technical-card indicator-card">
+        <div className="technical-card-heading"><div><span>Trend signal</span><h3>MACD（12/26/9）</h3></div><p><strong>{latestMacd?.toFixed(2) ?? '—'}</strong>Signal {latestSignal?.toFixed(2) ?? '—'}</p></div>
+        <div className="technical-chart"><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`${symbol} MACD`}><line x1="0" x2="100" y1={technicalY(0, macdBounds.min, macdBounds.max)} y2={technicalY(0, macdBounds.min, macdBounds.max)} className="technical-zero-line"/>{histogram.map((value, index) => {
+          if (value === null) return null;
+          const x = histogram.length === 1 ? 50 : index / (histogram.length - 1) * 100;
+          const zero = technicalY(0, macdBounds.min, macdBounds.max);
+          const y = technicalY(value, macdBounds.min, macdBounds.max);
+          return <rect key={points[index].date} x={x - Math.max(.2, 38 / histogram.length)} y={Math.min(y, zero)} width={Math.max(.4, 76 / histogram.length)} height={Math.max(.45, Math.abs(zero - y))} className={value >= 0 ? 'macd-bar positive-bar' : 'macd-bar negative-bar'} />;
+        })}<polyline points={technicalPoints(macd, macdBounds.min, macdBounds.max)} className="technical-macd-line"/><polyline points={technicalPoints(signal, macdBounds.min, macdBounds.max)} className="technical-signal-line"/></svg></div>
+        <div className="macd-legend"><span><i className="macd-key"/>MACD</span><span><i className="signal-key"/>Signal</span><span><i className="histogram-key"/>Histogram</span></div>
+      </article>
+    </div>}
+    <section className="stock-lots-section">
+      <div className="stock-lots-heading"><div><p className="eyebrow">Cost basis</p><h3>買入均價與購買紀錄</h3><span>直接修改日期或均價；儲存後持倉、損益與圖表會立即重算。</span></div><button type="button" onClick={onAddLot}>＋新增 {symbol} 買入紀錄</button></div>
+      <div className="stock-lot-summary"><div><span>目前平均買入價</span><strong>{summaryLots.length ? money.format(averageEntry) : '—'}</strong></div><div><span>持股數量</span><strong>{totalQuantity || '—'}</strong></div><div><span>首次買入日期</span><strong>{firstPurchaseDate ? dateLabel(firstPurchaseDate) : '—'}</strong></div><div><span>購買紀錄</span><strong>{stockTrades.length} 筆</strong></div></div>
+      <div className="stock-lot-list">
+        {!stockTrades.length && <div className="stock-lot-empty">這個標的目前沒有股票買入紀錄；可使用右上角按鈕新增。</div>}
+        {stockTrades.map((trade) => <form key={`${trade.id}-${trade.openDate}-${trade.entryPrice}`} className="stock-lot-row" onSubmit={(event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          onSaveLot(trade, String(form.get('openDate') ?? ''), Number(form.get('entryPrice')));
+        }}>
+          <div className="stock-lot-identity"><CompanyLogo ticker={symbol} compact /><div><strong>紀錄 #{trade.id}</strong><span className={`status ${trade.status}`}><i />{trade.status === 'open' ? '未平倉' : '已平倉'}</span></div></div>
+          <label>買入日期<input required name="openDate" type="date" defaultValue={trade.openDate} /></label>
+          <label>買入均價<span className="stock-lot-money"><i>$</i><input required name="entryPrice" min="0" step="0.01" type="number" defaultValue={trade.entryPrice} /></span></label>
+          <div className="stock-lot-readonly"><span>數量</span><strong>{trade.quantity}</strong></div>
+          <div className="stock-lot-readonly"><span>目前價格</span><strong>{trade.currentPrice === null ? '未設定' : money.format(trade.currentPrice)}</strong></div>
+          <div className="stock-lot-actions"><button type="submit" className="lot-save" disabled={lotSavingId === trade.id}>{lotSavingId === trade.id ? '儲存中…' : '儲存'}</button><button type="button" onClick={() => onEditLot(trade)}>完整編輯</button><button type="button" className="delete" onClick={() => onDeleteLot(trade)}>刪除</button></div>
+        </form>)}
+      </div>
+    </section>
+    <footer className="technical-note">技術指標依美股每日調整收盤價計算，僅供持倉追蹤，不構成投資建議。</footer>
+  </section>;
 }
 
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [lotSavingId, setLotSavingId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [rangeMode, setRangeMode] = useState<RangeMode>('month');
   const [filter, setFilter] = useState<FilterMode>('all');
@@ -170,7 +305,12 @@ export default function Home() {
   const [panelRatio, setPanelRatio] = useState(initialPanelRatio);
   const [resizingPanels, setResizingPanels] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState('');
+  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>('default');
   const [drilledTicker, setDrilledTicker] = useState<string | null>(null);
+  const [technicalRange, setTechnicalRange] = useState<TechnicalRange>('6mo');
+  const [technicalData, setTechnicalData] = useState<TechnicalData | null>(null);
+  const [technicalLoading, setTechnicalLoading] = useState(false);
+  const [technicalError, setTechnicalError] = useState('');
   const [allocationDate, setAllocationDate] = useState(today);
   const [allocationHistory, setAllocationHistory] = useState<AllocationHistory | null>(null);
   const [allocationLoading, setAllocationLoading] = useState(false);
@@ -200,12 +340,16 @@ export default function Home() {
         canvas.height = Math.max(1, Math.round(preview.naturalHeight * scale));
         const context = canvas.getContext('2d');
         if (!context) return notify('目前瀏覽器無法處理背景圖片');
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
         context.drawImage(preview, 0, 0, canvas.width, canvas.height);
         const compressed = canvas.toDataURL('image/jpeg', .82);
         try {
           window.localStorage.setItem(backgroundImageKey, compressed);
+          window.localStorage.setItem(backgroundModeKey, 'image');
           setBackgroundImage(compressed);
-          notify('背景圖片已套用並保存');
+          setBackgroundMode('image');
+          notify('背景圖片已完整自適應並保存');
         } catch {
           notify('圖片仍然太大，請改用較小的圖片');
         }
@@ -217,11 +361,15 @@ export default function Home() {
     event.target.value = '';
   }, [notify]);
 
-  const clearBackground = useCallback(() => {
-    window.localStorage.removeItem(backgroundImageKey);
-    setBackgroundImage('');
-    notify('已還原白色背景');
-  }, [notify]);
+  const switchBackgroundMode = useCallback((mode: BackgroundMode) => {
+    if (mode === 'image' && !backgroundImage) {
+      backgroundInputRef.current?.click();
+      return;
+    }
+    window.localStorage.setItem(backgroundModeKey, mode);
+    setBackgroundMode(mode);
+    notify(mode === 'image' ? '已切換為圖片背景' : '已切換為原始背景，上傳圖片仍保留');
+  }, [backgroundImage, notify]);
 
   const fetchTrades = useCallback(async () => {
     const response = await fetch('/api/trades', { cache: 'no-store' });
@@ -235,9 +383,10 @@ export default function Home() {
     setRefreshing(true);
     try {
       const response = await fetch('/api/quotes', { method: 'POST' });
-      const payload = await response.json() as { quotes?: unknown[]; failed?: number; updatedAt?: string; error?: string };
+      const payload = await response.json() as { quotes?: Array<{ marketTime?: number | null }>; failed?: number; updatedAt?: string; error?: string };
       if (!response.ok) throw new Error(payload.error ?? '報價更新失敗');
-      setLastQuoteAt(payload.updatedAt ?? new Date().toISOString());
+      const marketTimes = payload.quotes?.flatMap((quote) => typeof quote.marketTime === 'number' ? [quote.marketTime] : []) ?? [];
+      setLastQuoteAt(marketTimes.length ? new Date(Math.max(...marketTimes) * 1000).toISOString() : payload.updatedAt ?? new Date().toISOString());
       await fetchTrades();
       if (announce) notify(`已更新 ${payload.quotes?.length ?? 0} 個股票報價${payload.failed ? `，${payload.failed} 個暫時無法取得` : ''}`);
     } catch (error) {
@@ -300,7 +449,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const restoreBackground = window.setTimeout(() => setBackgroundImage(window.localStorage.getItem(backgroundImageKey) ?? ''), 0);
+    const restoreBackground = window.setTimeout(() => {
+      const savedImage = window.localStorage.getItem(backgroundImageKey) ?? '';
+      const savedMode = window.localStorage.getItem(backgroundModeKey);
+      setBackgroundImage(savedImage);
+      setBackgroundMode(savedImage && savedMode !== 'default' ? 'image' : 'default');
+    }, 0);
     return () => window.clearTimeout(restoreBackground);
   }, []);
 
@@ -367,6 +521,27 @@ export default function Home() {
       controller.abort();
     };
   }, [tickerQuery, symbolFocused]);
+
+  useEffect(() => {
+    if (!drilledTicker) return;
+    const controller = new AbortController();
+    fetch(`/api/technical?symbol=${encodeURIComponent(drilledTicker)}&range=${technicalRange}`, { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as TechnicalData & { error?: string };
+        if (!response.ok) throw new Error(payload.error ?? '技術指標暫時無法取得');
+        if (!controller.signal.aborted) {
+          setTechnicalData(payload);
+          setTechnicalError('');
+        }
+      })
+      .catch((error) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setTechnicalError(error instanceof Error ? error.message : '技術指標暫時無法取得');
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setTechnicalLoading(false); });
+    return () => controller.abort();
+  }, [drilledTicker, technicalRange]);
 
   const selectSymbol = useCallback((suggestion: SymbolSuggestion) => {
     setEditor((current) => current ? { ...current, ticker: suggestion.symbol } : current);
@@ -535,6 +710,20 @@ export default function Home() {
     }
   }
 
+  async function saveStockLot(trade: Trade, openDate: string, entryPrice: number) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(openDate)) return notify('請選擇有效的買入日期');
+    if (!Number.isFinite(entryPrice) || entryPrice < 0) return notify('請輸入有效的買入均價');
+    setLotSavingId(trade.id);
+    try {
+      await persistTrade({ ...trade, openDate, entryPrice, strike: trade.event === 'STOCK' ? String(entryPrice) : trade.strike }, 'PUT');
+      notify(`${trade.ticker ?? '股票'} 買入資料已更新，平均成本與損益已重新計算`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '買入資料儲存失敗');
+    } finally {
+      setLotSavingId(null);
+    }
+  }
+
   async function deleteTrade() {
     if (!deleteCandidate) return;
     setDeleting(true);
@@ -567,16 +756,31 @@ export default function Home() {
   }
 
   function openTickerDetails(ticker: string) {
+    const tickerChanged = ticker !== drilledTicker;
     setDrilledTicker(ticker);
     setQuery(ticker);
     setPositionView('details');
-    window.setTimeout(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    if (tickerChanged) {
+      setTechnicalLoading(true);
+      setTechnicalError('');
+    }
+    window.setTimeout(() => document.getElementById('stock-analysis')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  }
+
+  function selectTechnicalRange(range: TechnicalRange) {
+    if (range === technicalRange) return;
+    setTechnicalRange(range);
+    setTechnicalLoading(true);
+    setTechnicalError('');
   }
 
   function returnToPositionsOverview() {
     setDrilledTicker(null);
     setQuery('');
     setPositionView('visual');
+    setTechnicalData(null);
+    setTechnicalLoading(false);
+    setTechnicalError('');
     window.setTimeout(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   }
 
@@ -589,10 +793,12 @@ export default function Home() {
     return !['Sat', 'Sun'].includes(day) && clock >= 570 && clock < 960;
   })();
   const contentGridStyle = { '--return-panel-ratio': `${panelRatio}%` } as CSSProperties;
-  const shellStyle = backgroundImage ? { '--custom-background': `url("${backgroundImage}")` } as CSSProperties : undefined;
+  const imageBackgroundActive = backgroundMode === 'image' && Boolean(backgroundImage);
+  const shellStyle = imageBackgroundActive ? { '--custom-background': `url("${backgroundImage}")` } as CSSProperties : undefined;
+  const selectedStockTrades = drilledTicker ? trades.filter((trade) => trade.ticker === drilledTicker && (trade.type === 'SDI' || trade.event === 'STOCK')) : [];
 
   return (
-    <main className={`shell ${backgroundImage ? 'has-custom-background' : ''}`} id="top" style={shellStyle}>
+    <main className={`shell ${imageBackgroundActive ? 'has-custom-background' : ''}`} id="top" style={shellStyle}>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="OptionFlow 首頁">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -610,8 +816,8 @@ export default function Home() {
         <nav className="side-nav" aria-label="頁面切換">
           {([['overview', '總覽', '⌂'], ['positions', '持倉', '▦'], ['returns', '收益', '⌁']] as const).map(([section, label, icon]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={() => setActiveSection(section)}><i>{icon}</i><span>{label}</span></a>)}
           <div className="background-control">
-            <button type="button" className="background-trigger" onClick={() => backgroundInputRef.current?.click()} title={backgroundImage ? '更換背景圖片' : '加入背景圖片'}><i>▧</i><span>{backgroundImage ? '換背景' : '背景'}</span></button>
-            {backgroundImage && <button type="button" className="background-clear" onClick={clearBackground} aria-label="移除背景圖片">×</button>}
+            <button type="button" className="background-trigger" onClick={() => backgroundInputRef.current?.click()} title={backgroundImage ? '更換背景圖片' : '加入背景圖片'}><i>▧</i><span>{backgroundImage ? '換圖片' : '背景'}</span></button>
+            {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
             <input ref={backgroundInputRef} className="visually-hidden" type="file" accept="image/*" onChange={handleBackgroundUpload} />
           </div>
         </nav>
@@ -698,15 +904,31 @@ export default function Home() {
           </article>
         </section>
 
+        {drilledTicker && <StockTechnicalPanel
+          symbol={drilledTicker}
+          range={technicalRange}
+          data={technicalData}
+          loading={technicalLoading}
+          error={technicalError}
+          stockTrades={selectedStockTrades}
+          lotSavingId={lotSavingId}
+          onRangeChange={selectTechnicalRange}
+          onClose={returnToPositionsOverview}
+          onAddLot={() => setEditor({ ...blankTrade(), type: 'SDI', ticker: drilledTicker, event: 'STOCK', quoteMode: 'auto', currentPrice: technicalData?.symbol === drilledTicker ? technicalData.latestPrice : 0 })}
+          onSaveLot={saveStockLot}
+          onEditLot={(trade) => setEditor({ ...trade })}
+          onDeleteLot={(trade) => setDeleteCandidate(trade)}
+        />}
+
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
             <div><p className="eyebrow">Active book</p><h2>交易與持倉</h2></div>
             <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => drilledTicker ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
           </div>
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
-          <div className="filter-row">{([['all', '全部'], ['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? trades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : trades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : trade.type !== 'SDI').length}</span></button>)}</div>
+          <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? trades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : trades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : trade.type !== 'SDI').length}</span></button>)}</div>
           {positionView === 'visual' ? <div className="visual-positions">
-            <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>買入價 → 現價</span><span>損益／報酬率</span><span>組合占比</span><span /></div>
+            <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>買入價 → 現價</span><span>損益／報酬率</span><span>組合占比</span></div>
             {!loading && !visualPositions.length && <div className="visual-empty">沒有符合目前篩選條件的持倉。</div>}
             {loading && <div className="visual-empty">正在整理圖形化持倉…</div>}
             {!loading && visualPositions.map((position, index) => <article className="visual-position-row" key={position.ticker}>
@@ -716,7 +938,6 @@ export default function Home() {
               <div className="visual-price-flow"><div><span>買入／成交</span><strong>{money.format(position.entryPrice)}</strong></div><i>→</i><div><span>目前價格</span><strong>{money.format(position.currentPrice)}</strong></div></div>
               <div className={`visual-gain ${position.pnl >= 0 ? 'positive' : 'negative'}`}><strong>{position.pnl >= 0 ? '+' : ''}{money.format(position.pnl)}</strong><span>{position.roc >= 0 ? '▲' : '▼'} {percent.format(Math.abs(position.roc))}</span></div>
               <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%` }} /></b></div>
-              <button className="visual-action" onClick={() => openTickerDetails(position.ticker)} aria-label={`查看 ${position.ticker} 明細`}>→</button>
             </article>)}
           </div> : <div className="table-wrap">
             <table>
@@ -725,7 +946,7 @@ export default function Home() {
                 {loading && <tr><td colSpan={11} className="empty-state">正在載入你的交易紀錄…</td></tr>}
                 {!loading && !filteredTrades.length && <tr><td colSpan={11} className="empty-state">沒有符合目前篩選條件的交易。</td></tr>}
                 {filteredTrades.map(({ trade, pnl, roc }) => <tr key={trade.id}>
-                  <td><span className="symbol-cell"><CompanyLogo ticker={trade.ticker || 'OTHER'} compact /><strong>{trade.ticker || '—'}</strong></span></td>
+                  <td><button type="button" className="symbol-cell symbol-cell-button" onClick={() => trade.ticker && openTickerDetails(trade.ticker)}><CompanyLogo ticker={trade.ticker || 'OTHER'} compact /><strong>{trade.ticker || '—'}</strong></button></td>
                   <td><strong className="strategy-name">{trade.event}</strong><span className="subtle">{trade.type === 'SDI' ? 'Stock' : trade.type}</span></td>
                   <td><strong>{dateLabel(trade.openDate)}</strong><span className="subtle">Exp {dateLabel(trade.expiryDate)}</span></td>
                   <td>{trade.strike || '—'}</td><td>{trade.quantity}</td><td>{money.format(trade.entryPrice)}</td>

@@ -13,26 +13,35 @@ type YahooChart = {
   }> };
 };
 
+const yahooChartHosts = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'] as const;
+const fallbackUsdJpyRate = 150;
+
 async function historicalClose(ticker: string, date: string) {
   const target = new Date(`${date}T23:59:59Z`).getTime();
   const period1 = Math.floor((target - 8 * 86_400_000) / 1000);
   const period2 = Math.floor((target + 86_400_000) / 1000);
-  const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${period1}&period2=${period2}&interval=1d`, {
-    headers: { Accept: 'application/json', 'User-Agent': 'OptionFlow/1.0' },
-    cache: 'no-store',
-  });
-  if (!response.ok) throw new Error(`Historical quote unavailable for ${ticker}`);
-  const payload = await response.json() as YahooChart;
-  const result = payload.chart?.result?.[0];
-  const timestamps = result?.timestamp ?? [];
-  const closes = result?.indicators?.adjclose?.[0]?.adjclose ?? result?.indicators?.quote?.[0]?.close ?? [];
-  let latest: number | null = null;
-  timestamps.forEach((timestamp, index) => {
-    const close = closes[index];
-    if (timestamp * 1000 <= target && typeof close === 'number' && Number.isFinite(close)) latest = close;
-  });
-  if (latest === null) throw new Error(`Historical quote unavailable for ${ticker}`);
-  return latest;
+  for (const host of yahooChartHosts) {
+    try {
+      const response = await fetch(`https://${host}/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${period1}&period2=${period2}&interval=1d`, {
+        headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OptionFlow/1.0' },
+        cache: 'no-store',
+      });
+      if (!response.ok) continue;
+      const payload = await response.json() as YahooChart;
+      const result = payload.chart?.result?.[0];
+      const timestamps = result?.timestamp ?? [];
+      const closes = result?.indicators?.adjclose?.[0]?.adjclose ?? result?.indicators?.quote?.[0]?.close ?? [];
+      let latest: number | null = null;
+      timestamps.forEach((timestamp, index) => {
+        const close = closes[index];
+        if (timestamp * 1000 <= target && typeof close === 'number' && Number.isFinite(close)) latest = close;
+      });
+      if (latest !== null) return latest;
+    } catch {
+      // Try Yahoo's alternate chart host before falling back to the stored entry price.
+    }
+  }
+  throw new Error(`Historical quote unavailable for ${ticker}`);
 }
 
 export async function GET(request: Request) {
@@ -58,18 +67,33 @@ export async function GET(request: Request) {
       if (item.status === 'fulfilled') historicalPrices.set(item.value[0], item.value[1]);
     });
 
+    const hasJapaneseStocks = stockTickers.some((ticker) => ticker.toUpperCase().endsWith('.T'));
+    let usdJpyRate = fallbackUsdJpyRate;
+    let estimatedUsdJpy = false;
+    if (hasJapaneseStocks) {
+      try {
+        const historicalUsdJpy = await historicalClose('JPY=X', date);
+        if (historicalUsdJpy > 0) usdJpyRate = historicalUsdJpy;
+        else estimatedUsdJpy = true;
+      } catch {
+        estimatedUsdJpy = true;
+      }
+    }
+
     const groups = new Map<string, { label: string; value: number; tradeCount: number; estimated: boolean }>();
     for (const trade of trades) {
       const label = trade.ticker || '其他';
       const stock = trade.type === 'SDI' || trade.event === 'STOCK';
       const historicalPrice = stock && trade.ticker ? historicalPrices.get(trade.ticker) : undefined;
-      const value = stock
+      const nativeValue = stock
         ? (historicalPrice ?? trade.entryPrice) * Math.abs(trade.quantity)
         : trade.collateral || Math.abs(trade.entryPrice * trade.quantity * 100);
+      const japaneseStock = stock && Boolean(trade.ticker?.toUpperCase().endsWith('.T'));
+      const value = japaneseStock ? nativeValue / usdJpyRate : nativeValue;
       const group = groups.get(label) ?? { label, value: 0, tradeCount: 0, estimated: false };
       group.value += Math.max(0, value);
       group.tradeCount += 1;
-      group.estimated ||= stock && historicalPrice === undefined;
+      group.estimated ||= (stock && historicalPrice === undefined) || (japaneseStock && estimatedUsdJpy);
       groups.set(label, group);
     }
     const positions = [...groups.values()].sort((a, b) => b.value - a.value);
@@ -79,7 +103,7 @@ export async function GET(request: Request) {
       total: positions.reduce((sum, position) => sum + position.value, 0),
       tradeCount: trades.length,
       estimatedTickers: positions.filter((position) => position.estimated).map((position) => position.label),
-      source: 'Yahoo Finance historical adjusted close; option exposure uses collateral',
+      source: 'Yahoo Finance historical adjusted close; Japanese equities converted to USD with historical USD/JPY; option exposure uses collateral',
     }, { headers: { 'Cache-Control': 'private, max-age=300' } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to load allocation history.' }, { status: 502 });

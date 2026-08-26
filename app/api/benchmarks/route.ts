@@ -75,16 +75,23 @@ function yahooConfig(mode: Mode) {
 }
 
 async function fetchChart(symbol: string, mode: Mode) {
-  const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${yahooConfig(mode)}`, {
-    headers: { Accept: 'application/json', 'User-Agent': 'OptionFlow/1.0' },
-    cache: 'no-store',
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!response.ok) throw new Error(`${symbol} history is unavailable.`);
-  const payload = await response.json() as ChartPayload;
-  const result = payload.chart?.result?.[0];
-  if (!result) throw new Error(`${symbol} history is unavailable.`);
-  return result;
+  let failure: Error | null = null;
+  for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
+    try {
+      const response = await fetch(`https://${host}/v8/finance/chart/${encodeURIComponent(symbol)}?${yahooConfig(mode)}`, {
+        headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OptionFlow/1.0' },
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error(`${symbol} history returned ${response.status}.`);
+      const payload = await response.json() as ChartPayload;
+      const result = payload.chart?.result?.[0];
+      if (result) return result;
+      throw new Error(`${symbol} history returned no data.`);
+    } catch (error) {
+      failure = error instanceof Error ? error : new Error(`${symbol} history is unavailable.`);
+    }
+  }
+  throw failure ?? new Error(`${symbol} history is unavailable.`);
 }
 
 function chartPoints(result: ChartResult, adjusted: boolean) {
@@ -144,21 +151,21 @@ function emptyMarket(config: MarketConfig, mode: Mode) {
 }
 
 export async function GET(request: Request) {
-  const modeParam = new URL(request.url).searchParams.get('mode');
+  const params = new URL(request.url).searchParams;
+  const modeParam = params.get('mode');
+  const scope = params.get('scope') === 'markets' ? 'markets' : params.get('scope') === 'benchmarks' ? 'benchmarks' : 'all';
   const mode: Mode = modeParam === 'day' || modeParam === 'week' || modeParam === 'year' ? modeParam : 'month';
-  const results = await Promise.allSettled([
-    benchmarkReturns('SPY', mode),
-    benchmarkReturns('BOXX', mode),
-    ...marketConfigs.map((config) => marketHistory(config, mode)),
-  ]);
   const emptyReturns = bucketKeys(mode).map(() => 0);
-  const spy = results[0].status === 'fulfilled' ? results[0].value as number[] : emptyReturns;
-  const boxx = results[1].status === 'fulfilled' ? results[1].value as number[] : emptyReturns;
-  const markets = marketConfigs.map((config, index) => {
-    const result = results[index + 2];
-    return result.status === 'fulfilled' ? result.value : emptyMarket(config, mode);
-  });
-  const warnings = results.flatMap((result, index) => result.status === 'rejected' ? [index < 2 ? ['SPY', 'BOXX'][index] : marketConfigs[index - 2].symbol] : []);
+  const benchmarkResults = scope === 'markets' ? [] : await Promise.allSettled([benchmarkReturns('SPY', mode), benchmarkReturns('BOXX', mode)]);
+  const marketResults = scope === 'benchmarks' ? [] : await Promise.allSettled(marketConfigs.map((config) => marketHistory(config, mode)));
+  const spy = benchmarkResults[0]?.status === 'fulfilled' ? benchmarkResults[0].value : emptyReturns;
+  const boxx = benchmarkResults[1]?.status === 'fulfilled' ? benchmarkResults[1].value : emptyReturns;
+  const markets = marketConfigs.map((config, index) => marketResults[index]?.status === 'fulfilled' ? marketResults[index].value : emptyMarket(config, mode));
+  const warnings = [
+    ...benchmarkResults.flatMap((result, index) => result.status === 'rejected' ? [['SPY', 'BOXX'][index]] : []),
+    ...marketResults.flatMap((result, index) => result.status === 'rejected' ? [marketConfigs[index].symbol] : []),
+  ];
+  if (warnings.length) console.warn(`Market data unavailable: ${warnings.join(', ')}`);
   return NextResponse.json({
     mode,
     SPY: spy,
@@ -167,5 +174,5 @@ export async function GET(request: Request) {
     warnings,
     updatedAt: new Date().toISOString(),
     source: 'Yahoo Finance — adjusted close and daily close; Treasury prices use continuous futures proxies',
-  }, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=900' } });
+  }, { headers: { 'Cache-Control': scope === 'markets' ? 'public, max-age=60, stale-while-revalidate=180' : 'public, max-age=300, stale-while-revalidate=900' } });
 }

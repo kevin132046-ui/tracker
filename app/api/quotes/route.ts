@@ -12,13 +12,21 @@ type YahooChart = {
 };
 
 async function fetchLatestPrice(ticker: string) {
-  const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&includePrePost=true`, {
-    headers: { Accept: 'application/json', 'User-Agent': 'OptionFlow/1.0' },
-    cache: 'no-store',
-    signal: AbortSignal.timeout(6000),
-  });
-  if (!response.ok) throw new Error(`Quote unavailable for ${ticker}`);
-  const payload = await response.json() as YahooChart;
+  let payload: YahooChart | null = null;
+  for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
+    try {
+      const response = await fetch(`https://${host}/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&includePrePost=true`, {
+        headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OptionFlow/1.0' },
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error(`Quote unavailable for ${ticker}`);
+      payload = await response.json() as YahooChart;
+      if (payload.chart?.result?.[0]) break;
+    } catch {
+      payload = null;
+    }
+  }
+  if (!payload) throw new Error(`Quote unavailable for ${ticker}`);
   const result = payload.chart?.result?.[0];
   const timestamps = result?.timestamp ?? [];
   const closes = result?.indicators?.quote?.[0]?.close ?? [];

@@ -20,6 +20,7 @@ type Trade = {
   notes: string;
   status: 'open' | 'closed';
   quoteMode: 'auto' | 'manual';
+  market?: 'US' | 'JP';
   sourceRow?: number | null;
 };
 
@@ -65,7 +66,8 @@ type BenchmarkMarket = {
   change: number | null;
   changePercent: number | null;
 };
-type BenchmarkData = { SPY: number[]; BOXX: number[]; markets: BenchmarkMarket[] };
+type BenchmarkData = { SPY: number[]; BOXX: number[] };
+type MacroMarketData = { mode: RangeMode | null; markets: BenchmarkMarket[]; updatedAt: string | null };
 type BackgroundMode = 'default' | 'image';
 
 const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
@@ -73,15 +75,23 @@ const companyNames: Record<string, string> = {
   AAPL: 'Apple', AMZN: 'Amazon', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
   CNC: 'Centene', META: 'Meta Platforms', MSFT: 'Microsoft', NVDA: 'NVIDIA', SPGI: 'S&P Global', SPY: 'SPDR S&P 500',
   TRV: 'The Travelers Companies', TSLA: 'Tesla', TTWO: 'Take-Two Interactive', V: 'Visa',
+  '7203.T': 'Toyota Motor', '6758.T': 'Sony Group', '9984.T': 'SoftBank Group', '6861.T': 'Keyence',
+  '8306.T': 'Mitsubishi UFJ Financial Group', '8035.T': 'Tokyo Electron', '9983.T': 'Fast Retailing', '7974.T': 'Nintendo',
 };
 const panelRatioKey = 'optionflow-analytics-panel-ratio';
 const backgroundImageKey = 'optionflow-custom-background';
 const backgroundModeKey = 'optionflow-background-mode';
+const usdJpyRateKey = 'optionflow-usdjpy-rate';
 const clampPanelRatio = (value: number) => Math.min(72, Math.max(46, value));
 const initialPanelRatio = () => {
   if (typeof window === 'undefined') return 60;
   const savedRatio = Number(window.localStorage.getItem(panelRatioKey));
   return Number.isFinite(savedRatio) && savedRatio > 0 ? clampPanelRatio(savedRatio) : 60;
+};
+const initialUsdJpyRate = () => {
+  if (typeof window === 'undefined') return 150;
+  const savedRate = Number(window.localStorage.getItem(usdJpyRateKey));
+  return Number.isFinite(savedRate) && savedRate > 50 ? savedRate : 150;
 };
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 const monthsBefore = (dateString: string, months: number) => {
@@ -94,9 +104,22 @@ const monthsBefore = (dateString: string, months: number) => {
   return date.toISOString().slice(0, 10);
 };
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+const yenMoney = new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const percent = new Intl.NumberFormat('zh-TW', { style: 'percent', maximumFractionDigits: 1 });
 const precisePercent = new Intl.NumberFormat('zh-TW', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dateLabel = (date: string | null) => date ? new Intl.DateTimeFormat('zh-TW', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${date}T00:00:00Z`)) : '—';
+const clockFormatter = (timeZone: string) => new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+const easternClockFormatter = clockFormatter('America/New_York');
+const japanClockFormatter = clockFormatter('Asia/Tokyo');
+const easternZoneFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' });
+const easternZoneName = (timestamp: number) => easternZoneFormatter.formatToParts(new Date(timestamp)).find((part) => part.type === 'timeZoneName')?.value ?? 'ET';
+const isJapaneseTicker = (ticker: string | null | undefined) => Boolean(ticker?.toUpperCase().endsWith('.T'));
+const nativeMoney = (ticker: string | null | undefined, value: number) => isJapaneseTicker(ticker) ? yenMoney.format(value) : money.format(value);
+const normalizeTickerForMarket = (ticker: string | null | undefined, market: 'US' | 'JP') => {
+  const normalized = String(ticker ?? '').trim().toUpperCase();
+  return market === 'JP' && /^\d{4}$/.test(normalized) ? `${normalized}.T` : normalized;
+};
+const normalizedUsdAmount = (trade: Trade, value: number, usdJpyRate: number) => (trade.market === 'JP' || isJapaneseTicker(trade.ticker)) && usdJpyRate > 0 ? value / usdJpyRate : value;
 
 function selectZeroNumberInput(target: EventTarget | null) {
   if (!(target instanceof HTMLInputElement) || (target.type !== 'number' && target.inputMode !== 'decimal') || target.readOnly || target.disabled) return;
@@ -107,23 +130,26 @@ function blankTrade(): Trade {
   return {
     id: 0, type: 'Sell', openDate: today(), expiryDate: null, closeDate: null,
     ticker: '', event: 'PUT', strike: '', quantity: 1, entryPrice: 0,
-    currentPrice: 0, fees: 0, collateral: 0, notes: '', status: 'open', quoteMode: 'manual',
+    currentPrice: 0, fees: 0, collateral: 0, notes: '', status: 'open', quoteMode: 'manual', market: 'US',
   };
 }
 
-function metrics(trade: Trade) {
+function metrics(trade: Trade, usdJpyRate = 1) {
   const current = trade.currentPrice;
   if (current === null) return { pnl: 0, days: 0, roc: 0, annualRoc: 0, marketValue: 0 };
   const stock = trade.type === 'SDI' || trade.event === 'STOCK';
   const multiplier = stock ? 1 : 100;
   const direction = trade.type.toLowerCase() === 'sell' ? -1 : 1;
-  const pnl = (current - trade.entryPrice) * trade.quantity * multiplier * direction - trade.fees;
+  const nativePnl = (current - trade.entryPrice) * trade.quantity * multiplier * direction - trade.fees;
+  const pnl = normalizedUsdAmount(trade, nativePnl, usdJpyRate);
   const end = new Date(`${trade.closeDate ?? today()}T00:00:00Z`).getTime();
   const start = new Date(`${trade.openDate}T00:00:00Z`).getTime();
   const days = Math.max(1, Math.round((end - start) / 86_400_000));
-  const roc = trade.collateral > 0 ? pnl / trade.collateral : 0;
+  const collateralUsd = normalizedUsdAmount(trade, trade.collateral, usdJpyRate);
+  const roc = collateralUsd > 0 ? pnl / collateralUsd : 0;
   const annualRoc = roc * (365 / days);
-  const marketValue = stock ? current * trade.quantity : Math.max(trade.collateral, current * trade.quantity * 100);
+  const nativeMarketValue = stock ? current * trade.quantity : Math.max(trade.collateral, current * trade.quantity * 100);
+  const marketValue = normalizedUsdAmount(trade, nativeMarketValue, usdJpyRate);
   return { pnl, days, roc, annualRoc, marketValue };
 }
 
@@ -135,7 +161,7 @@ function startOfWeek(date: Date) {
   return copy;
 }
 
-function buildReturnSeries(trades: Trade[], mode: RangeMode) {
+function buildReturnSeries(trades: Trade[], mode: RangeMode, usdJpyRate = 1) {
   const now = new Date(`${today()}T00:00:00Z`);
   const buckets: Array<{ key: string; label: string; pnl: number; capital: number }> = [];
   if (mode === 'day') {
@@ -171,8 +197,8 @@ function buildReturnSeries(trades: Trade[], mode: RangeMode) {
         : mode === 'month' ? activityDate.toISOString().slice(0, 7) : String(activityDate.getUTCFullYear());
     const bucket = buckets.find((item) => item.key === key);
     if (bucket) {
-      bucket.pnl += metrics(trade).pnl;
-      bucket.capital += trade.collateral || metrics(trade).marketValue;
+      bucket.pnl += metrics(trade, usdJpyRate).pnl;
+      bucket.capital += trade.collateral ? normalizedUsdAmount(trade, trade.collateral, usdJpyRate) : metrics(trade, usdJpyRate).marketValue;
     }
   }
   return buckets.map((bucket) => ({ ...bucket, value: bucket.capital > 0 ? bucket.pnl / bucket.capital : 0 }));
@@ -237,6 +263,20 @@ const MacroMarketCard = memo(function MacroMarketCard({ market, startLabel, endL
   </article>;
 });
 
+const LiveMarketClocks = memo(function LiveMarketClocks({ lastQuoteAt }: { lastQuoteAt: string | null }) {
+  const [clockNow, setClockNow] = useState<number | null>(null);
+  useEffect(() => {
+    const updateClock = () => setClockNow(Date.now());
+    updateClock();
+    const timer = window.setInterval(updateClock, 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const easternTimeLabel = clockNow === null ? '--:--:-- [ET]' : `${easternClockFormatter.format(new Date(clockNow))} [${easternZoneName(clockNow)}]`;
+  const japanTimeLabel = clockNow === null ? '--:--:-- [JST]' : `${japanClockFormatter.format(new Date(clockNow))} [JST]`;
+  const lastQuoteLabel = lastQuoteAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(lastQuoteAt)) : '等待首次更新';
+  return <div className="as-of"><span>即時市場時間</span><div className="live-market-clocks"><div><small>美東</small><strong>{easternTimeLabel}</strong></div><div><small>日本</small><strong>{japanTimeLabel}</strong></div></div><p>報價每 60 秒更新 · 上次 {lastQuoteLabel}</p></div>;
+});
+
 function chartBounds(values: Array<number | null>, includeZero = false) {
   const valid = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
   if (!valid.length) return { min: 0, max: 1 };
@@ -295,19 +335,21 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
   const totalQuantity = summaryLots.reduce((sum, trade) => sum + Math.abs(trade.quantity), 0);
   const averageEntry = totalQuantity ? summaryLots.reduce((sum, trade) => sum + trade.entryPrice * Math.abs(trade.quantity), 0) / totalQuantity : 0;
   const firstPurchaseDate = summaryLots.reduce((first, trade) => !first || trade.openDate < first ? trade.openDate : first, '');
+  const currencySymbol = isJapaneseTicker(symbol) ? '¥' : '$';
+  const priceMoney = (value: number) => nativeMoney(symbol, value);
 
   return <section className="panel stock-analysis-panel" id="stock-analysis" aria-live="polite">
     <header className="technical-header">
       <div className="technical-title"><CompanyLogo ticker={symbol} /><div><p className="eyebrow">Technical view</p><h2>{symbol} 股票走勢</h2><span>日線價格 · RSI 14 · MACD 12/26/9</span></div></div>
-      {activeData && <div className="technical-quote"><span>最新收盤</span><strong>{money.format(activeData.latestPrice)}</strong><b className={activeData.change >= 0 ? 'positive' : 'negative'}>{activeData.change >= 0 ? '+' : ''}{money.format(activeData.change)} · {percent.format(activeData.changePercent)}</b></div>}
+      {activeData && <div className="technical-quote"><span>最新收盤</span><strong>{priceMoney(activeData.latestPrice)}</strong><b className={activeData.change >= 0 ? 'positive' : 'negative'}>{activeData.change >= 0 ? '+' : ''}{priceMoney(activeData.change)} · {percent.format(activeData.changePercent)}</b></div>}
       <div className="technical-actions"><div className="segmented" aria-label="技術走勢期間">{([['3mo', '3月'], ['6mo', '6月'], ['1y', '1年']] as const).map(([value, label]) => <button key={value} className={range === value ? 'selected' : ''} onClick={() => onRangeChange(value)}>{label}</button>)}</div><button type="button" className="technical-close" onClick={onClose}>返回持倉總覽</button></div>
     </header>
     {loading && !activeData && <div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 日線資料…</div>}
     {!loading && error && <div className="technical-state error">{error}</div>}
     {activeData && <div className={`technical-grid ${loading ? 'is-refreshing' : ''}`}>
       <article className="technical-card price-card">
-        <div className="technical-card-heading"><div><span>Price trend</span><h3>價格走勢</h3></div><p><strong>{money.format(Math.max(...closes))}</strong>期間高點</p></div>
-        <div className="technical-chart large"><span className="technical-axis top">{money.format(priceBounds.max)}</span><span className="technical-axis bottom">{money.format(priceBounds.min)}</span><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`${symbol} 日線價格走勢`}><defs><linearGradient id={`price-fill-${symbol}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".25"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="93" y2="93" className="technical-grid-line"/><polygon points={`0,93 ${technicalPoints(closes, priceBounds.min, priceBounds.max)} 100,93`} fill={`url(#price-fill-${symbol})`}/><polyline points={technicalPoints(closes, priceBounds.min, priceBounds.max)} className="technical-price-line"/></svg></div>
+        <div className="technical-card-heading"><div><span>Price trend</span><h3>價格走勢</h3></div><p><strong>{priceMoney(Math.max(...closes))}</strong>期間高點</p></div>
+        <div className="technical-chart large"><span className="technical-axis top">{priceMoney(priceBounds.max)}</span><span className="technical-axis bottom">{priceMoney(priceBounds.min)}</span><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`${symbol} 日線價格走勢`}><defs><linearGradient id={`price-fill-${symbol}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".25"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="93" y2="93" className="technical-grid-line"/><polygon points={`0,93 ${technicalPoints(closes, priceBounds.min, priceBounds.max)} 100,93`} fill={`url(#price-fill-${symbol})`}/><polyline points={technicalPoints(closes, priceBounds.min, priceBounds.max)} className="technical-price-line"/></svg></div>
         <div className="technical-dates">{dateIndexes.map((index) => <span key={points[index].date}>{new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric' }).format(new Date(`${points[index].date}T00:00:00Z`))}</span>)}</div>
       </article>
       <article className="technical-card indicator-card">
@@ -328,7 +370,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
     </div>}
     <section className="stock-lots-section">
       <div className="stock-lots-heading"><div><p className="eyebrow">Cost basis</p><h3>買入均價與購買紀錄</h3><span>直接修改日期或均價；儲存後持倉、損益與圖表會立即重算。</span></div><button type="button" onClick={onAddLot}>＋新增 {symbol} 買入紀錄</button></div>
-      <div className="stock-lot-summary"><div><span>股票加權均價</span><strong>{summaryLots.length ? money.format(averageEntry) : '—'}</strong></div><div><span>持股數量</span><strong>{totalQuantity || '—'}</strong></div><div><span>首次買入日期</span><strong>{firstPurchaseDate ? dateLabel(firstPurchaseDate) : '—'}</strong></div><div><span>購買紀錄</span><strong>{stockTrades.length} 筆</strong></div></div>
+      <div className="stock-lot-summary"><div><span>股票加權均價</span><strong>{summaryLots.length ? priceMoney(averageEntry) : '—'}</strong></div><div><span>持股數量</span><strong>{totalQuantity || '—'}</strong></div><div><span>首次買入日期</span><strong>{firstPurchaseDate ? dateLabel(firstPurchaseDate) : '—'}</strong></div><div><span>購買紀錄</span><strong>{stockTrades.length} 筆</strong></div></div>
       <div className="stock-lot-list">
         {!stockTrades.length && <div className="stock-lot-empty">這個標的目前沒有股票買入紀錄；可使用右上角按鈕新增。</div>}
         {stockTrades.map((trade) => <form key={`${trade.id}-${trade.openDate}-${trade.entryPrice}`} className="stock-lot-row" onSubmit={(event) => {
@@ -338,14 +380,14 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
         }}>
           <div className="stock-lot-identity"><CompanyLogo ticker={symbol} compact /><div><strong>紀錄 #{trade.id}</strong><span className={`status ${trade.status}`}><i />{trade.status === 'open' ? '未平倉' : '已平倉'}</span></div></div>
           <label>買入日期<input required name="openDate" type="date" defaultValue={trade.openDate} /></label>
-          <label>買入均價<span className="stock-lot-money"><i>$</i><input required name="entryPrice" min="0" step="0.01" type="number" defaultValue={trade.entryPrice} /></span></label>
+          <label>買入均價<span className="stock-lot-money"><i>{currencySymbol}</i><input required name="entryPrice" min="0" step="0.01" type="number" defaultValue={trade.entryPrice} /></span></label>
           <div className="stock-lot-readonly"><span>數量</span><strong>{trade.quantity}</strong></div>
-          <div className="stock-lot-readonly"><span>目前價格</span><strong>{trade.currentPrice === null ? '未設定' : money.format(trade.currentPrice)}</strong></div>
+          <div className="stock-lot-readonly"><span>目前價格</span><strong>{trade.currentPrice === null ? '未設定' : priceMoney(trade.currentPrice)}</strong></div>
           <div className="stock-lot-actions"><button type="submit" className="lot-save" disabled={lotSavingId === trade.id}>{lotSavingId === trade.id ? '儲存中…' : '儲存'}</button><button type="button" onClick={() => onEditLot(trade)}>完整編輯</button><button type="button" className="delete" onClick={() => onDeleteLot(trade)}>刪除</button></div>
         </form>)}
       </div>
     </section>
-    <footer className="technical-note">技術指標依美股每日調整收盤價計算，僅供持倉追蹤，不構成投資建議。</footer>
+    <footer className="technical-note">技術指標依交易所每日調整收盤價計算，僅供持倉追蹤，不構成投資建議。</footer>
   </section>;
 }, (previous, next) => previous.symbol === next.symbol
   && previous.range === next.range
@@ -362,6 +404,7 @@ export default function Home() {
   const [lotSavingId, setLotSavingId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [rangeMode, setRangeMode] = useState<RangeMode>('month');
+  const [macroRangeMode, setMacroRangeMode] = useState<RangeMode>('month');
   const [allocationChartMode, setAllocationChartMode] = useState<AllocationChartMode>('donut');
   const [allocationGroupSelection, setAllocationGroupSelection] = useState<{ label: string; members: string[] } | null>(null);
   const [filter, setFilter] = useState<FilterMode>('all');
@@ -376,8 +419,13 @@ export default function Home() {
   const [toast, setToast] = useState('');
   const [lastQuoteAt, setLastQuoteAt] = useState<string | null>(null);
   const [marketSnapshots, setMarketSnapshots] = useState<Record<string, LiveQuote>>({});
-  const [benchmarks, setBenchmarks] = useState<{ mode: RangeMode | null } & BenchmarkData>({ mode: null, SPY: [], BOXX: [], markets: [] });
+  const [usdJpyRate, setUsdJpyRate] = useState(initialUsdJpyRate);
+  const [benchmarks, setBenchmarks] = useState<{ mode: RangeMode | null } & BenchmarkData>({ mode: null, SPY: [], BOXX: [] });
   const [benchmarkLoading, setBenchmarkLoading] = useState(false);
+  const [macroMarkets, setMacroMarkets] = useState<MacroMarketData>({ mode: null, markets: [], updatedAt: null });
+  const [macroLoading, setMacroLoading] = useState(false);
+  const [macroError, setMacroError] = useState('');
+  const [macroRefreshKey, setMacroRefreshKey] = useState(0);
   const [symbolSuggestions, setSymbolSuggestions] = useState<SymbolSuggestion[]>([]);
   const [symbolLoading, setSymbolLoading] = useState(false);
   const [symbolFocused, setSymbolFocused] = useState(false);
@@ -403,6 +451,7 @@ export default function Home() {
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const editorQuoteCacheRef = useRef(new Map<string, { quote: LiveQuote; fetchedAt: number }>());
   const benchmarkCacheRef = useRef(new Map<RangeMode, BenchmarkData>());
+  const macroCacheRef = useRef(new Map<RangeMode, { markets: BenchmarkMarket[]; updatedAt: string; fetchedAt: number }>());
   const technicalCacheRef = useRef(new Map<string, TechnicalData>());
   const allocationHistoryCacheRef = useRef(new Map<string, AllocationHistory>());
   const quoteRefreshInFlightRef = useRef(false);
@@ -517,20 +566,57 @@ export default function Home() {
     }
     const controller = new AbortController();
     setBenchmarkLoading(true);
-    fetch(`/api/benchmarks?mode=${rangeMode}`, { cache: 'no-store', signal: controller.signal })
+    fetch(`/api/benchmarks?mode=${rangeMode}&scope=benchmarks`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json() as { SPY?: number[]; BOXX?: number[]; markets?: BenchmarkMarket[]; error?: string };
+        const payload = await response.json() as { SPY?: number[]; BOXX?: number[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? '基準資料暫時無法取得');
         if (!controller.signal.aborted) {
-          const next = { SPY: payload.SPY ?? [], BOXX: payload.BOXX ?? [], markets: payload.markets ?? [] };
+          const next = { SPY: payload.SPY ?? [], BOXX: payload.BOXX ?? [] };
           benchmarkCacheRef.current.set(rangeMode, next);
           setBenchmarks({ mode: rangeMode, ...next });
         }
       })
-      .catch(() => { if (!controller.signal.aborted) setBenchmarks({ mode: rangeMode, SPY: [], BOXX: [], markets: [] }); })
+      .catch(() => { if (!controller.signal.aborted) setBenchmarks({ mode: rangeMode, SPY: [], BOXX: [] }); })
       .finally(() => { if (!controller.signal.aborted) setBenchmarkLoading(false); });
     return () => controller.abort();
   }, [rangeMode]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let inFlight = false;
+    const cached = macroCacheRef.current.get(macroRangeMode);
+    if (cached) setMacroMarkets({ mode: macroRangeMode, markets: cached.markets, updatedAt: cached.updatedAt });
+    else setMacroLoading(true);
+    const loadMarkets = async (quiet = false) => {
+      if (inFlight) return;
+      inFlight = true;
+      if (!quiet) setMacroLoading(true);
+      try {
+        const response = await fetch(`/api/benchmarks?mode=${macroRangeMode}&scope=markets&_=${Date.now()}`, { cache: 'no-store', signal: controller.signal });
+        const payload = await response.json() as { markets?: BenchmarkMarket[]; updatedAt?: string; warnings?: string[]; error?: string };
+        if (!response.ok) throw new Error(payload.error ?? '宏觀行情暫時無法取得');
+        if (controller.signal.aborted) return;
+        const updatedAt = payload.updatedAt ?? new Date().toISOString();
+        const nextMarkets = payload.markets ?? [];
+        const fxRate = nextMarkets.find((market) => market.id === 'USDJPY')?.latest;
+        if (typeof fxRate === 'number' && Number.isFinite(fxRate) && fxRate > 50) {
+          setUsdJpyRate(fxRate);
+          window.localStorage.setItem(usdJpyRateKey, String(fxRate));
+        }
+        macroCacheRef.current.set(macroRangeMode, { markets: nextMarkets, updatedAt, fetchedAt: Date.now() });
+        setMacroMarkets({ mode: macroRangeMode, markets: nextMarkets, updatedAt });
+        setMacroError(payload.warnings?.length ? '部分資料源暫時無法更新，系統會自動重試' : '');
+      } catch (error) {
+        if (!controller.signal.aborted) setMacroError(error instanceof Error ? error.message : '宏觀行情暫時無法取得');
+      } finally {
+        inFlight = false;
+        if (!controller.signal.aborted) setMacroLoading(false);
+      }
+    };
+    void loadMarkets(Boolean(cached));
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void loadMarkets(true); }, 60_000);
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [macroRangeMode, macroRefreshKey]);
 
   useEffect(() => {
     const currentDate = today();
@@ -611,10 +697,16 @@ export default function Home() {
     };
   }, [resizingPanels, updatePanelRatio]);
 
+  const editorMarket: 'US' | 'JP' = editor?.market ?? (isJapaneseTicker(editor?.ticker) ? 'JP' : 'US');
+  const editorCurrencySymbol = editorMarket === 'JP' ? '¥' : '$';
   const tickerQuery = editor?.ticker?.trim() ?? '';
   const editorAutoQuoteTicker = editor?.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto'
-    ? tickerQuery.toUpperCase()
+    ? normalizeTickerForMarket(tickerQuery, editorMarket)
     : '';
+  const editorDisplayTicker = normalizeTickerForMarket(tickerQuery, editorMarket);
+  const editorPriceMoney = (value: number) => editorMarket === 'JP' ? yenMoney.format(value) : money.format(value);
+  const editorPreviewTrade = editor ? { ...editor, ticker: editorDisplayTicker, market: editorMarket } : null;
+  const editorPreviewMetrics = editorPreviewTrade ? metrics(editorPreviewTrade, usdJpyRate) : null;
   useEffect(() => {
     if (!symbolFocused || !tickerQuery) {
       const clearResults = window.setTimeout(() => {
@@ -627,7 +719,7 @@ export default function Home() {
     const timer = window.setTimeout(async () => {
       setSymbolLoading(true);
       try {
-        const response = await fetch(`/api/symbols?q=${encodeURIComponent(tickerQuery)}`, { signal: controller.signal });
+        const response = await fetch(`/api/symbols?q=${encodeURIComponent(tickerQuery)}&market=${editorMarket}`, { signal: controller.signal });
         const payload = await response.json() as { suggestions?: SymbolSuggestion[] };
         if (!response.ok) throw new Error('Ticker search unavailable');
         setSymbolSuggestions(payload.suggestions ?? []);
@@ -642,7 +734,7 @@ export default function Home() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [tickerQuery, symbolFocused]);
+  }, [editorMarket, tickerQuery, symbolFocused]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -656,7 +748,7 @@ export default function Home() {
 
       const cached = editorQuoteCacheRef.current.get(editorAutoQuoteTicker);
       if (cached && Date.now() - cached.fetchedAt < 45_000) {
-        setEditor((current) => current?.type === 'SDI' && current.status === 'open' && current.quoteMode === 'auto' && current.ticker?.trim().toUpperCase() === editorAutoQuoteTicker
+        setEditor((current) => current?.type === 'SDI' && current.status === 'open' && current.quoteMode === 'auto' && normalizeTickerForMarket(current.ticker, current.market ?? (isJapaneseTicker(current.ticker) ? 'JP' : 'US')) === editorAutoQuoteTicker
           ? { ...current, currentPrice: cached.quote.price }
           : current);
         setEditorQuote(cached.quote);
@@ -677,7 +769,7 @@ export default function Home() {
         }
         const quote = payload.quote;
         editorQuoteCacheRef.current.set(editorAutoQuoteTicker, { quote, fetchedAt: Date.now() });
-        setEditor((current) => current?.type === 'SDI' && current.status === 'open' && current.quoteMode === 'auto' && current.ticker?.trim().toUpperCase() === editorAutoQuoteTicker
+        setEditor((current) => current?.type === 'SDI' && current.status === 'open' && current.quoteMode === 'auto' && normalizeTickerForMarket(current.ticker, current.market ?? (isJapaneseTicker(current.ticker) ? 'JP' : 'US')) === editorAutoQuoteTicker
           ? { ...current, currentPrice: quote.price }
           : current);
         setEditorQuote(quote);
@@ -728,22 +820,22 @@ export default function Home() {
   }, [drilledTicker, technicalRange]);
 
   const selectSymbol = useCallback((suggestion: SymbolSuggestion) => {
-    setEditor((current) => current ? { ...current, ticker: suggestion.symbol } : current);
+    setEditor((current) => current ? { ...current, ticker: suggestion.symbol, market: isJapaneseTicker(suggestion.symbol) ? 'JP' : 'US' } : current);
     setSymbolSuggestions([]);
     setSymbolFocused(false);
   }, []);
 
-  const enriched = useMemo(() => trades.map((trade) => ({ trade, ...metrics(trade) })), [trades]);
+  const enriched = useMemo(() => trades.map((trade) => ({ trade, ...metrics(trade, usdJpyRate) })), [trades, usdJpyRate]);
   const openTrades = useMemo(() => enriched.filter((item) => item.trade.status === 'open'), [enriched]);
   const closedTrades = useMemo(() => enriched.filter((item) => item.trade.status === 'closed'), [enriched]);
   const openPnl = openTrades.reduce((sum, item) => sum + item.pnl, 0);
   const trackedValue = openTrades.reduce((sum, item) => sum + item.marketValue, 0);
-  const capitalAtRisk = openTrades.reduce((sum, item) => sum + item.trade.collateral, 0);
+  const capitalAtRisk = openTrades.reduce((sum, item) => sum + normalizedUsdAmount(item.trade, item.trade.collateral, usdJpyRate), 0);
   const annualRocItems = enriched.filter((item) => item.trade.collateral > 0 && Number.isFinite(item.annualRoc));
   const averageAnnualRoc = annualRocItems.length ? annualRocItems.reduce((sum, item) => sum + item.annualRoc, 0) / annualRocItems.length : 0;
 
-  const returnSeries = useMemo(() => buildReturnSeries(trades, rangeMode), [trades, rangeMode]);
-  const activeBenchmarks = benchmarks.mode === rangeMode ? benchmarks : { mode: rangeMode, SPY: [], BOXX: [], markets: [] };
+  const returnSeries = useMemo(() => buildReturnSeries(trades, rangeMode, usdJpyRate), [trades, rangeMode, usdJpyRate]);
+  const activeBenchmarks = benchmarks.mode === rangeMode ? benchmarks : { mode: rangeMode, SPY: [], BOXX: [] };
   const chartStep = .05;
   const chartValues = [...returnSeries.map((item) => item.value), ...activeBenchmarks.SPY, ...activeBenchmarks.BOXX].filter(Number.isFinite);
   const chartStepCount = Math.max(1, Math.ceil(Math.max(0, ...chartValues.map(Math.abs)) / chartStep));
@@ -759,6 +851,10 @@ export default function Home() {
   const spyPoints = pointsFor(activeBenchmarks.SPY);
   const boxxPoints = pointsFor(activeBenchmarks.BOXX);
   const rangeModeLabel = rangeMode === 'day' ? '日' : rangeMode === 'week' ? '週' : rangeMode === 'month' ? '月' : '年';
+  const macroRangeModeLabel = macroRangeMode === 'day' ? '日' : macroRangeMode === 'week' ? '週' : macroRangeMode === 'month' ? '月' : '年';
+  const macroTimeline = useMemo(() => buildReturnSeries([], macroRangeMode), [macroRangeMode]);
+  const activeMacroMarkets = macroMarkets.mode === macroRangeMode ? macroMarkets.markets : [];
+  const macroUpdatedLabel = macroMarkets.updatedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(macroMarkets.updatedAt)) : '等待更新';
   const chartDateStep = Math.max(1, Math.ceil((returnSeries.length - 1) / 5));
 
   const currentAllocationDate = today();
@@ -861,7 +957,7 @@ export default function Home() {
       group.items.push(item);
       group.marketValue += item.marketValue;
       group.pnl += item.pnl;
-      group.capital += item.trade.collateral || Math.abs(item.trade.entryPrice * item.trade.quantity * multiplier);
+      group.capital += normalizedUsdAmount(item.trade, item.trade.collateral || Math.abs(item.trade.entryPrice * item.trade.quantity * multiplier), usdJpyRate);
       group.entryWeighted += item.trade.entryPrice * units;
       group.currentWeighted += (item.trade.currentPrice ?? item.trade.entryPrice) * units;
       group.priceWeight += units;
@@ -872,14 +968,14 @@ export default function Home() {
     const total = grouped.reduce((sum, item) => sum + Math.max(0, item.marketValue), 0) || 1;
     return grouped.map((group) => ({
       ...group,
-      company: companyNames[group.ticker] ?? '美股／ETF 持倉',
+      company: companyNames[group.ticker] ?? (isJapaneseTicker(group.ticker) ? '日本股票持倉' : '美股／ETF 持倉'),
       entryPrice: group.entryWeighted / group.priceWeight,
       currentPrice: group.currentWeighted / group.priceWeight,
       roc: group.capital > 0 ? group.pnl / group.capital : 0,
       share: Math.max(0, group.marketValue) / total,
       strategy: [...group.strategies].slice(0, 2).join(' · '),
     }));
-  }, [filteredTrades]);
+  }, [filteredTrades, usdJpyRate]);
 
   async function persistTrade(trade: Trade, method: 'POST' | 'PUT') {
     const response = await fetch('/api/trades', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(trade) });
@@ -899,7 +995,15 @@ export default function Home() {
     }
     setSaving(true);
     try {
-      await persistTrade(editor, editor.id ? 'PUT' : 'POST');
+      const preparedTrade: Trade = {
+        ...editor,
+        ticker: normalizeTickerForMarket(editor.ticker, editorMarket),
+        market: editorMarket,
+        type: editorMarket === 'JP' ? 'SDI' : editor.type,
+        event: editorMarket === 'JP' ? 'STOCK' : editor.event,
+        quoteMode: editor.quoteMode,
+      };
+      await persistTrade(preparedTrade, editor.id ? 'PUT' : 'POST');
       setEditor(null);
       notify('交易已安全儲存');
     } catch (error) {
@@ -1078,7 +1182,7 @@ export default function Home() {
         <div className="dashboard">
         <section className="hero" id="overview">
           <div><p className="eyebrow">Portfolio command center</p><h1>桐生<span>桔梗</span></h1></div>
-          <div className="as-of"><span>美東報價時間</span><div className="as-of-time"><strong>{lastQuoteAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'short' }).format(new Date(lastQuoteAt)) : '等待首次更新'}</strong><small>每 60 秒更新</small></div></div>
+          <LiveMarketClocks lastQuoteAt={lastQuoteAt} />
         </section>
 
         <section className="metric-grid" aria-label="投資組合摘要">
@@ -1089,7 +1193,7 @@ export default function Home() {
         </section>
 
         <section ref={contentGridRef} className={`content-grid ${resizingPanels ? 'is-resizing' : ''}`} style={contentGridStyle}>
-          <article className="panel return-panel" id="returns">
+          <article className="panel return-panel" id="returns" aria-busy={benchmarkLoading}>
             <div className="panel-heading">
               <div><p className="eyebrow">Return analytics</p><h2>{rangeModeLabel}收益率</h2></div>
               <div className="segmented" role="group" aria-label="收益率期間">
@@ -1114,12 +1218,13 @@ export default function Home() {
             </div>
             <div className="chart-dates">{returnSeries.map((item, index) => <span key={item.key} className={index !== 0 && index !== returnSeries.length - 1 && index % chartDateStep !== 0 ? 'hide-small-label' : ''}>{item.label}</span>)}</div>
             <section className="macro-market-section" aria-labelledby="macro-market-title">
-              <div className="macro-market-heading"><div><p className="eyebrow">Macro price monitor</p><h3 id="macro-market-title">匯率與美債價格波動</h3></div><span>歷史區間跟隨上方「{rangeModeLabel}」切換</span></div>
-              <div className={`macro-market-grid ${benchmarkLoading ? 'is-loading' : ''}`} aria-busy={benchmarkLoading}>
-                {activeBenchmarks.markets.map((market) => <MacroMarketCard key={market.id} market={market} startLabel={returnSeries[0]?.label ?? ''} endLabel={returnSeries.at(-1)?.label ?? ''} rangeLabel={rangeModeLabel} />)}
-                {!activeBenchmarks.markets.length && [0, 1, 2].map((item) => <article className="macro-market-card macro-market-placeholder" key={item}><span /><b /><i /></article>)}
+              <div className="macro-market-heading"><div><p className="eyebrow">Macro price monitor</p><h3 id="macro-market-title">匯率與美債價格波動</h3></div><div className="macro-market-actions"><div className="segmented macro-range-switch" role="group" aria-label="宏觀歷史期間">{([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={macroRangeMode === mode ? 'selected' : ''} aria-pressed={macroRangeMode === mode} onClick={() => setMacroRangeMode(mode)}>{label}</button>)}</div><button type="button" className="macro-refresh-button" disabled={macroLoading} onClick={() => setMacroRefreshKey((current) => current + 1)}>↻ 更新</button><span>美東 {macroUpdatedLabel} · 每 60 秒</span></div></div>
+              {macroError && <p className="macro-market-error" role="status">{macroError}</p>}
+              <div className={`macro-market-grid ${macroLoading ? 'is-loading' : ''}`} aria-busy={macroLoading}>
+                {activeMacroMarkets.map((market) => <MacroMarketCard key={market.id} market={market} startLabel={macroTimeline[0]?.label ?? ''} endLabel={macroTimeline.at(-1)?.label ?? ''} rangeLabel={macroRangeModeLabel} />)}
+                {!activeMacroMarkets.length && [0, 1, 2].map((item) => <article className="macro-market-card macro-market-placeholder" key={item}><span /><b /><i /></article>)}
               </div>
-              <p className="macro-market-note">10 年與 30 年美債以 CBOT 連續近月期貨價格作為代理；換月時可能出現跳點。</p>
+              <p className="macro-market-note">行情每 60 秒重新檢查；10 年與 30 年美債以 CBOT 連續近月期貨價格作為代理，換月時可能出現跳點。</p>
             </section>
           </article>
 
@@ -1208,8 +1313,8 @@ export default function Home() {
                 <span className="position-rank">{String(index + 1).padStart(2, '0')}</span>
                 <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · {position.strategy}</small></span></button>
                 <div className="visual-value"><span>持倉市值</span><strong>{money.format(position.marketValue)}</strong></div>
-                <div className="visual-price-flow"><div><span>{position.items.every((item) => item.trade.type === 'SDI' || item.trade.event === 'STOCK') ? '股票均價' : '成交均價'}</span><strong>{money.format(position.entryPrice)}</strong></div><div><span>目前價格</span><strong>{money.format(position.currentPrice)}</strong></div></div>
-                <div className={`visual-market-move ${dailyChange === null ? 'neutral' : dailyChange >= 0 ? 'positive' : 'negative'}`}><PriceSparkline ticker={position.ticker} values={snapshot?.sparkline ?? []} changePercent={dailyChange} /><div><span>標的今日漲跌</span><strong>{dailyChange === null ? '等待報價' : `${dailyChange >= 0 ? '+' : ''}${precisePercent.format(dailyChange)}`}</strong><small>{snapshot?.change === null || snapshot?.change === undefined ? '—' : `${money.format(snapshot.price)} · ${snapshot.change >= 0 ? '+' : ''}${money.format(snapshot.change)}`}</small></div></div>
+                <div className="visual-price-flow"><div><span>{position.items.every((item) => item.trade.type === 'SDI' || item.trade.event === 'STOCK') ? '股票均價' : '成交均價'}</span><strong>{nativeMoney(position.ticker, position.entryPrice)}</strong></div><div><span>目前價格</span><strong>{nativeMoney(position.ticker, position.currentPrice)}</strong></div></div>
+                <div className={`visual-market-move ${dailyChange === null ? 'neutral' : dailyChange >= 0 ? 'positive' : 'negative'}`}><PriceSparkline ticker={position.ticker} values={snapshot?.sparkline ?? []} changePercent={dailyChange} /><div><span>標的今日漲跌</span><strong>{dailyChange === null ? '等待報價' : `${dailyChange >= 0 ? '+' : ''}${precisePercent.format(dailyChange)}`}</strong><small>{snapshot?.change === null || snapshot?.change === undefined ? '—' : `${nativeMoney(position.ticker, snapshot.price)} · ${snapshot.change >= 0 ? '+' : ''}${nativeMoney(position.ticker, snapshot.change)}`}</small></div></div>
                 <div className={`visual-gain ${position.pnl >= 0 ? 'positive' : 'negative'}`}><strong>{position.pnl >= 0 ? '+' : ''}{money.format(position.pnl)}</strong><span>{position.roc >= 0 ? '▲' : '▼'} {percent.format(Math.abs(position.roc))}</span></div>
                 <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%` }} /></b></div>
               </article>;
@@ -1224,8 +1329,8 @@ export default function Home() {
                   <td><button type="button" className="symbol-cell symbol-cell-button" onClick={() => trade.ticker && openTickerDetails(trade.ticker)}><CompanyLogo ticker={trade.ticker || 'OTHER'} compact /><strong>{trade.ticker || '—'}</strong></button></td>
                   <td><strong className="strategy-name">{trade.event}</strong><span className="subtle">{trade.type === 'SDI' ? 'Stock' : trade.type}</span></td>
                   <td><strong>{dateLabel(trade.openDate)}</strong><span className="subtle">Exp {dateLabel(trade.expiryDate)}</span></td>
-                  <td>{trade.strike || '—'}</td><td>{trade.quantity}</td><td>{money.format(trade.entryPrice)}</td>
-                  <td>{priceEditId === trade.id ? <div className="inline-price"><span>$</span><input autoFocus inputMode="decimal" value={priceInput} onChange={(event) => setPriceInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveInlinePrice(trade); if (event.key === 'Escape') setPriceEditId(null); }} /><button onClick={() => saveInlinePrice(trade)}>✓</button></div> : <button className="price-button" onClick={() => { setPriceEditId(trade.id); setPriceInput(String(trade.currentPrice ?? '')); }}><span className={trade.quoteMode === 'auto' ? 'live-dot' : 'manual-dot'} />{trade.currentPrice === null ? '設定' : money.format(trade.currentPrice)} <i>✎</i></button>}</td>
+                  <td>{trade.strike || '—'}</td><td>{trade.quantity}</td><td>{nativeMoney(trade.ticker, trade.entryPrice)}</td>
+                  <td>{priceEditId === trade.id ? <div className="inline-price"><span>{isJapaneseTicker(trade.ticker) ? '¥' : '$'}</span><input autoFocus inputMode="decimal" value={priceInput} onChange={(event) => setPriceInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveInlinePrice(trade); if (event.key === 'Escape') setPriceEditId(null); }} /><button onClick={() => saveInlinePrice(trade)}>✓</button></div> : <button className="price-button" onClick={() => { setPriceEditId(trade.id); setPriceInput(String(trade.currentPrice ?? '')); }}><span className={trade.quoteMode === 'auto' ? 'live-dot' : 'manual-dot'} />{trade.currentPrice === null ? '設定' : nativeMoney(trade.ticker, trade.currentPrice)} <i>✎</i></button>}</td>
                   <td className={pnl >= 0 ? 'positive' : 'negative'}><strong>{money.format(pnl)}</strong></td>
                   <td className={roc >= 0 ? 'positive' : 'negative'}>{percent.format(roc)}</td>
                   <td><span className={`status ${trade.status}`}><i />{trade.status === 'open' ? '未平倉' : '已平倉'}</span></td>
@@ -1247,13 +1352,17 @@ export default function Home() {
               <div className="editor-fields">
                 <section className="editor-section">
                   <div className="editor-section-heading"><span>01</span><div><h3>交易設定</h3><p>先選擇交易方向，再搜尋標的與策略。</p></div></div>
+                  <fieldset className="choice-field editor-market-switch"><legend>股票市場</legend><div className="market-choice">
+                    <button type="button" className={editorMarket === 'US' ? 'active' : ''} onClick={() => { setEditor({ ...editor, market: 'US', ticker: isJapaneseTicker(editor.ticker) ? '' : editor.ticker }); setSymbolSuggestions([]); setEditorQuote(null); }}>美國</button>
+                    <button type="button" className={editorMarket === 'JP' ? 'active' : ''} onClick={() => { setEditor({ ...editor, market: 'JP', ticker: isJapaneseTicker(editor.ticker) ? editor.ticker : '', type: 'SDI', event: 'STOCK', quoteMode: 'auto' }); setSymbolSuggestions([]); setEditorQuote(null); }}>日本</button>
+                  </div><small>{editorMarket === 'JP' ? '支援東京證券交易所 4 位股票代碼，價格以日圓顯示。' : '支援美股、ETF 與選擇權交易。'}</small></fieldset>
                   <fieldset className="choice-field"><legend>交易類型</legend><div className="trade-type-picker">
                     {([
                       ['Sell', '賣方', '收取權利金'],
                       ['Buy', '買方', '支付權利金'],
                       ['Ass', '指派', '承接標的'],
                       ['SDI', '股票', '現股持倉'],
-                    ] as const).map(([type, label, description]) => <button key={type} type="button" className={editor.type === type ? 'active' : ''} onClick={() => setEditor({ ...editor, type, event: type === 'SDI' ? 'STOCK' : editor.event, quoteMode: type === 'SDI' ? 'auto' : 'manual' })}><i>{type === 'Sell' ? '↓' : type === 'Buy' ? '↑' : type === 'Ass' ? '↳' : '◇'}</i><span><strong>{label}</strong><small>{description}</small></span></button>)}
+                    ] as const).map(([type, label, description]) => <button key={type} type="button" disabled={editorMarket === 'JP' && type !== 'SDI'} className={editor.type === type ? 'active' : ''} onClick={() => setEditor({ ...editor, type, event: type === 'SDI' ? 'STOCK' : editor.event, quoteMode: type === 'SDI' ? 'auto' : 'manual' })}><i>{type === 'Sell' ? '↓' : type === 'Buy' ? '↑' : type === 'Ass' ? '↳' : '◇'}</i><span><strong>{label}</strong><small>{description}</small></span></button>)}
                   </div></fieldset>
                   <div className="form-grid">
                     <label className="ticker-search-field">Ticker
@@ -1263,14 +1372,14 @@ export default function Home() {
                           value={editor.ticker ?? ''}
                           onChange={(event) => setEditor({ ...editor, ticker: event.target.value.toUpperCase() })}
                           onFocus={() => setSymbolFocused(true)}
-                          onBlur={() => window.setTimeout(() => setSymbolFocused(false), 120)}
+                          onBlur={() => window.setTimeout(() => { setSymbolFocused(false); setEditor((current) => current ? { ...current, ticker: normalizeTickerForMarket(current.ticker, current.market ?? (isJapaneseTicker(current.ticker) ? 'JP' : 'US')) } : current); }, 120)}
                           onKeyDown={(event) => {
                             if (event.key === 'ArrowDown' && symbolSuggestions.length) { event.preventDefault(); setActiveSymbolIndex((current) => (current + 1) % symbolSuggestions.length); }
                             if (event.key === 'ArrowUp' && symbolSuggestions.length) { event.preventDefault(); setActiveSymbolIndex((current) => (current - 1 + symbolSuggestions.length) % symbolSuggestions.length); }
                             if (event.key === 'Enter' && symbolSuggestions[activeSymbolIndex]) { event.preventDefault(); selectSymbol(symbolSuggestions[activeSymbolIndex]); }
                             if (event.key === 'Escape') { setSymbolSuggestions([]); setSymbolFocused(false); }
                           }}
-                          placeholder="輸入 MS 搜尋 MSFT…"
+                          placeholder={editorMarket === 'JP' ? '輸入 7203 或 Toyota…' : '輸入 MS 搜尋 MSFT…'}
                           autoComplete="off"
                           role="combobox"
                           aria-autocomplete="list"
@@ -1281,7 +1390,7 @@ export default function Home() {
                         {symbolLoading && <span className="symbol-search-spinner" aria-label="搜尋中" />}
                       </span>
                       {symbolFocused && (symbolLoading || symbolSuggestions.length > 0) && <span className="symbol-results" id="symbol-suggestions" role="listbox">
-                        {symbolLoading && !symbolSuggestions.length && <span className="symbol-loading-copy">正在搜尋美股代號…</span>}
+                        {symbolLoading && !symbolSuggestions.length && <span className="symbol-loading-copy">正在搜尋{editorMarket === 'JP' ? '日本股票' : '美股'}代號…</span>}
                         {symbolSuggestions.map((suggestion, index) => <button
                           key={suggestion.symbol}
                           id={`symbol-option-${index}`}
@@ -1312,10 +1421,10 @@ export default function Home() {
                 <section className="editor-section">
                   <div className="editor-section-heading"><span>03</span><div><h3>價格與風險</h3><p>輸入價格、費用與投入資本，損益會立即重算。</p></div></div>
                   <div className="form-grid price-fields">
-                    <label>成本／成交價<div className="money-input"><span>$</span><input min="0" step="0.01" type="number" value={editor.entryPrice} onChange={(event) => setEditor({ ...editor, entryPrice: Number(event.target.value) })} /></div></label>
-                    <label><span className="field-label-row"><span>持倉／平倉價</span>{editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && <small>自動填入</small>}</span><div className={`money-input ${editorQuoteLoading ? 'is-quote-loading' : ''}`} aria-busy={editorQuoteLoading}><span>$</span><input min="0" step="0.01" type="number" readOnly={editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto'} value={editor.currentPrice ?? ''} onChange={(event) => setEditor({ ...editor, currentPrice: event.target.value === '' ? null : Number(event.target.value) })} />{editorQuoteLoading && <i className="quote-price-spinner" aria-label="正在取得報價" />}</div>{editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && <span className={`auto-quote-status ${editorQuoteError ? 'error' : ''}`} aria-live="polite">{editorQuoteLoading ? '正在取得最新可用報價…' : editorQuoteError ? <>{editorQuoteError}<button type="button" onClick={() => setEditorQuoteRetry((current) => current + 1)}>重試</button></> : editorQuote?.ticker === editorAutoQuoteTicker ? `${editorQuote.session === 'extended' ? '盤前／盤後' : '正常交易時段'} ${money.format(editorQuote.price)} 已填入` : '輸入 Ticker 後會自動填入'}</span>}</label>
-                    <label>手續費<div className="money-input"><span>$</span><input min="0" step="0.01" type="number" value={editor.fees} onChange={(event) => setEditor({ ...editor, fees: Number(event.target.value) })} /></div></label>
-                    <label>擔保／投入資本<div className="money-input"><span>$</span><input min="0" step="0.01" type="number" value={editor.collateral} onChange={(event) => setEditor({ ...editor, collateral: Number(event.target.value) })} /></div></label>
+                    <label>成本／成交價<div className="money-input"><span>{editorCurrencySymbol}</span><input min="0" step="0.01" type="number" value={editor.entryPrice} onChange={(event) => setEditor({ ...editor, entryPrice: Number(event.target.value) })} /></div></label>
+                    <label><span className="field-label-row"><span>持倉／平倉價</span>{editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && <small>自動填入</small>}</span><div className={`money-input ${editorQuoteLoading ? 'is-quote-loading' : ''}`} aria-busy={editorQuoteLoading}><span>{editorCurrencySymbol}</span><input min="0" step="0.01" type="number" readOnly={editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto'} value={editor.currentPrice ?? ''} onChange={(event) => setEditor({ ...editor, currentPrice: event.target.value === '' ? null : Number(event.target.value) })} />{editorQuoteLoading && <i className="quote-price-spinner" aria-label="正在取得報價" />}</div>{editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && <span className={`auto-quote-status ${editorQuoteError ? 'error' : ''}`} aria-live="polite">{editorQuoteLoading ? '正在取得最新可用報價…' : editorQuoteError ? <>{editorQuoteError}<button type="button" onClick={() => setEditorQuoteRetry((current) => current + 1)}>重試</button></> : editorQuote?.ticker === editorAutoQuoteTicker ? `${editorQuote.session === 'extended' ? '盤前／盤後' : '正常交易時段'} ${nativeMoney(editorAutoQuoteTicker, editorQuote.price)} 已填入` : '輸入 Ticker 後會自動填入'}</span>}</label>
+                    <label>手續費<div className="money-input"><span>{editorCurrencySymbol}</span><input min="0" step="0.01" type="number" value={editor.fees} onChange={(event) => setEditor({ ...editor, fees: Number(event.target.value) })} /></div></label>
+                    <label>擔保／投入資本<div className="money-input"><span>{editorCurrencySymbol}</span><input min="0" step="0.01" type="number" value={editor.collateral} onChange={(event) => setEditor({ ...editor, collateral: Number(event.target.value) })} /></div></label>
                   </div>
                   <div className="editor-choice-row">
                     {editor.type === 'SDI' && <fieldset className="choice-field compact-choice"><legend>報價方式</legend><div><button type="button" disabled={editor.status === 'closed'} className={editor.quoteMode === 'auto' ? 'active' : ''} onClick={() => { setEditor({ ...editor, quoteMode: 'auto' }); setEditorQuoteRetry((current) => current + 1); }}>自動更新</button><button type="button" className={editor.quoteMode === 'manual' ? 'active' : ''} onClick={() => setEditor({ ...editor, quoteMode: 'manual' })}>手動輸入</button></div></fieldset>}
@@ -1327,10 +1436,10 @@ export default function Home() {
               <aside className="editor-summary">
                 <div className="summary-sticky">
                   <p className="eyebrow">Live preview</p><h3>交易預覽</h3>
-                  <div className="summary-symbol"><span>{editor.ticker?.slice(0, 1) || '—'}</span><div><strong>{editor.ticker || '尚未選擇標的'}</strong><small>{editor.event || '選擇策略'}</small></div></div>
-                  <div className="summary-price-pair"><div><span>買入／成交價</span><strong>{money.format(editor.entryPrice)}</strong></div><div><span>目前價格</span><strong>{editor.currentPrice === null ? '尚未設定' : money.format(editor.currentPrice)}</strong></div></div>
-                  <div className="summary-result"><span>即時計算損益</span><strong className={metrics(editor).pnl >= 0 ? 'positive' : 'negative'}>{money.format(metrics(editor).pnl)}</strong></div>
-                  <dl><div><dt>ROC</dt><dd className={metrics(editor).roc >= 0 ? 'positive' : 'negative'}>{percent.format(metrics(editor).roc)}</dd></div><div><dt>持有天數</dt><dd>{metrics(editor).days || 0} 天</dd></div><div><dt>狀態</dt><dd>{editor.status === 'open' ? '未平倉' : '已平倉'}</dd></div><div><dt>報價</dt><dd>{editorQuoteLoading ? '讀取中…' : editor.quoteMode === 'auto' && editorQuote?.ticker === editorAutoQuoteTicker ? `${editorQuote.session === 'extended' ? '延長時段' : '正常時段'} ${money.format(editorQuote.price)}` : editor.quoteMode === 'auto' ? '自動更新' : '手動價格'}</dd></div></dl>
+                  <div className="summary-symbol"><span>{editorDisplayTicker?.slice(0, 1) || '—'}</span><div><strong>{editorDisplayTicker || '尚未選擇標的'}</strong><small>{editorMarket === 'JP' ? '日本 · ' : '美國 · '}{editor.event || '選擇策略'}</small></div></div>
+                  <div className="summary-price-pair"><div><span>買入／成交價</span><strong>{editorPriceMoney(editor.entryPrice)}</strong></div><div><span>目前價格</span><strong>{editor.currentPrice === null ? '尚未設定' : editorPriceMoney(editor.currentPrice)}</strong></div></div>
+                  <div className="summary-result"><span>即時計算損益（USD）</span><strong className={(editorPreviewMetrics?.pnl ?? 0) >= 0 ? 'positive' : 'negative'}>{money.format(editorPreviewMetrics?.pnl ?? 0)}</strong></div>
+                  <dl><div><dt>ROC</dt><dd className={(editorPreviewMetrics?.roc ?? 0) >= 0 ? 'positive' : 'negative'}>{percent.format(editorPreviewMetrics?.roc ?? 0)}</dd></div><div><dt>持有天數</dt><dd>{editorPreviewMetrics?.days || 0} 天</dd></div><div><dt>狀態</dt><dd>{editor.status === 'open' ? '未平倉' : '已平倉'}</dd></div><div><dt>報價</dt><dd>{editorQuoteLoading ? '讀取中…' : editor.quoteMode === 'auto' && editorQuote?.ticker === editorAutoQuoteTicker ? `${editorQuote.session === 'extended' ? '延長時段' : '正常時段'} ${nativeMoney(editorAutoQuoteTicker, editorQuote.price)}` : editor.quoteMode === 'auto' ? '自動更新' : '手動價格'}</dd></div></dl>
                   <p className="summary-tip"><i>✓</i> 所有欄位可隨時回來修改，儲存後會同步更新圖表與持倉配置。</p>
                 </div>
               </aside>
@@ -1345,7 +1454,7 @@ export default function Home() {
           <p className="eyebrow">Permanent action</p>
           <h2 id="delete-confirm-title">刪除這筆交易紀錄？</h2>
           <p id="delete-confirm-copy">刪除後會立即從持倉、損益與收益圖表中移除，這個動作無法復原。</p>
-          <div className="delete-trade-summary"><strong>{deleteCandidate.ticker || '未命名標的'}</strong><span>{deleteCandidate.event} · {dateLabel(deleteCandidate.openDate)} · {money.format(deleteCandidate.entryPrice)}</span></div>
+          <div className="delete-trade-summary"><strong>{deleteCandidate.ticker || '未命名標的'}</strong><span>{deleteCandidate.event} · {dateLabel(deleteCandidate.openDate)} · {nativeMoney(deleteCandidate.ticker, deleteCandidate.entryPrice)}</span></div>
           <footer><button type="button" className="cancel-button" disabled={deleting} onClick={() => setDeleteCandidate(null)}>保留紀錄</button><button type="button" className="confirm-delete-button" disabled={deleting} onClick={deleteTrade}>{deleting ? '刪除中…' : '永久刪除'}</button></footer>
         </section>
       </div>}

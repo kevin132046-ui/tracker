@@ -62,13 +62,21 @@ export async function GET(request: Request) {
     const visibleStart = now - visibleDays * 86_400_000;
     const period1 = Math.floor((visibleStart - 160 * 86_400_000) / 1000);
     const period2 = Math.floor((now + 86_400_000) / 1000);
-    const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=div%2Csplits`, {
-      headers: { Accept: 'application/json', 'User-Agent': 'OptionFlow/1.0' },
-      cache: 'no-store',
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!response.ok) throw new Error(`${symbol} historical prices are unavailable.`);
-    const payload = await response.json() as YahooChart;
+    let payload: YahooChart | null = null;
+    for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
+      try {
+        const response = await fetch(`https://${host}/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=div%2Csplits`, {
+          headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OptionFlow/1.0' },
+          cache: 'no-store',
+        });
+        if (!response.ok) throw new Error(`${symbol} historical prices are unavailable.`);
+        payload = await response.json() as YahooChart;
+        if (payload.chart?.result?.[0]) break;
+      } catch {
+        payload = null;
+      }
+    }
+    if (!payload) throw new Error(`${symbol} historical prices are unavailable.`);
     const result = payload.chart?.result?.[0];
     const timestamps = result?.timestamp ?? [];
     const closes = result?.indicators?.adjclose?.[0]?.adjclose ?? result?.indicators?.quote?.[0]?.close ?? [];

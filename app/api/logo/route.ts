@@ -17,6 +17,14 @@ const companyDomains: Record<string, string> = {
   TRV: 'travelers.com',
   TTWO: 'take2games.com',
   V: 'visa.com',
+  '7203.T': 'global.toyota',
+  '6758.T': 'sony.com',
+  '9984.T': 'group.softbank',
+  '6861.T': 'keyence.com',
+  '8306.T': 'mufg.jp',
+  '8035.T': 'tel.com',
+  '9983.T': 'fastretailing.com',
+  '7974.T': 'nintendo.co.jp',
 };
 const officialLogoSources: Record<string, string> = {
   CNC: 'https://www.centene.com/content/dam/centenedotcom/logos/centene_logo_2023.jpg',
@@ -42,7 +50,6 @@ export async function GET(request: Request) {
           Referer: `${new URL(source).origin}/`,
           'User-Agent': 'Mozilla/5.0 (compatible; OptionFlow/1.0; +https://openai.com/)',
         },
-        signal: AbortSignal.timeout(5000),
       });
       const contentType = response.headers.get('content-type') ?? '';
       if (!response.ok || !contentType.startsWith('image/')) continue;

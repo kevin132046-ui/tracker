@@ -82,6 +82,7 @@ const panelRatioKey = 'optionflow-analytics-panel-ratio';
 const backgroundImageKey = 'optionflow-custom-background';
 const backgroundModeKey = 'optionflow-background-mode';
 const backgroundPendingKey = 'optionflow-pending-background';
+const backgroundPendingModeKey = 'optionflow-pending-background-mode';
 const usdJpyRateKey = 'optionflow-usdjpy-rate';
 const localBackgroundPattern = /^data:image\/jpeg;base64,/i;
 const serverBackgroundPattern = /^\/api\/background\?image=1&version=\d{10,16}-[0-9a-f-]{36}$/i;
@@ -528,6 +529,14 @@ export default function Home() {
           if (!compressedBlob) throw new Error('目前瀏覽器無法壓縮背景圖片');
           setBackgroundImage(compressed);
           setBackgroundMode('image');
+          try {
+            window.localStorage.setItem(backgroundPendingKey, compressed);
+            window.localStorage.setItem(backgroundPendingModeKey, 'image');
+            window.localStorage.setItem(backgroundImageKey, compressed);
+            window.localStorage.setItem(backgroundModeKey, 'image');
+          } catch {
+            // Continue with the cloud save when browser storage is restricted.
+          }
 
           const response = await fetch('/api/background?mode=image', {
             method: 'PUT',
@@ -538,9 +547,14 @@ export default function Home() {
           if (!response.ok || !payload.imageUrl) throw new Error(payload.error ?? '背景圖片無法保存');
           const durableImageUrl = payload.imageUrl;
           try {
+            window.localStorage.removeItem(backgroundPendingKey);
+            window.localStorage.removeItem(backgroundPendingModeKey);
+          } catch {
+            // Replaying a completed upload later is safe because the request is idempotent for display state.
+          }
+          try {
             window.localStorage.setItem(backgroundImageKey, durableImageUrl);
             window.localStorage.setItem(backgroundModeKey, 'image');
-            window.localStorage.removeItem(backgroundPendingKey);
           } catch {
             // The cloud copy is authoritative when browser storage is restricted.
           }
@@ -552,6 +566,7 @@ export default function Home() {
             try {
               window.localStorage.setItem(backgroundImageKey, compressed);
               window.localStorage.setItem(backgroundPendingKey, compressed);
+              window.localStorage.setItem(backgroundPendingModeKey, 'image');
               window.localStorage.setItem(backgroundModeKey, 'image');
               notify('背景暫時保存在目前裝置，重開時會自動重試同步');
               return;
@@ -587,6 +602,7 @@ export default function Home() {
     backgroundGenerationRef.current += 1;
     setBackgroundMode(mode);
     try {
+      window.localStorage.setItem(backgroundPendingModeKey, mode);
       window.localStorage.setItem(backgroundModeKey, mode);
     } catch {
       // The cloud setting is authoritative when browser storage is restricted.
@@ -602,12 +618,23 @@ export default function Home() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode }),
+        keepalive: true,
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? '背景模式無法保存');
+      try {
+        window.localStorage.removeItem(backgroundPendingModeKey);
+      } catch {
+        // The same mode can be safely replayed after reopening.
+      }
       notify(mode === 'image' ? '已切換為圖片背景並保存' : '已切換為原始背景，圖片仍永久保留');
     } catch (error) {
       setBackgroundMode(previousMode);
+      try {
+        window.localStorage.removeItem(backgroundPendingModeKey);
+      } catch {
+        // The in-memory rollback remains correct for this session.
+      }
       try {
         window.localStorage.setItem(backgroundModeKey, previousMode);
       } catch {
@@ -766,14 +793,17 @@ export default function Home() {
       let savedImage = '';
       let pendingImage = '';
       let savedMode: string | null = null;
+      let pendingMode: string | null = null;
       try {
         savedImage = window.localStorage.getItem(backgroundImageKey) ?? '';
         pendingImage = window.localStorage.getItem(backgroundPendingKey) ?? '';
         savedMode = window.localStorage.getItem(backgroundModeKey);
+        pendingMode = window.localStorage.getItem(backgroundPendingModeKey);
       } catch {
         // The durable server copy remains available when browser storage is restricted.
       }
-      const mode: BackgroundMode = savedMode === 'default' ? 'default' : 'image';
+      const validPendingMode: BackgroundMode | null = pendingMode === 'default' || pendingMode === 'image' ? pendingMode : null;
+      const mode: BackgroundMode = validPendingMode ?? (savedMode === 'default' ? 'default' : 'image');
       const validPendingImage = isLocalBackground(pendingImage) ? pendingImage : '';
       const validSavedImage = isStoredBackground(savedImage) ? savedImage : '';
       const localPreview = validPendingImage || validSavedImage;
@@ -800,9 +830,14 @@ export default function Home() {
           setBackgroundImage(migrationPayload.imageUrl);
           setBackgroundMode(mode);
           try {
+            window.localStorage.removeItem(backgroundPendingKey);
+            window.localStorage.removeItem(backgroundPendingModeKey);
+          } catch {
+            // A completed cloud save can be safely replayed if local cleanup is blocked.
+          }
+          try {
             window.localStorage.setItem(backgroundImageKey, migrationPayload.imageUrl);
             window.localStorage.setItem(backgroundModeKey, mode);
-            window.localStorage.removeItem(backgroundPendingKey);
           } catch {
             // The migrated cloud copy remains authoritative.
           }
@@ -810,6 +845,7 @@ export default function Home() {
           if (!(error instanceof DOMException && error.name === 'AbortError')) {
             try {
               window.localStorage.setItem(backgroundPendingKey, uploadCandidate);
+              window.localStorage.setItem(backgroundPendingModeKey, mode);
             } catch {
               // The existing in-memory preview remains visible for this session.
             }
@@ -828,11 +864,36 @@ export default function Home() {
         if (payload.exists && payload.imageUrl) {
           const durableImageUrl = payload.imageUrl;
           if (restoreIsStale()) return;
+          const serverMode: BackgroundMode = payload.mode === 'default' ? 'default' : 'image';
+          const restoredMode = validPendingMode ?? serverMode;
           setBackgroundImage(durableImageUrl);
-          setBackgroundMode(payload.mode === 'default' ? 'default' : 'image');
+          setBackgroundMode(restoredMode);
+
+          let pendingModeSynced = !validPendingMode || validPendingMode === serverMode;
+          if (validPendingMode && validPendingMode !== serverMode) {
+            try {
+              const modeResponse = await fetch('/api/background', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: validPendingMode }),
+                keepalive: true,
+                signal: controller.signal,
+              });
+              pendingModeSynced = modeResponse.ok;
+            } catch {
+              pendingModeSynced = false;
+            }
+          }
+          if (pendingModeSynced) {
+            try {
+              window.localStorage.removeItem(backgroundPendingModeKey);
+            } catch {
+              // Replaying the same mode later does not alter the selected result.
+            }
+          }
           try {
             window.localStorage.setItem(backgroundImageKey, durableImageUrl);
-            window.localStorage.setItem(backgroundModeKey, payload.mode === 'default' ? 'default' : 'image');
+            window.localStorage.setItem(backgroundModeKey, restoredMode);
           } catch {
             // Server persistence is authoritative, so local cache failures are harmless.
           }
@@ -845,6 +906,7 @@ export default function Home() {
           try {
             window.localStorage.removeItem(backgroundImageKey);
             window.localStorage.removeItem(backgroundPendingKey);
+            window.localStorage.removeItem(backgroundPendingModeKey);
             window.localStorage.setItem(backgroundModeKey, 'default');
           } catch {
             // The empty server state is already reflected in memory.

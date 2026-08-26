@@ -265,16 +265,26 @@ const MacroMarketCard = memo(function MacroMarketCard({ market, startLabel, endL
 
 const LiveMarketClocks = memo(function LiveMarketClocks({ lastQuoteAt }: { lastQuoteAt: string | null }) {
   const [clockNow, setClockNow] = useState<number | null>(null);
+  const [activeZone, setActiveZone] = useState<'eastern' | 'japan'>('eastern');
   useEffect(() => {
     const updateClock = () => setClockNow(Date.now());
     updateClock();
     const timer = window.setInterval(updateClock, 1_000);
     return () => window.clearInterval(timer);
   }, []);
-  const easternTimeLabel = clockNow === null ? '--:--:-- [ET]' : `${easternClockFormatter.format(new Date(clockNow))} [${easternZoneName(clockNow)}]`;
-  const japanTimeLabel = clockNow === null ? '--:--:-- [JST]' : `${japanClockFormatter.format(new Date(clockNow))} [JST]`;
+  const easternTimeLabel = clockNow === null ? '--:--:--' : easternClockFormatter.format(new Date(clockNow));
+  const japanTimeLabel = clockNow === null ? '--:--:--' : japanClockFormatter.format(new Date(clockNow));
+  const easternZoneLabel = clockNow === null ? 'ET' : easternZoneName(clockNow);
   const lastQuoteLabel = lastQuoteAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(lastQuoteAt)) : '等待首次更新';
-  return <div className="as-of"><span>即時市場時間</span><div className="live-market-clocks"><div><small>美東</small><strong>{easternTimeLabel}</strong></div><div><small>日本</small><strong>{japanTimeLabel}</strong></div></div><p>報價每 60 秒更新 · 上次 {lastQuoteLabel}</p></div>;
+  const clocks = [
+    { id: 'eastern' as const, label: '美東', time: easternTimeLabel, zone: easternZoneLabel },
+    { id: 'japan' as const, label: '日本', time: japanTimeLabel, zone: 'JST' },
+  ];
+  return <div className="as-of">
+    <div className="clock-stack-heading"><span>即時市場時間</span><div className="clock-zone-switch" role="group" aria-label="切換即時時區">{clocks.map((clock) => <button type="button" key={clock.id} className={activeZone === clock.id ? 'active' : ''} aria-pressed={activeZone === clock.id} onClick={() => setActiveZone(clock.id)}>{clock.label}</button>)}</div></div>
+    <div className="stacked-clock-deck" aria-live="polite">{clocks.map((clock) => <div key={clock.id} className={`stacked-clock-card ${activeZone === clock.id ? 'is-active' : 'is-behind'}`} aria-hidden={activeZone !== clock.id}><span>{clock.label}</span><strong>{clock.time}</strong><b>[{clock.zone}]</b></div>)}</div>
+    <p>報價每 60 秒更新 · 上次 {lastQuoteLabel}</p>
+  </div>;
 });
 
 function chartBounds(values: Array<number | null>, includeZero = false) {

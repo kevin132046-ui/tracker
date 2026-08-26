@@ -260,12 +260,19 @@ button, a { touch-action: manipulation; }.shell.has-custom-background:before { w
 .side-nav i, .background-trigger i { height: 20px; font-size: 20px; }
 .side-nav span, .background-trigger span { font-size: 12.5px; font-weight: 900; }
 .background-mode-switch button { min-height: 28px; font-size: 10.5px; }
-.as-of { min-width: min(100%, 390px); }
-.as-of > span { color: #71819a; font-size: 12px; font-weight: 850; }
-.live-market-clocks { display: flex; justify-content: flex-end; gap: 18px; margin-top: 8px; }
-.live-market-clocks > div { min-width: 150px; }
-.live-market-clocks small { display: block; margin-bottom: 4px; color: #71819a; font-size: 11px; font-weight: 850; }
-.live-market-clocks strong { display: block; color: var(--ink); font-size: 21px; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; letter-spacing: -.02em; white-space: nowrap; }
+.as-of { min-width: min(100%, 310px); }
+.clock-stack-heading { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.clock-stack-heading > span { color: #71819a; font-size: 12px; font-weight: 850; }
+.clock-zone-switch { display: inline-grid; grid-template-columns: repeat(2, 1fr); gap: 2px; padding: 3px; background: rgba(232,237,245,.94); border-radius: 10px; }
+.clock-zone-switch button { min-width: 46px; min-height: 27px; padding: 4px 9px; color: #71819a; background: transparent; border: 0; border-radius: 8px; font-size: 11px; font-weight: 850; cursor: pointer; transition: color .18s ease, background .18s ease, box-shadow .18s ease; }
+.clock-zone-switch button.active { color: #165fcf; background: white; box-shadow: 0 2px 8px rgba(24,50,88,.12); }
+.stacked-clock-deck { position: relative; width: 268px; height: 70px; margin: 8px 0 0 auto; }
+.stacked-clock-card { position: absolute; inset: 0; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px; padding: 14px 16px; background: rgba(255,255,255,.94); border: 1px solid rgba(211,220,233,.96); border-radius: 16px; box-shadow: 0 11px 25px rgba(22,47,84,.11); transform-origin: right center; transition: opacity .22s ease, transform .22s cubic-bezier(.22,.9,.34,1), filter .22s ease; }
+.stacked-clock-card.is-active { z-index: 2; opacity: 1; transform: translate3d(0,0,0) scale(1); }
+.stacked-clock-card.is-behind { z-index: 1; opacity: .42; filter: saturate(.65); transform: translate3d(-12px,8px,0) scale(.955); }
+.stacked-clock-card span { color: #6080b3; font-size: 12px; font-weight: 900; }
+.stacked-clock-card strong { color: var(--ink); font-size: 24px; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; letter-spacing: -.025em; white-space: nowrap; }
+.stacked-clock-card b { color: #243a5e; font-size: 15px; font-weight: 900; white-space: nowrap; }
 .as-of > p { margin: 8px 0 0; color: #56729f; font-size: 11px; font-weight: 800; }
 
 @media (min-width: 1181px) {
@@ -275,11 +282,14 @@ button, a { touch-action: manipulation; }.shell.has-custom-background:before { w
 
 @media (max-width: 1180px) {
   .side-nav a, .background-trigger { min-height: 48px; }
-  .live-market-clocks { justify-content: flex-start; }
+  .clock-stack-heading { justify-content: flex-start; }
+  .stacked-clock-deck { margin-left: 0; }
 }
 
 @media (max-width: 620px) {
-  .live-market-clocks { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .live-market-clocks > div { min-width: 0; }
-  .live-market-clocks strong { font-size: 17px; }
+  .clock-stack-heading { align-items: flex-start; flex-direction: column; gap: 7px; }
+  .stacked-clock-deck { width: min(100%, 268px); }
+  .stacked-clock-card { padding-inline: 13px; }
+  .stacked-clock-card strong { font-size: 21px; }
+  .stacked-clock-card b { font-size: 13px; }
 }

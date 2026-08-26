@@ -260,6 +260,9 @@ button, a { touch-action: manipulation; }.shell.has-custom-background:before { w
 .side-nav i, .background-trigger i { height: 20px; font-size: 20px; }
 .side-nav span, .background-trigger span { font-size: 12.5px; font-weight: 900; }
 .background-mode-switch button { min-height: 28px; font-size: 10.5px; }
+.background-trigger:disabled, .background-mode-switch button:disabled { opacity: .58; cursor: wait; transform: none; }
+.background-trigger:disabled i { animation: background-save-spin .9s linear infinite; }
+@keyframes background-save-spin { to { transform: rotate(360deg); } }
 .as-of { min-width: min(100%, 310px); }
 .clock-stack-heading { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .clock-stack-heading > span { color: #71819a; font-size: 12px; font-weight: 850; }

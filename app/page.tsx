@@ -81,7 +81,13 @@ const companyNames: Record<string, string> = {
 const panelRatioKey = 'optionflow-analytics-panel-ratio';
 const backgroundImageKey = 'optionflow-custom-background';
 const backgroundModeKey = 'optionflow-background-mode';
+const backgroundPendingKey = 'optionflow-pending-background';
 const usdJpyRateKey = 'optionflow-usdjpy-rate';
+const localBackgroundPattern = /^data:image\/jpeg;base64,/i;
+const serverBackgroundPattern = /^\/api\/background\?image=1&version=\d{10,16}-[0-9a-f-]{36}$/i;
+const isLocalBackground = (value: string) => localBackgroundPattern.test(value);
+const isServerBackground = (value: string) => serverBackgroundPattern.test(value);
+const isStoredBackground = (value: string) => isLocalBackground(value) || isServerBackground(value);
 const clampPanelRatio = (value: number) => Math.min(72, Math.max(46, value));
 const initialPanelRatio = () => {
   if (typeof window === 'undefined') return 60;
@@ -448,6 +454,7 @@ export default function Home() {
   const [resizingPanels, setResizingPanels] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState('');
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>('default');
+  const [backgroundSaving, setBackgroundSaving] = useState(false);
   const [drilledTicker, setDrilledTicker] = useState<string | null>(null);
   const [technicalRange, setTechnicalRange] = useState<TechnicalRange>('6mo');
   const [technicalData, setTechnicalData] = useState<TechnicalData | null>(null);
@@ -459,6 +466,8 @@ export default function Home() {
   const contentGridRef = useRef<HTMLElement>(null);
   const panelRatioRef = useRef(panelRatio);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
+  const backgroundOperationRef = useRef(false);
+  const backgroundGenerationRef = useRef(0);
   const editorQuoteCacheRef = useRef(new Map<string, { quote: LiveQuote; fetchedAt: number }>());
   const benchmarkCacheRef = useRef(new Map<RangeMode, BenchmarkData>());
   const macroCacheRef = useRef(new Map<RangeMode, { markets: BenchmarkMarket[]; updatedAt: string; fetchedAt: number }>());
@@ -478,51 +487,138 @@ export default function Home() {
 
   const handleBackgroundUpload = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
+    if (backgroundOperationRef.current) return;
     if (!file.type.startsWith('image/')) return notify('請選擇圖片檔案');
+    if (file.size > 20 * 1024 * 1024) return notify('原始圖片不可超過 20 MB');
+    backgroundOperationRef.current = true;
+    backgroundGenerationRef.current += 1;
+    setBackgroundSaving(true);
+    const finish = () => {
+      backgroundOperationRef.current = false;
+      setBackgroundSaving(false);
+    };
     const reader = new FileReader();
     reader.onload = () => {
       const source = typeof reader.result === 'string' ? reader.result : '';
-      if (!source) return notify('無法讀取這張圖片');
+      if (!source) {
+        finish();
+        return notify('無法讀取這張圖片');
+      }
       const preview = new window.Image();
-      preview.onload = () => {
-        const maxEdge = 1920;
-        const scale = Math.min(1, maxEdge / Math.max(preview.naturalWidth, preview.naturalHeight));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(preview.naturalWidth * scale));
-        canvas.height = Math.max(1, Math.round(preview.naturalHeight * scale));
-        const context = canvas.getContext('2d');
-        if (!context) return notify('目前瀏覽器無法處理背景圖片');
-        context.fillStyle = '#ffffff';
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        context.drawImage(preview, 0, 0, canvas.width, canvas.height);
-        const compressed = canvas.toDataURL('image/jpeg', .82);
+      preview.onload = async () => {
+        let compressed = '';
         try {
-          window.localStorage.setItem(backgroundImageKey, compressed);
-          window.localStorage.setItem(backgroundModeKey, 'image');
+          if (preview.naturalWidth * preview.naturalHeight > 60_000_000) {
+            throw new Error('圖片解析度過高，請改用較小的圖片');
+          }
+          const maxEdge = 1920;
+          const scale = Math.min(1, maxEdge / Math.max(preview.naturalWidth, preview.naturalHeight));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(preview.naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(preview.naturalHeight * scale));
+          const context = canvas.getContext('2d');
+          if (!context) throw new Error('目前瀏覽器無法處理背景圖片');
+          context.fillStyle = '#ffffff';
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(preview, 0, 0, canvas.width, canvas.height);
+          compressed = canvas.toDataURL('image/jpeg', .78);
+          const compressedBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', .78));
+          if (!compressedBlob) throw new Error('目前瀏覽器無法壓縮背景圖片');
           setBackgroundImage(compressed);
           setBackgroundMode('image');
-          notify('背景圖片已完整自適應並保存');
-        } catch {
-          notify('圖片仍然太大，請改用較小的圖片');
+
+          const response = await fetch('/api/background?mode=image', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'image/jpeg' },
+            body: compressedBlob,
+          });
+          const payload = await response.json() as { imageUrl?: string; error?: string };
+          if (!response.ok || !payload.imageUrl) throw new Error(payload.error ?? '背景圖片無法保存');
+          const durableImageUrl = payload.imageUrl;
+          try {
+            window.localStorage.setItem(backgroundImageKey, durableImageUrl);
+            window.localStorage.setItem(backgroundModeKey, 'image');
+            window.localStorage.removeItem(backgroundPendingKey);
+          } catch {
+            // The cloud copy is authoritative when browser storage is restricted.
+          }
+          setBackgroundImage(durableImageUrl);
+          setBackgroundMode('image');
+          notify('背景圖片已永久保存，重開頁面也會自動恢復');
+        } catch (error) {
+          if (compressed) {
+            try {
+              window.localStorage.setItem(backgroundImageKey, compressed);
+              window.localStorage.setItem(backgroundPendingKey, compressed);
+              window.localStorage.setItem(backgroundModeKey, 'image');
+              notify('背景暫時保存在目前裝置，重開時會自動重試同步');
+              return;
+            } catch {
+              // Keep the in-memory preview even if neither persistent store is available.
+            }
+          }
+          notify(error instanceof Error ? error.message : '背景圖片目前無法保存');
+        } finally {
+          finish();
         }
       };
-      preview.onerror = () => notify('無法解析這張圖片');
+      preview.onerror = () => {
+        finish();
+        notify('無法解析這張圖片');
+      };
       preview.src = source;
     };
+    reader.onerror = () => {
+      finish();
+      notify('無法讀取這張圖片');
+    };
     reader.readAsDataURL(file);
-    event.target.value = '';
   }, [notify]);
 
-  const switchBackgroundMode = useCallback((mode: BackgroundMode) => {
+  const switchBackgroundMode = useCallback(async (mode: BackgroundMode) => {
+    if (backgroundOperationRef.current || mode === backgroundMode) return;
     if (mode === 'image' && !backgroundImage) {
       backgroundInputRef.current?.click();
       return;
     }
-    window.localStorage.setItem(backgroundModeKey, mode);
+    const previousMode = backgroundMode;
+    backgroundGenerationRef.current += 1;
     setBackgroundMode(mode);
-    notify(mode === 'image' ? '已切換為圖片背景' : '已切換為原始背景，上傳圖片仍保留');
-  }, [backgroundImage, notify]);
+    try {
+      window.localStorage.setItem(backgroundModeKey, mode);
+    } catch {
+      // The cloud setting is authoritative when browser storage is restricted.
+    }
+    if (isLocalBackground(backgroundImage)) {
+      notify(mode === 'image' ? '已切換為圖片背景，待連線後會同步' : '已切換為原始背景，待連線後會同步');
+      return;
+    }
+    backgroundOperationRef.current = true;
+    setBackgroundSaving(true);
+    try {
+      const response = await fetch('/api/background', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? '背景模式無法保存');
+      notify(mode === 'image' ? '已切換為圖片背景並保存' : '已切換為原始背景，圖片仍永久保留');
+    } catch (error) {
+      setBackgroundMode(previousMode);
+      try {
+        window.localStorage.setItem(backgroundModeKey, previousMode);
+      } catch {
+        // Keep the restored cloud setting even if a local cache cannot be written.
+      }
+      notify(error instanceof Error ? error.message : '背景模式無法保存');
+    } finally {
+      backgroundOperationRef.current = false;
+      setBackgroundSaving(false);
+    }
+  }, [backgroundImage, backgroundMode, notify]);
 
   const fetchTrades = useCallback(async () => {
     const response = await fetch('/api/trades', { cache: 'no-store' });
@@ -663,13 +759,106 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const restoreBackground = window.setTimeout(() => {
-      const savedImage = window.localStorage.getItem(backgroundImageKey) ?? '';
-      const savedMode = window.localStorage.getItem(backgroundModeKey);
-      setBackgroundImage(savedImage);
-      setBackgroundMode(savedImage && savedMode !== 'default' ? 'image' : 'default');
-    }, 0);
-    return () => window.clearTimeout(restoreBackground);
+    const controller = new AbortController();
+    const restoreGeneration = backgroundGenerationRef.current;
+    const restoreIsStale = () => controller.signal.aborted || restoreGeneration !== backgroundGenerationRef.current;
+    const restoreBackground = async () => {
+      let savedImage = '';
+      let pendingImage = '';
+      let savedMode: string | null = null;
+      try {
+        savedImage = window.localStorage.getItem(backgroundImageKey) ?? '';
+        pendingImage = window.localStorage.getItem(backgroundPendingKey) ?? '';
+        savedMode = window.localStorage.getItem(backgroundModeKey);
+      } catch {
+        // The durable server copy remains available when browser storage is restricted.
+      }
+      const mode: BackgroundMode = savedMode === 'default' ? 'default' : 'image';
+      const validPendingImage = isLocalBackground(pendingImage) ? pendingImage : '';
+      const validSavedImage = isStoredBackground(savedImage) ? savedImage : '';
+      const localPreview = validPendingImage || validSavedImage;
+      if (localPreview && !restoreIsStale()) {
+        setBackgroundImage(localPreview);
+        setBackgroundMode(mode);
+      }
+
+      const uploadCandidate = validPendingImage || (isLocalBackground(validSavedImage) ? validSavedImage : '');
+      if (uploadCandidate) {
+        backgroundOperationRef.current = true;
+        setBackgroundSaving(true);
+        try {
+          const legacyBlob = await (await fetch(uploadCandidate)).blob();
+          const migrationResponse = await fetch(`/api/background?mode=${mode}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'image/jpeg' },
+            body: legacyBlob,
+            signal: controller.signal,
+          });
+          const migrationPayload = await migrationResponse.json() as { imageUrl?: string; error?: string };
+          if (!migrationResponse.ok || !migrationPayload.imageUrl) throw new Error(migrationPayload.error ?? '舊背景無法同步');
+          if (restoreIsStale()) return;
+          setBackgroundImage(migrationPayload.imageUrl);
+          setBackgroundMode(mode);
+          try {
+            window.localStorage.setItem(backgroundImageKey, migrationPayload.imageUrl);
+            window.localStorage.setItem(backgroundModeKey, mode);
+            window.localStorage.removeItem(backgroundPendingKey);
+          } catch {
+            // The migrated cloud copy remains authoritative.
+          }
+        } catch (error) {
+          if (!(error instanceof DOMException && error.name === 'AbortError')) {
+            try {
+              window.localStorage.setItem(backgroundPendingKey, uploadCandidate);
+            } catch {
+              // The existing in-memory preview remains visible for this session.
+            }
+          }
+        } finally {
+          backgroundOperationRef.current = false;
+          if (!controller.signal.aborted) setBackgroundSaving(false);
+        }
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/background', { cache: 'no-store', signal: controller.signal });
+        const payload = await response.json() as { exists?: boolean; mode?: BackgroundMode; imageUrl?: string | null; error?: string };
+        if (!response.ok) throw new Error(payload.error ?? '背景設定無法讀取');
+        if (payload.exists && payload.imageUrl) {
+          const durableImageUrl = payload.imageUrl;
+          if (restoreIsStale()) return;
+          setBackgroundImage(durableImageUrl);
+          setBackgroundMode(payload.mode === 'default' ? 'default' : 'image');
+          try {
+            window.localStorage.setItem(backgroundImageKey, durableImageUrl);
+            window.localStorage.setItem(backgroundModeKey, payload.mode === 'default' ? 'default' : 'image');
+          } catch {
+            // Server persistence is authoritative, so local cache failures are harmless.
+          }
+          return;
+        }
+
+        if (!restoreIsStale()) {
+          setBackgroundImage('');
+          setBackgroundMode('default');
+          try {
+            window.localStorage.removeItem(backgroundImageKey);
+            window.localStorage.removeItem(backgroundPendingKey);
+            window.localStorage.setItem(backgroundModeKey, 'default');
+          } catch {
+            // The empty server state is already reflected in memory.
+          }
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError') && !localPreview && !restoreIsStale()) {
+          setBackgroundImage('');
+          setBackgroundMode('default');
+        }
+      }
+    };
+    void restoreBackground();
+    return () => controller.abort();
   }, []);
 
   const updatePanelRatio = useCallback((clientX: number) => {
@@ -1184,9 +1373,9 @@ export default function Home() {
         <nav className="side-nav" aria-label="頁面切換">
           {([['overview', '總覽', '⌂'], ['positions', '持倉', '▦'], ['returns', '收益', '⌁']] as const).map(([section, label, icon]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={() => setActiveSection(section)}><i>{icon}</i><span>{label}</span></a>)}
           <div className="background-control">
-            <button type="button" className="background-trigger" onClick={() => backgroundInputRef.current?.click()} title={backgroundImage ? '更換背景圖片' : '加入背景圖片'}><i>▧</i><span>{backgroundImage ? '換圖片' : '背景'}</span></button>
-            {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
-            <input ref={backgroundInputRef} className="visually-hidden" type="file" accept="image/*" onChange={handleBackgroundUpload} />
+            <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}><i>{backgroundSaving ? '◌' : '▧'}</i><span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
+            {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" disabled={backgroundSaving} className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" disabled={backgroundSaving} className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
+            <input ref={backgroundInputRef} className="visually-hidden" type="file" accept="image/*" disabled={backgroundSaving} onChange={handleBackgroundUpload} />
           </div>
         </nav>
         <div className="dashboard">

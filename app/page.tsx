@@ -30,7 +30,8 @@ type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock';
 type PositionViewMode = 'visual' | 'details';
 type AllocationChartMode = 'donut' | 'bars';
 type SymbolSuggestion = { symbol: string; name: string; exchange: string; type: string };
-type LiveQuote = { ticker: string; price: number; marketTime: number | null; session: 'regular' | 'extended'; currency: string; regularPrice: number; extendedPrice: number | null; previousClose: number | null; change: number | null; changePercent: number | null; sparkline: number[] };
+type QuoteSession = 'pre' | 'regular' | 'post' | 'closed';
+type LiveQuote = { ticker: string; price: number; marketTime: number | null; session: QuoteSession; currency: string; regularPrice: number; extendedPrice: number | null; previousClose: number | null; regularChange: number | null; regularChangePercent: number | null; extendedChange: number | null; extendedChangePercent: number | null; change: number | null; changePercent: number | null; sparkline: number[] };
 type AllocationHistory = {
   date: string;
   positions: Array<{ label: string; value: number; tradeCount: number; estimated: boolean }>;
@@ -125,6 +126,7 @@ const easternZoneFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Ameri
 const easternZoneName = (timestamp: number) => easternZoneFormatter.formatToParts(new Date(timestamp)).find((part) => part.type === 'timeZoneName')?.value ?? 'ET';
 const isJapaneseTicker = (ticker: string | null | undefined) => Boolean(ticker?.toUpperCase().endsWith('.T'));
 const nativeMoney = (ticker: string | null | undefined, value: number) => isJapaneseTicker(ticker) ? yenMoney.format(value) : money.format(value);
+const quoteSessionLabel = (session: QuoteSession) => session === 'pre' ? '盤前' : session === 'post' ? '盤後' : session === 'regular' ? '正常交易時段' : '最近收盤';
 const normalizeTickerForMarket = (ticker: string | null | undefined, market: 'US' | 'JP') => {
   const normalized = String(ticker ?? '').trim().toUpperCase();
   return market === 'JP' && /^\d{4}$/.test(normalized) ? `${normalized}.T` : normalized;
@@ -146,7 +148,7 @@ function blankTrade(): Trade {
 
 function metrics(trade: Trade, usdJpyRate = 1) {
   const current = trade.currentPrice;
-  if (current === null) return { pnl: 0, days: 0, roc: 0, annualRoc: 0, marketValue: 0 };
+  if (current === null) return { pnl: 0, days: 0, roc: 0, marketValue: 0 };
   const stock = trade.type === 'SDI' || trade.event === 'STOCK';
   const multiplier = stock ? 1 : 100;
   const direction = trade.type.toLowerCase() === 'sell' ? -1 : 1;
@@ -157,10 +159,9 @@ function metrics(trade: Trade, usdJpyRate = 1) {
   const days = Math.max(1, Math.round((end - start) / 86_400_000));
   const collateralUsd = normalizedUsdAmount(trade, trade.collateral, usdJpyRate);
   const roc = collateralUsd > 0 ? pnl / collateralUsd : 0;
-  const annualRoc = roc * (365 / days);
   const nativeMarketValue = stock ? current * trade.quantity : Math.max(trade.collateral, current * trade.quantity * 100);
   const marketValue = normalizedUsdAmount(trade, nativeMarketValue, usdJpyRate);
-  return { pnl, days, roc, annualRoc, marketValue };
+  return { pnl, days, roc, marketValue };
 }
 
 function startOfWeek(date: Date) {
@@ -1143,8 +1144,22 @@ export default function Home() {
   const openPnl = openTrades.reduce((sum, item) => sum + item.pnl, 0);
   const trackedValue = openTrades.reduce((sum, item) => sum + item.marketValue, 0);
   const capitalAtRisk = openTrades.reduce((sum, item) => sum + normalizedUsdAmount(item.trade, item.trade.collateral, usdJpyRate), 0);
-  const annualRocItems = enriched.filter((item) => item.trade.collateral > 0 && Number.isFinite(item.annualRoc));
-  const averageAnnualRoc = annualRocItems.length ? annualRocItems.reduce((sum, item) => sum + item.annualRoc, 0) / annualRocItems.length : 0;
+  const currentRocYear = Number(today().slice(0, 4));
+  const annualRocSummary = useMemo(() => {
+    const completed = closedTrades.filter((item) => item.trade.closeDate?.startsWith(`${currentRocYear}-`)
+      && item.trade.collateral > 0
+      && Number.isFinite(item.pnl)
+      && item.days > 0);
+    const realizedPnl = completed.reduce((sum, item) => sum + item.pnl, 0);
+    const capitalYears = completed.reduce((sum, item) => {
+      const collateralUsd = normalizedUsdAmount(item.trade, item.trade.collateral, usdJpyRate);
+      return sum + collateralUsd * (item.days / 365);
+    }, 0);
+    return {
+      count: completed.length,
+      value: capitalYears > 0 ? realizedPnl / capitalYears : null,
+    };
+  }, [closedTrades, currentRocYear, usdJpyRate]);
 
   const returnSeries = useMemo(() => buildReturnSeries(trades, rangeMode, usdJpyRate), [trades, rangeMode, usdJpyRate]);
   const activeBenchmarks = benchmarks.mode === rangeMode ? benchmarks : { mode: rangeMode, SPY: [], BOXX: [] };
@@ -1307,6 +1322,8 @@ export default function Home() {
     if (editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && (!editor.currentPrice || editor.currentPrice <= 0)) {
       return notify(editorQuoteError || '請先取得有效的股票報價');
     }
+    if (editor.status === 'closed' && !editor.closeDate) return notify('請填寫平倉日');
+    if (editor.closeDate && editor.closeDate < editor.openDate) return notify('平倉日不得早於開倉日');
     setSaving(true);
     try {
       const preparedTrade: Trade = {
@@ -1504,7 +1521,7 @@ export default function Home() {
           <article className="metric-card featured"><p>追蹤市值</p><strong>{loading ? '—' : money.format(trackedValue)}</strong><span>{openTrades.length} 筆未平倉持倉</span></article>
           <article className="metric-card"><p>未實現損益</p><strong className={openPnl >= 0 ? 'positive' : 'negative'}>{loading ? '—' : money.format(openPnl)}</strong><span>{openPnl >= 0 ? '目前高於成本' : '目前低於成本'}</span></article>
           <article className="metric-card"><p>擔保／投入資本</p><strong>{loading ? '—' : money.format(capitalAtRisk)}</strong><span>依 Collateral 欄位統計</span></article>
-          <article className="metric-card"><p>平均年化 ROC</p><strong className={averageAnnualRoc >= 0 ? 'positive' : 'negative'}>{loading ? '—' : percent.format(averageAnnualRoc)}</strong><span>{closedTrades.length} 筆已完成交易</span></article>
+          <article className="metric-card" title="本年度已實現損益 ÷ 資金占用年數（投入資本 × 持有天數 ÷ 365）"><p>本年度加權年化 ROC</p><strong className={annualRocSummary.value === null ? '' : annualRocSummary.value >= 0 ? 'positive' : 'negative'}>{loading || annualRocSummary.value === null ? '—' : percent.format(annualRocSummary.value)}</strong><span>{currentRocYear} · {annualRocSummary.count} 筆有效平倉交易</span></article>
         </section>
 
         {brokerHubEnabled && <Suspense fallback={<section className="broker-hub-loader" id="broker-hub" aria-busy="true"><span /><strong>正在開啟跨券商資產中樞…</strong></section>}>
@@ -1627,15 +1644,20 @@ export default function Home() {
             {loading && <div className="visual-empty">正在整理圖形化持倉…</div>}
             {!loading && visualPositions.map((position, index) => {
               const snapshot = marketSnapshots[position.ticker];
-              const dailyChange = snapshot?.changePercent ?? null;
-              const regularDisplayPrice = snapshot?.regularPrice ?? position.currentPrice;
-              const extendedDisplayPrice = !isJapaneseTicker(position.ticker) && snapshot?.session === 'extended' ? snapshot.extendedPrice : null;
+              const regularDisplayPrice = snapshot?.session === 'regular' ? snapshot.price : snapshot?.regularPrice ?? position.currentPrice;
+              const extendedSession = snapshot?.session === 'pre' || snapshot?.session === 'post' ? snapshot.session : null;
+              const extendedDisplayPrice = extendedSession ? snapshot?.extendedPrice ?? null : null;
+              const marketDisplayPrice = extendedDisplayPrice ?? snapshot?.regularPrice ?? position.currentPrice;
+              const marketChange = extendedSession ? snapshot?.extendedChange ?? null : snapshot?.regularChange ?? null;
+              const marketChangePercent = extendedSession ? snapshot?.extendedChangePercent ?? null : snapshot?.regularChangePercent ?? null;
+              const currentPriceLabel = extendedSession ? '正常收盤' : '目前價格';
+              const marketMoveLabel = extendedSession === 'pre' ? '盤前漲跌' : extendedSession === 'post' ? '盤後漲跌' : '標的今日漲跌';
               return <article className="visual-position-row" key={position.ticker}>
                 <span className="position-rank">{String(index + 1).padStart(2, '0')}</span>
                 <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · {position.strategy}</small></span></button>
                 <div className="visual-value"><span>持倉市值</span><strong>{money.format(position.marketValue)}</strong></div>
-                <div className="visual-price-flow"><div><span>{position.items.every((item) => item.trade.type === 'SDI' || item.trade.event === 'STOCK') ? '股票均價' : '成交均價'}</span><strong>{nativeMoney(position.ticker, position.entryPrice)}</strong></div><div><span>目前價格</span><strong>{nativeMoney(position.ticker, regularDisplayPrice)}</strong>{extendedDisplayPrice !== null && <small className={`after-hours-price ${extendedDisplayPrice >= regularDisplayPrice ? 'is-up' : 'is-down'}`}><em>盤後</em>{nativeMoney(position.ticker, extendedDisplayPrice)}</small>}</div></div>
-                <div className={`visual-market-move ${dailyChange === null ? 'neutral' : dailyChange >= 0 ? 'positive' : 'negative'}`}><PriceSparkline ticker={position.ticker} values={snapshot?.sparkline ?? []} changePercent={dailyChange} /><div><span>標的今日漲跌</span><strong>{dailyChange === null ? '等待報價' : `${dailyChange >= 0 ? '+' : ''}${precisePercent.format(dailyChange)}`}</strong><small>{snapshot?.change === null || snapshot?.change === undefined ? '—' : `${nativeMoney(position.ticker, snapshot.price)} · ${snapshot.change >= 0 ? '+' : ''}${nativeMoney(position.ticker, snapshot.change)}`}</small></div></div>
+                <div className="visual-price-flow"><div><span>{position.items.every((item) => item.trade.type === 'SDI' || item.trade.event === 'STOCK') ? '股票均價' : '成交均價'}</span><strong>{nativeMoney(position.ticker, position.entryPrice)}</strong></div><div><span>{currentPriceLabel}</span><strong>{nativeMoney(position.ticker, regularDisplayPrice)}</strong>{extendedDisplayPrice !== null && <small className={`after-hours-price ${extendedDisplayPrice >= regularDisplayPrice ? 'is-up' : 'is-down'}`}><em>{extendedSession === 'pre' ? '盤前' : '盤後'}</em>{nativeMoney(position.ticker, extendedDisplayPrice)}</small>}</div></div>
+                <div className={`visual-market-move ${marketChangePercent === null ? 'neutral' : marketChangePercent >= 0 ? 'positive' : 'negative'}`}><PriceSparkline ticker={position.ticker} values={snapshot?.sparkline ?? []} changePercent={marketChangePercent} /><div><span>{marketMoveLabel}</span><strong>{marketChangePercent === null ? '等待報價' : `${marketChangePercent >= 0 ? '+' : ''}${precisePercent.format(marketChangePercent)}`}</strong><small>{marketChange === null ? '—' : `${nativeMoney(position.ticker, marketDisplayPrice)} · ${marketChange >= 0 ? '+' : ''}${nativeMoney(position.ticker, marketChange)}`}</small></div></div>
                 <div className={`visual-gain ${position.pnl >= 0 ? 'positive' : 'negative'}`}><strong>{position.pnl >= 0 ? '+' : ''}{money.format(position.pnl)}</strong><span>{position.roc >= 0 ? '▲' : '▼'} {percent.format(Math.abs(position.roc))}</span></div>
                 <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%` }} /></b></div>
               </article>;
@@ -1761,13 +1783,13 @@ export default function Home() {
                   <div className="editor-section-heading"><span>03</span><div><h3>價格與風險</h3><p>輸入價格、費用與投入資本，損益會立即重算。</p></div></div>
                   <div className="form-grid price-fields">
                     <label>成本／成交價<div className="money-input"><span>{editorCurrencySymbol}</span><input min="0" step="0.01" type="number" value={editor.entryPrice} onChange={(event) => setEditor({ ...editor, entryPrice: Number(event.target.value) })} /></div></label>
-                    <label><span className="field-label-row"><span>持倉／平倉價</span>{editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && <small>自動填入</small>}</span><div className={`money-input ${editorQuoteLoading ? 'is-quote-loading' : ''}`} aria-busy={editorQuoteLoading}><span>{editorCurrencySymbol}</span><input min="0" step="0.01" type="number" readOnly={editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto'} value={editor.currentPrice ?? ''} onChange={(event) => setEditor({ ...editor, currentPrice: event.target.value === '' ? null : Number(event.target.value) })} />{editorQuoteLoading && <i className="quote-price-spinner" aria-label="正在取得報價" />}</div>{editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && <span className={`auto-quote-status ${editorQuoteError ? 'error' : ''}`} aria-live="polite">{editorQuoteLoading ? '正在取得最新可用報價…' : editorQuoteError ? <>{editorQuoteError}<button type="button" onClick={() => setEditorQuoteRetry((current) => current + 1)}>重試</button></> : editorQuote?.ticker === editorAutoQuoteTicker ? `${editorQuote.session === 'extended' ? '盤前／盤後' : '正常交易時段'} ${nativeMoney(editorAutoQuoteTicker, editorQuote.price)} 已填入` : '輸入 Ticker 後會自動填入'}</span>}</label>
+                    <label><span className="field-label-row"><span>持倉／平倉價</span>{editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && <small>自動填入</small>}</span><div className={`money-input ${editorQuoteLoading ? 'is-quote-loading' : ''}`} aria-busy={editorQuoteLoading}><span>{editorCurrencySymbol}</span><input min="0" step="0.01" type="number" readOnly={editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto'} value={editor.currentPrice ?? ''} onChange={(event) => setEditor({ ...editor, currentPrice: event.target.value === '' ? null : Number(event.target.value) })} />{editorQuoteLoading && <i className="quote-price-spinner" aria-label="正在取得報價" />}</div>{editor.type === 'SDI' && editor.status === 'open' && editor.quoteMode === 'auto' && <span className={`auto-quote-status ${editorQuoteError ? 'error' : ''}`} aria-live="polite">{editorQuoteLoading ? '正在取得最新可用報價…' : editorQuoteError ? <>{editorQuoteError}<button type="button" onClick={() => setEditorQuoteRetry((current) => current + 1)}>重試</button></> : editorQuote?.ticker === editorAutoQuoteTicker ? `${quoteSessionLabel(editorQuote.session)} ${nativeMoney(editorAutoQuoteTicker, editorQuote.price)} 已填入` : '輸入 Ticker 後會自動填入'}</span>}</label>
                     <label>手續費<div className="money-input"><span>{editorCurrencySymbol}</span><input min="0" step="0.01" type="number" value={editor.fees} onChange={(event) => setEditor({ ...editor, fees: Number(event.target.value) })} /></div></label>
                     <label>擔保／投入資本<div className="money-input"><span>{editorCurrencySymbol}</span><input min="0" step="0.01" type="number" value={editor.collateral} onChange={(event) => setEditor({ ...editor, collateral: Number(event.target.value) })} /></div></label>
                   </div>
                   <div className="editor-choice-row">
                     {editor.type === 'SDI' && <fieldset className="choice-field compact-choice"><legend>報價方式</legend><div><button type="button" disabled={editor.status === 'closed'} className={editor.quoteMode === 'auto' ? 'active' : ''} onClick={() => { setEditor({ ...editor, quoteMode: 'auto' }); setEditorQuoteRetry((current) => current + 1); }}>自動更新</button><button type="button" className={editor.quoteMode === 'manual' ? 'active' : ''} onClick={() => setEditor({ ...editor, quoteMode: 'manual' })}>手動輸入</button></div></fieldset>}
-                    <fieldset className="choice-field compact-choice"><legend>持倉狀態</legend><div><button type="button" className={editor.status === 'open' ? 'active' : ''} onClick={() => setEditor({ ...editor, status: 'open', closeDate: null })}>未平倉</button><button type="button" className={editor.status === 'closed' ? 'active' : ''} onClick={() => setEditor({ ...editor, status: 'closed', quoteMode: editor.type === 'SDI' ? 'manual' : editor.quoteMode })}>已平倉</button></div></fieldset>
+                    <fieldset className="choice-field compact-choice"><legend>持倉狀態</legend><div><button type="button" className={editor.status === 'open' ? 'active' : ''} onClick={() => setEditor({ ...editor, status: 'open', closeDate: null })}>未平倉</button><button type="button" className={editor.status === 'closed' ? 'active' : ''} onClick={() => setEditor({ ...editor, status: 'closed', closeDate: editor.closeDate ?? today(), quoteMode: editor.type === 'SDI' ? 'manual' : editor.quoteMode })}>已平倉</button></div></fieldset>
                   </div>
                   <label className="notes-field">備註<textarea rows={3} value={editor.notes} onChange={(event) => setEditor({ ...editor, notes: event.target.value })} placeholder="記錄交易想法、催化劑或檢討…" /></label>
                 </section>
@@ -1778,7 +1800,7 @@ export default function Home() {
                   <div className="summary-symbol"><span>{editorDisplayTicker?.slice(0, 1) || '—'}</span><div><strong>{editorDisplayTicker || '尚未選擇標的'}</strong><small>{editorMarket === 'JP' ? '日本 · ' : '美國 · '}{editor.event || '選擇策略'}</small></div></div>
                   <div className="summary-price-pair"><div><span>買入／成交價</span><strong>{editorPriceMoney(editor.entryPrice)}</strong></div><div><span>目前價格</span><strong>{editor.currentPrice === null ? '尚未設定' : editorPriceMoney(editor.currentPrice)}</strong></div></div>
                   <div className="summary-result"><span>即時計算損益（USD）</span><strong className={(editorPreviewMetrics?.pnl ?? 0) >= 0 ? 'positive' : 'negative'}>{money.format(editorPreviewMetrics?.pnl ?? 0)}</strong></div>
-                  <dl><div><dt>ROC</dt><dd className={(editorPreviewMetrics?.roc ?? 0) >= 0 ? 'positive' : 'negative'}>{percent.format(editorPreviewMetrics?.roc ?? 0)}</dd></div><div><dt>持有天數</dt><dd>{editorPreviewMetrics?.days || 0} 天</dd></div><div><dt>狀態</dt><dd>{editor.status === 'open' ? '未平倉' : '已平倉'}</dd></div><div><dt>報價</dt><dd>{editorQuoteLoading ? '讀取中…' : editor.quoteMode === 'auto' && editorQuote?.ticker === editorAutoQuoteTicker ? `${editorQuote.session === 'extended' ? '延長時段' : '正常時段'} ${nativeMoney(editorAutoQuoteTicker, editorQuote.price)}` : editor.quoteMode === 'auto' ? '自動更新' : '手動價格'}</dd></div></dl>
+                  <dl><div><dt>ROC</dt><dd className={(editorPreviewMetrics?.roc ?? 0) >= 0 ? 'positive' : 'negative'}>{percent.format(editorPreviewMetrics?.roc ?? 0)}</dd></div><div><dt>持有天數</dt><dd>{editorPreviewMetrics?.days || 0} 天</dd></div><div><dt>狀態</dt><dd>{editor.status === 'open' ? '未平倉' : '已平倉'}</dd></div><div><dt>報價</dt><dd>{editorQuoteLoading ? '讀取中…' : editor.quoteMode === 'auto' && editorQuote?.ticker === editorAutoQuoteTicker ? `${quoteSessionLabel(editorQuote.session)} ${nativeMoney(editorAutoQuoteTicker, editorQuote.price)}` : editor.quoteMode === 'auto' ? '自動更新' : '手動價格'}</dd></div></dl>
                   <p className="summary-tip"><i>✓</i> 所有欄位可隨時回來修改，儲存後會同步更新圖表與持倉配置。</p>
                 </div>
               </aside>

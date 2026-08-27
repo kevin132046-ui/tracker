@@ -11,7 +11,11 @@ type YahooChart = {
       chartPreviousClose?: number;
       previousClose?: number;
       currency?: string;
-      currentTradingPeriod?: { regular?: { start?: number; end?: number }; post?: { start?: number; end?: number } };
+      currentTradingPeriod?: {
+        pre?: { start?: number; end?: number };
+        regular?: { start?: number; end?: number };
+        post?: { start?: number; end?: number };
+      };
     };
     timestamp?: number[];
     indicators?: { quote?: Array<{ close?: Array<number | null> }> };
@@ -37,19 +41,36 @@ async function fetchLatestPrice(ticker: string) {
   const result = payload.chart?.result?.[0];
   const timestamps = result?.timestamp ?? [];
   const closes = result?.indicators?.quote?.[0]?.close ?? [];
-  let latestIntraday: { price: number; marketTime: number } | null = null;
-  timestamps.forEach((timestamp, index) => {
+  const intradayPoints = timestamps.flatMap((timestamp, index) => {
     const close = closes[index];
-    if (typeof close === 'number' && Number.isFinite(close)) latestIntraday = { price: close, marketTime: timestamp };
+    return typeof close === 'number' && Number.isFinite(close) && close > 0 ? [{ price: close, marketTime: timestamp }] : [];
   });
+  const latestIntraday = intradayPoints.at(-1) ?? null;
   const regularPriceValue = result?.meta?.regularMarketPrice;
-  const regularPrice = Number.isFinite(regularPriceValue) && Number(regularPriceValue) > 0 ? Number(regularPriceValue) : null;
+  const metaRegularPrice = Number.isFinite(regularPriceValue) && Number(regularPriceValue) > 0 ? Number(regularPriceValue) : null;
   const regularTime = result?.meta?.regularMarketTime ?? 0;
-  const regularEnd = result?.meta?.currentTradingPeriod?.regular?.end ?? 0;
-  const postEnd = result?.meta?.currentTradingPeriod?.post?.end ?? Number.MAX_SAFE_INTEGER;
-  const isAfterHours = latestIntraday !== null && regularEnd > 0 && latestIntraday.marketTime > regularEnd && latestIntraday.marketTime <= postEnd;
-  const useIntraday = latestIntraday !== null && (latestIntraday.marketTime >= regularTime || isAfterHours);
-  const price = useIntraday ? latestIntraday.price : regularPrice;
+  const tradingPeriod = result?.meta?.currentTradingPeriod;
+  const preStart = tradingPeriod?.pre?.start ?? 0;
+  const preEnd = tradingPeriod?.pre?.end ?? tradingPeriod?.regular?.start ?? 0;
+  const regularStart = tradingPeriod?.regular?.start ?? 0;
+  const regularEnd = tradingPeriod?.regular?.end ?? 0;
+  const postStart = tradingPeriod?.post?.start ?? regularEnd;
+  const postEnd = tradingPeriod?.post?.end ?? 0;
+  const latestRegularPoint = regularStart > 0 && regularEnd > 0
+    ? intradayPoints.findLast((point) => point.marketTime >= regularStart && point.marketTime < regularEnd) ?? null
+    : null;
+  const regularPrice = metaRegularPrice ?? latestRegularPoint?.price ?? null;
+  let session: 'pre' | 'regular' | 'post' | 'closed' = 'closed';
+  const now = Math.floor(Date.now() / 1000);
+  const latestTime = latestIntraday?.marketTime ?? 0;
+  const hasCurrentPreQuote = latestTime >= preStart && latestTime < preEnd;
+  const hasCurrentPostQuote = latestTime >= postStart && latestTime < postEnd;
+  if (preStart > 0 && preEnd > 0 && now >= preStart && now < preEnd && hasCurrentPreQuote) session = 'pre';
+  else if (regularStart > 0 && regularEnd > 0 && now >= regularStart && now < regularEnd) session = 'regular';
+  else if (postStart > 0 && postEnd > 0 && now >= postStart && now < postEnd && hasCurrentPostQuote) session = 'post';
+  else if (!tradingPeriod && latestIntraday && latestIntraday.marketTime >= regularTime) session = 'regular';
+  const extendedPrice = session === 'pre' || session === 'post' ? latestIntraday?.price ?? null : null;
+  const price = extendedPrice ?? regularPrice ?? latestIntraday?.price ?? null;
   if (!Number.isFinite(price) || Number(price) <= 0) throw new Error(`Quote unavailable for ${ticker}`);
   const intradayValues = closes.filter((close): close is number => typeof close === 'number' && Number.isFinite(close) && close > 0);
   const sampleSize = Math.min(48, intradayValues.length);
@@ -58,17 +79,29 @@ async function fetchLatestPrice(ticker: string) {
     : Array.from({ length: sampleSize }, (_, index) => intradayValues[Math.round((index / (sampleSize - 1)) * (intradayValues.length - 1))]);
   const previousCloseValue = result?.meta?.chartPreviousClose ?? result?.meta?.previousClose;
   const previousClose = Number.isFinite(previousCloseValue) && Number(previousCloseValue) > 0 ? Number(previousCloseValue) : null;
-  const change = previousClose === null ? null : Number(price) - previousClose;
+  const regularChange = regularPrice === null || previousClose === null ? null : regularPrice - previousClose;
+  const regularChangePercent = regularChange === null || previousClose === null ? null : regularChange / previousClose;
+  const extendedChange = extendedPrice === null || regularPrice === null ? null : extendedPrice - regularPrice;
+  const extendedChangePercent = extendedChange === null || regularPrice === null ? null : extendedChange / regularPrice;
+  const change = extendedPrice !== null ? extendedChange : regularChange;
+  const changePercent = extendedPrice !== null ? extendedChangePercent : regularChangePercent;
+  const marketTime = extendedPrice !== null
+    ? latestIntraday?.marketTime ?? (regularTime || null)
+    : regularTime || latestIntraday?.marketTime || null;
   return {
     price: Number(price),
-    marketTime: useIntraday ? latestIntraday.marketTime : regularTime || null,
-    session: isAfterHours ? 'extended' : 'regular',
+    marketTime,
+    session,
     regularPrice: regularPrice ?? Number(price),
-    extendedPrice: isAfterHours ? latestIntraday?.price ?? null : null,
+    extendedPrice,
     currency: result?.meta?.currency ?? 'USD',
     previousClose,
+    regularChange,
+    regularChangePercent,
+    extendedChange,
+    extendedChangePercent,
     change,
-    changePercent: change === null || previousClose === null ? null : change / previousClose,
+    changePercent,
     sparkline,
   };
 }

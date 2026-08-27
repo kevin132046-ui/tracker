@@ -6,19 +6,22 @@ export const dynamic = 'force-dynamic';
 type TradeInput = Omit<TradeRow, 'id' | 'createdAt' | 'updatedAt' | 'sourceRow'> & { sourceRow?: number | null };
 
 function clean(input: Partial<TradeInput>): TradeInput {
-  const status = input.closeDate ? 'closed' : input.status === 'closed' ? 'closed' : 'open';
   const ticker = String(input.ticker ?? '').trim().toUpperCase().slice(0, 12) || null;
   const event = String(input.event ?? 'PUT').trim().toUpperCase().slice(0, 24);
   const type = String(input.type ?? 'Sell').trim().slice(0, 12);
   const openDate = String(input.openDate ?? '').slice(0, 10);
+  const closeDate = input.closeDate ? String(input.closeDate).slice(0, 10) : null;
+  const status = closeDate ? 'closed' : 'open';
   const rawCurrent = input.currentPrice as unknown;
   if (!openDate) throw new Error('Open date is required.');
+  if (input.status === 'closed' && !closeDate) throw new Error('Close date is required for a closed trade.');
+  if (closeDate && closeDate < openDate) throw new Error('Close date cannot be earlier than open date.');
   if (!event) throw new Error('Strategy is required.');
   return {
     type,
     openDate,
     expiryDate: input.expiryDate ? String(input.expiryDate).slice(0, 10) : null,
-    closeDate: input.closeDate ? String(input.closeDate).slice(0, 10) : null,
+    closeDate,
     ticker,
     event,
     strike: input.strike ? String(input.strike).trim().slice(0, 30) : null,

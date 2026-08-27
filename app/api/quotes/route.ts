@@ -5,7 +5,14 @@ export const dynamic = 'force-dynamic';
 
 type YahooChart = {
   chart?: { result?: Array<{
-    meta?: { regularMarketPrice?: number; regularMarketTime?: number; chartPreviousClose?: number; previousClose?: number; currency?: string };
+    meta?: {
+      regularMarketPrice?: number;
+      regularMarketTime?: number;
+      chartPreviousClose?: number;
+      previousClose?: number;
+      currency?: string;
+      currentTradingPeriod?: { regular?: { start?: number; end?: number }; post?: { start?: number; end?: number } };
+    };
     timestamp?: number[];
     indicators?: { quote?: Array<{ close?: Array<number | null> }> };
   }> };
@@ -35,9 +42,13 @@ async function fetchLatestPrice(ticker: string) {
     const close = closes[index];
     if (typeof close === 'number' && Number.isFinite(close)) latestIntraday = { price: close, marketTime: timestamp };
   });
-  const regularPrice = result?.meta?.regularMarketPrice;
+  const regularPriceValue = result?.meta?.regularMarketPrice;
+  const regularPrice = Number.isFinite(regularPriceValue) && Number(regularPriceValue) > 0 ? Number(regularPriceValue) : null;
   const regularTime = result?.meta?.regularMarketTime ?? 0;
-  const useIntraday = latestIntraday !== null && latestIntraday.marketTime >= regularTime;
+  const regularEnd = result?.meta?.currentTradingPeriod?.regular?.end ?? 0;
+  const postEnd = result?.meta?.currentTradingPeriod?.post?.end ?? Number.MAX_SAFE_INTEGER;
+  const isAfterHours = latestIntraday !== null && regularEnd > 0 && latestIntraday.marketTime > regularEnd && latestIntraday.marketTime <= postEnd;
+  const useIntraday = latestIntraday !== null && (latestIntraday.marketTime >= regularTime || isAfterHours);
   const price = useIntraday ? latestIntraday.price : regularPrice;
   if (!Number.isFinite(price) || Number(price) <= 0) throw new Error(`Quote unavailable for ${ticker}`);
   const intradayValues = closes.filter((close): close is number => typeof close === 'number' && Number.isFinite(close) && close > 0);
@@ -51,7 +62,9 @@ async function fetchLatestPrice(ticker: string) {
   return {
     price: Number(price),
     marketTime: useIntraday ? latestIntraday.marketTime : regularTime || null,
-    session: useIntraday && latestIntraday.marketTime > regularTime ? 'extended' : 'regular',
+    session: isAfterHours ? 'extended' : 'regular',
+    regularPrice: regularPrice ?? Number(price),
+    extendedPrice: isAfterHours ? latestIntraday?.price ?? null : null,
     currency: result?.meta?.currency ?? 'USD',
     previousClose,
     change,

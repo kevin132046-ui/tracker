@@ -1,7 +1,8 @@
 'use client';
 
 import type { ChangeEvent, CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
-import { FormEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { BrokerWorkspace } from '@/lib/broker-workspace';
 
 type Trade = {
   id: number;
@@ -29,7 +30,7 @@ type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock';
 type PositionViewMode = 'visual' | 'details';
 type AllocationChartMode = 'donut' | 'bars';
 type SymbolSuggestion = { symbol: string; name: string; exchange: string; type: string };
-type LiveQuote = { ticker: string; price: number; marketTime: number | null; session: 'regular' | 'extended'; currency: string; previousClose: number | null; change: number | null; changePercent: number | null; sparkline: number[] };
+type LiveQuote = { ticker: string; price: number; marketTime: number | null; session: 'regular' | 'extended'; currency: string; regularPrice: number; extendedPrice: number | null; previousClose: number | null; change: number | null; changePercent: number | null; sparkline: number[] };
 type AllocationHistory = {
   date: string;
   positions: Array<{ label: string; value: number; tradeCount: number; estimated: boolean }>;
@@ -69,6 +70,8 @@ type BenchmarkMarket = {
 type BenchmarkData = { SPY: number[]; BOXX: number[] };
 type MacroMarketData = { mode: RangeMode | null; markets: BenchmarkMarket[]; updatedAt: string | null };
 type BackgroundMode = 'default' | 'image';
+
+const BrokerHub = lazy(() => import('@/components/BrokerHub'));
 
 const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
 const companyNames: Record<string, string> = {
@@ -428,6 +431,11 @@ export default function Home() {
   const [positionView, setPositionView] = useState<PositionViewMode>('visual');
   const [query, setQuery] = useState('');
   const [activeSection, setActiveSection] = useState<'overview' | 'positions' | 'returns'>('overview');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [brokerHubEnabled, setBrokerHubEnabled] = useState(false);
+  const [brokerHubLoading, setBrokerHubLoading] = useState(true);
+  const [brokerHubToggleSaving, setBrokerHubToggleSaving] = useState(false);
+  const [brokerWorkspaceSeed, setBrokerWorkspaceSeed] = useState<BrokerWorkspace | null>(null);
   const [editor, setEditor] = useState<Trade | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<Trade | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -485,6 +493,49 @@ export default function Home() {
       toastTimerRef.current = null;
     }, 3200);
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/broker-hub?summary=1', { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { enabled?: boolean; error?: string };
+        if (!response.ok || typeof payload.enabled !== 'boolean') throw new Error(payload.error ?? '設定無法讀取');
+        if (!controller.signal.aborted) setBrokerHubEnabled(payload.enabled);
+      })
+      .catch((error) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) setBrokerHubEnabled(false);
+      })
+      .finally(() => { if (!controller.signal.aborted) setBrokerHubLoading(false); });
+    return () => controller.abort();
+  }, [notify]);
+
+  const openBrokerHub = useCallback(() => {
+    setSettingsOpen(false);
+    window.requestAnimationFrame(() => document.getElementById('broker-hub')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, []);
+
+  const toggleBrokerHub = useCallback(async () => {
+    if (brokerHubLoading || brokerHubToggleSaving) return;
+    const nextEnabled = !brokerHubEnabled;
+    setBrokerHubToggleSaving(true);
+    try {
+      const response = await fetch('/api/broker-hub', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: nextEnabled }),
+      });
+      const payload = await response.json() as { workspace?: BrokerWorkspace; error?: string };
+      if (!response.ok || !payload.workspace) throw new Error(payload.error ?? '功能狀態無法保存');
+      setBrokerHubEnabled(nextEnabled);
+      setBrokerWorkspaceSeed(nextEnabled ? payload.workspace : null);
+      notify(nextEnabled ? '跨券商資產追蹤已開啟' : '跨券商資產追蹤已關閉；已保存的資料不會刪除');
+      if (nextEnabled) window.requestAnimationFrame(() => document.getElementById('broker-hub')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '功能狀態無法保存');
+    } finally {
+      setBrokerHubToggleSaving(false);
+    }
+  }, [brokerHubEnabled, brokerHubLoading, brokerHubToggleSaving, notify]);
 
   const handleBackgroundUpload = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1115,6 +1166,8 @@ export default function Home() {
   const macroRangeModeLabel = macroRangeMode === 'day' ? '日' : macroRangeMode === 'week' ? '週' : macroRangeMode === 'month' ? '月' : '年';
   const macroTimeline = useMemo(() => buildReturnSeries([], macroRangeMode), [macroRangeMode]);
   const activeMacroMarkets = macroMarkets.mode === macroRangeMode ? macroMarkets.markets : [];
+  const usdJpySnapshot = activeMacroMarkets.find((market) => market.id === 'USDJPY');
+  const usdJpyEstimated = !(typeof usdJpySnapshot?.latest === 'number' && Number.isFinite(usdJpySnapshot.latest) && usdJpySnapshot.latest > 50);
   const macroUpdatedLabel = macroMarkets.updatedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(macroMarkets.updatedAt)) : '等待更新';
   const chartDateStep = Math.max(1, Math.ceil((returnSeries.length - 1) / 5));
 
@@ -1433,6 +1486,7 @@ export default function Home() {
 
       <div className="page-frame">
         <nav className="side-nav" aria-label="頁面切換">
+          <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}><i>⚙</i><span>設定</span></button>
           {([['overview', '總覽', '⌂'], ['positions', '持倉', '▦'], ['returns', '收益', '⌁']] as const).map(([section, label, icon]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={() => setActiveSection(section)}><i>{icon}</i><span>{label}</span></a>)}
           <div className="background-control">
             <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}><i>{backgroundSaving ? '◌' : '▧'}</i><span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
@@ -1452,6 +1506,10 @@ export default function Home() {
           <article className="metric-card"><p>擔保／投入資本</p><strong>{loading ? '—' : money.format(capitalAtRisk)}</strong><span>依 Collateral 欄位統計</span></article>
           <article className="metric-card"><p>平均年化 ROC</p><strong className={averageAnnualRoc >= 0 ? 'positive' : 'negative'}>{loading ? '—' : percent.format(averageAnnualRoc)}</strong><span>{closedTrades.length} 筆已完成交易</span></article>
         </section>
+
+        {brokerHubEnabled && <Suspense fallback={<section className="broker-hub-loader" id="broker-hub" aria-busy="true"><span /><strong>正在開啟跨券商資產中樞…</strong></section>}>
+          <BrokerHub initialWorkspace={brokerWorkspaceSeed} usdJpyRate={usdJpyRate} usdJpyEstimated={usdJpyEstimated} usdJpyUpdatedAt={usdJpyEstimated ? null : macroMarkets.updatedAt} onNotify={notify} />
+        </Suspense>}
 
         <section ref={contentGridRef} className={`content-grid ${resizingPanels ? 'is-resizing' : ''}`} style={contentGridStyle}>
           <article className="panel return-panel" id="returns" aria-busy={benchmarkLoading}>
@@ -1570,11 +1628,13 @@ export default function Home() {
             {!loading && visualPositions.map((position, index) => {
               const snapshot = marketSnapshots[position.ticker];
               const dailyChange = snapshot?.changePercent ?? null;
+              const regularDisplayPrice = snapshot?.regularPrice ?? position.currentPrice;
+              const extendedDisplayPrice = !isJapaneseTicker(position.ticker) && snapshot?.session === 'extended' ? snapshot.extendedPrice : null;
               return <article className="visual-position-row" key={position.ticker}>
                 <span className="position-rank">{String(index + 1).padStart(2, '0')}</span>
                 <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · {position.strategy}</small></span></button>
                 <div className="visual-value"><span>持倉市值</span><strong>{money.format(position.marketValue)}</strong></div>
-                <div className="visual-price-flow"><div><span>{position.items.every((item) => item.trade.type === 'SDI' || item.trade.event === 'STOCK') ? '股票均價' : '成交均價'}</span><strong>{nativeMoney(position.ticker, position.entryPrice)}</strong></div><div><span>目前價格</span><strong>{nativeMoney(position.ticker, position.currentPrice)}</strong></div></div>
+                <div className="visual-price-flow"><div><span>{position.items.every((item) => item.trade.type === 'SDI' || item.trade.event === 'STOCK') ? '股票均價' : '成交均價'}</span><strong>{nativeMoney(position.ticker, position.entryPrice)}</strong></div><div><span>目前價格</span><strong>{nativeMoney(position.ticker, regularDisplayPrice)}</strong>{extendedDisplayPrice !== null && <small className={`after-hours-price ${extendedDisplayPrice >= regularDisplayPrice ? 'is-up' : 'is-down'}`}><em>盤後</em>{nativeMoney(position.ticker, extendedDisplayPrice)}</small>}</div></div>
                 <div className={`visual-market-move ${dailyChange === null ? 'neutral' : dailyChange >= 0 ? 'positive' : 'negative'}`}><PriceSparkline ticker={position.ticker} values={snapshot?.sparkline ?? []} changePercent={dailyChange} /><div><span>標的今日漲跌</span><strong>{dailyChange === null ? '等待報價' : `${dailyChange >= 0 ? '+' : ''}${precisePercent.format(dailyChange)}`}</strong><small>{snapshot?.change === null || snapshot?.change === undefined ? '—' : `${nativeMoney(position.ticker, snapshot.price)} · ${snapshot.change >= 0 ? '+' : ''}${nativeMoney(position.ticker, snapshot.change)}`}</small></div></div>
                 <div className={`visual-gain ${position.pnl >= 0 ? 'positive' : 'negative'}`}><strong>{position.pnl >= 0 ? '+' : ''}{money.format(position.pnl)}</strong><span>{position.roc >= 0 ? '▲' : '▼'} {percent.format(Math.abs(position.roc))}</span></div>
                 <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%` }} /></b></div>
@@ -1604,6 +1664,24 @@ export default function Home() {
         </section>
         </div>
       </div>
+
+      {settingsOpen && <div className="settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
+        <aside className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+          <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title">設定</h2><span>選擇要啟用的擴充工作區。</span></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
+          <div className="settings-body">
+            <section className={`settings-feature-card ${brokerHubEnabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon" aria-hidden="true">◎</span><div><p>Optional module</p><h3>跨券商資產追蹤與再平衡</h3></div><span className="settings-feature-status">{brokerHubLoading ? '讀取中' : brokerHubEnabled ? '已開啟' : '預設關閉'}</span></div>
+              <p>把不同券商的手動部位聚合成單一全景，提供 USD／JPY 平抑檢視、偏離診斷、只買不賣試算與跨券商待辦清單。</p>
+              <div className="settings-feature-actions">
+                <span>關閉時不載入資料、不啟動額外計算；再次開啟時會保留原資料。</span>
+                <button type="button" className={`settings-toggle ${brokerHubEnabled ? 'is-on' : ''}`} role="switch" aria-checked={brokerHubEnabled} disabled={brokerHubLoading || brokerHubToggleSaving} onClick={toggleBrokerHub}><i /><b>{brokerHubToggleSaving ? '保存中…' : brokerHubEnabled ? '開啟' : '關閉'}</b></button>
+              </div>
+              {brokerHubEnabled && <button type="button" className="settings-open-workspace" onClick={openBrokerHub}>前往跨券商工作區</button>}
+            </section>
+            <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
+          </div>
+        </aside>
+      </div>}
 
       {editor && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditor(null); }}>
         <section className="trade-modal" role="dialog" aria-modal="true" aria-labelledby="trade-editor-title">

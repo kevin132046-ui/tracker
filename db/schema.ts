@@ -28,3 +28,11 @@ export const trades = sqliteTable(
     index('idx_trades_ticker_quote_mode').on(table.ticker, table.quoteMode),
   ],
 );
+
+export const brokerHubState = sqliteTable('broker_hub_state', {
+  id: integer('id').primaryKey(),
+  enabled: integer('enabled').notNull().default(0),
+  revision: integer('revision').notNull().default(0),
+  data: text('data').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});

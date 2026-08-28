@@ -159,7 +159,7 @@
 .assetIdentity { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .assetLogo { position: relative; display: grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px; overflow: hidden; border-radius: 14px; background: linear-gradient(145deg, #eaf2ff, #dce9ff); color: var(--blue); font-style: normal; font-size: 11px; font-weight: 950; box-shadow: inset 0 0 0 1px #d4e1f4; }
 .assetLogo > span { position: relative; z-index: 1; }
-.assetLogo > img { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; padding: 6px; object-fit: contain; background: white; }
+.assetLogo > img { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; display: block; padding: 4px; object-fit: contain; object-position: center; image-rendering: auto; background: white; }
 .assetIdentity > span, .assetValue, .assetDrift { display: grid; gap: 4px; min-width: 0; }
 .assetIdentity strong { font-size: 14px; }
 .assetIdentity small, .assetValue small, .assetDrift small { color: #8090a8; font-size: 10px; font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

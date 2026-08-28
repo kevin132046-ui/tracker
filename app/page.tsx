@@ -232,20 +232,42 @@ function buildReturnSeries(trades: Trade[], mode: RangeMode, usdJpyRate = 1) {
 }
 
 const CompanyLogo = memo(function CompanyLogo({ ticker, compact = false }: { ticker: string; compact?: boolean }) {
-  return <span className={`company-logo ${compact ? 'compact' : ''}`} aria-hidden="true">
+  return <span className={`company-logo ${compact ? 'compact' : ''}`} data-ticker={ticker} aria-hidden="true">
     <span>{ticker.slice(0, compact ? 1 : 2)}</span>
     {/* eslint-disable-next-line @next/next/no-img-element */}
     <img
       key={ticker}
-      src={`/api/logo?ticker=${encodeURIComponent(ticker)}&v=5`}
+      src={`/api/logo?ticker=${encodeURIComponent(ticker)}&v=6`}
       alt=""
+      width={compact ? 46 : 58}
+      height={compact ? 46 : 58}
       loading="lazy"
       decoding="async"
+      draggable={false}
       onLoad={(event) => { event.currentTarget.hidden = false; }}
       onError={(event) => { event.currentTarget.hidden = true; }}
     />
   </span>;
 });
+
+const donutPoint = (radius: number, fraction: number) => {
+  const angle = fraction * Math.PI * 2 - Math.PI / 2;
+  return { x: 50 + Math.cos(angle) * radius, y: 50 + Math.sin(angle) * radius };
+};
+
+const donutSegmentPath = (start: number, share: number) => {
+  const outerRadius = 49.35;
+  const innerRadius = 28.15;
+  const safeShare = Math.min(.999999, Math.max(.000001, share));
+  const end = start + safeShare;
+  const outerStart = donutPoint(outerRadius, start);
+  const outerEnd = donutPoint(outerRadius, end);
+  const innerEnd = donutPoint(innerRadius, end);
+  const innerStart = donutPoint(innerRadius, start);
+  const largeArc = safeShare > .5 ? 1 : 0;
+  const point = ({ x, y }: { x: number; y: number }) => `${x.toFixed(4)} ${y.toFixed(4)}`;
+  return `M ${point(outerStart)} A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${point(outerEnd)} L ${point(innerEnd)} A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${point(innerStart)} Z`;
+};
 
 const AllocationDonut = memo(function AllocationDonut({ items, total, loading, activeLabel, onHover, onPin, onSelect }: {
   items: AllocationItem[];
@@ -256,33 +278,26 @@ const AllocationDonut = memo(function AllocationDonut({ items, total, loading, a
   onPin: (label: string | null) => void;
   onSelect: (item: AllocationItem) => void;
 }) {
-  const segments = items.map((item, index) => {
+  const segments = useMemo(() => items.map((item, index) => {
     const start = items.slice(0, index).reduce((sum, previous) => sum + previous.share, 0);
     const midpoint = start + item.share / 2;
     const angle = midpoint * Math.PI * 2 - Math.PI / 2;
     const labelRadius = item.share < .04 ? (index % 2 ? 34 : 43) : 39;
-    return { ...item, index, start, labelX: 50 + Math.cos(angle) * labelRadius, labelY: 50 + Math.sin(angle) * labelRadius };
-  });
+    return { ...item, index, start, path: donutSegmentPath(start, item.share), labelX: 50 + Math.cos(angle) * labelRadius, labelY: 50 + Math.sin(angle) * labelRadius };
+  }), [items]);
   const active = segments.find((item) => item.label === activeLabel) ?? null;
-  const segmentProps = (item: typeof segments[number]) => ({
-    cx: 50,
-    cy: 50,
-    r: 39,
-    pathLength: 100,
-    strokeDasharray: `${Math.max(.12, item.share * 100)} ${Math.max(0, 100 - item.share * 100)}`,
-    strokeDashoffset: -item.start * 100,
-    transform: 'rotate(-90 50 50)',
-  });
   const activate = (item: typeof segments[number]) => { onPin(item.label); onSelect(item); };
   return <div className={`donut ${loading ? 'is-loading' : ''} ${items.length ? 'has-items' : ''}`}>
     <svg className="donut-svg" viewBox="0 0 100 100" role="group" aria-label="按標的計算的互動持倉圓環">
       <circle cx="50" cy="50" r="39" className="donut-track" />
-      {segments.map((item) => <circle key={`base-${item.label}`} {...segmentProps(item)} className="donut-segment" stroke={item.color} />)}
-      {active && <><circle {...segmentProps(active)} className="donut-segment-outline" stroke="white" /><circle {...segmentProps(active)} className="donut-segment-active" stroke={active.color} /></>}
-      {segments.map((item) => <circle
+      {segments.map((item) => <path key={`base-${item.label}`} d={item.path} className="donut-segment" fill={item.color} stroke={item.color} />)}
+      {active && <><path d={active.path} className="donut-segment-outline" fill="none" stroke="white" /><path d={active.path} className="donut-segment-active" fill={active.color} stroke={active.color} /></>}
+      {segments.map((item) => <path
         key={`hit-${item.label}`}
-        {...segmentProps(item)}
+        d={item.path}
         className="donut-segment-hit"
+        fill="transparent"
+        stroke="transparent"
         role="button"
         tabIndex={0}
         aria-pressed={activeLabel === item.label}

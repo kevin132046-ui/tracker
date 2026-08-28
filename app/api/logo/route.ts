@@ -3,20 +3,35 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 const simpleIconSlugs: Record<string, string> = {
+  AAPL: 'apple',
+  AMZN: 'amazon',
+  AXP: 'americanexpress',
+  GOOGL: 'google',
   KO: 'cocacola',
+  META: 'meta',
   NVDA: 'nvidia',
+  TSLA: 'tesla',
   TTWO: 'taketwointeractivesoftware',
   V: 'visa',
 };
 const companyDomains: Record<string, string> = {
+  AAPL: 'apple.com',
+  AMZN: 'amazon.com',
+  AXP: 'americanexpress.com',
+  BOXX: 'alphaarchitect.com',
   CNC: 'centene.com',
+  GOOGL: 'google.com',
   KO: 'coca-colacompany.com',
+  META: 'meta.com',
   MSFT: 'microsoft.com',
   NVDA: 'nvidia.com',
   SPGI: 'spglobal.com',
+  SPY: 'ssga.com',
+  TSLA: 'tesla.com',
   TRV: 'travelers.com',
   TTWO: 'take2games.com',
   V: 'visa.com',
+  VST: 'vistracorp.com',
   '7203.T': 'global.toyota',
   '6758.T': 'sony.com',
   '9984.T': 'group.softbank',
@@ -27,7 +42,8 @@ const companyDomains: Record<string, string> = {
   '7974.T': 'nintendo.co.jp',
 };
 const officialLogoSources: Record<string, string> = {
-  CNC: 'https://www.centene.com/content/dam/centenedotcom/logos/centene_logo_2023.jpg',
+  AXP: 'https://upload.wikimedia.org/wikipedia/commons/3/30/American_Express_logo.svg',
+  MSFT: 'https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg',
   SPGI: 'https://upload.wikimedia.org/wikipedia/commons/e/ee/S%26P_Global_logo.svg',
   TRV: 'https://www.travelers.com/ClientResources/tds-icons/assets/icons/logos/svg/trv-logo-2color-small.svg',
 };
@@ -39,8 +55,10 @@ export async function GET(request: Request) {
   const companyImage = `https://financialmodelingprep.com/image-stock/${encodeURIComponent(ticker)}.png`;
   const brandImage = simpleIconSlugs[ticker] ? `https://cdn.simpleicons.org/${simpleIconSlugs[ticker]}` : null;
   const officialImage = officialLogoSources[ticker] ?? null;
-  const domainImage = companyDomains[ticker] ? `https://icon.horse/icon/${companyDomains[ticker]}?size=128` : null;
-  const sources = [...(brandImage ? [brandImage] : []), ...(officialImage ? [officialImage] : []), ...(domainImage ? [domainImage] : []), companyImage];
+  const domain = companyDomains[ticker] ?? null;
+  const googleImage = domain ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=256` : null;
+  const domainImage = domain ? `https://icon.horse/icon/${domain}?size=256` : null;
+  const sources = [...(officialImage ? [officialImage] : []), ...(brandImage ? [brandImage] : []), ...(googleImage ? [googleImage] : []), ...(domainImage ? [domainImage] : []), companyImage];
 
   for (const source of sources) {
     try {
@@ -56,12 +74,13 @@ export async function GET(request: Request) {
       return new Response(response.body, {
         headers: {
           'Content-Type': contentType,
-          'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+          'Cache-Control': 'public, max-age=604800, stale-while-revalidate=2592000',
+          'X-Content-Type-Options': 'nosniff',
         },
       });
     } catch {
       continue;
     }
   }
-  return new Response(null, { status: 404 });
+  return new Response(null, { status: 404, headers: { 'Cache-Control': 'public, max-age=3600' } });
 }

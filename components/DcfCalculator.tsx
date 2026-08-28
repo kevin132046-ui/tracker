@@ -291,7 +291,7 @@ export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicke
     <header className={styles.header}>
       <div className={styles.identity}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`/api/logo?ticker=${encodeURIComponent(assumptions.ticker || 'MSFT')}&v=5`} alt="" />
+        <img src={`/api/logo?ticker=${encodeURIComponent(assumptions.ticker || 'MSFT')}&v=6`} alt="" width="58" height="58" decoding="async" draggable={false} />
         <div><p>Valuation workspace</p><h2 id="dcf-title">DCF 內在價值試算</h2><span>以自由現金流、WACC 與永續成長率估算企業價值</span></div>
       </div>
       <div className={styles.headerActions}><div className={styles.tickerControl}><label>Ticker<input value={assumptions.ticker} onChange={(event) => set('ticker', event.target.value.toUpperCase())} onKeyDown={(event) => { if (event.key === 'Enter') void loadCompany(assumptions.ticker); }} /></label><div role="group" aria-label="估值幣別"><button type="button" className={assumptions.currency === 'USD' ? styles.active : ''} onClick={() => switchCurrency('USD')}>USD</button><button type="button" className={assumptions.currency === 'JPY' ? styles.active : ''} onClick={() => switchCurrency('JPY')}>JPY</button></div></div><button type="button" className={styles.loadButton} disabled={companyLoading} onClick={() => void loadCompany(assumptions.ticker)}>{companyLoading ? '讀取中…' : '自動帶入資料'}</button></div>

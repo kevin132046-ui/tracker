@@ -77,7 +77,7 @@ function BrokerAssetLogo({ ticker }: { ticker: string }) {
   const [failed, setFailed] = useState(false);
   return <i className={styles.assetLogo}><span>{ticker.slice(0, 2)}</span>{!failed && <>
     {/* eslint-disable-next-line @next/next/no-img-element */}
-    <img src={`/api/logo?ticker=${encodeURIComponent(ticker)}`} alt="" loading="lazy" onError={() => setFailed(true)} />
+    <img src={`/api/logo?ticker=${encodeURIComponent(ticker)}&v=6`} alt="" width="42" height="42" loading="lazy" decoding="async" draggable={false} onError={() => setFailed(true)} />
   </>}</i>;
 }
 

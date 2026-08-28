@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 type Mode = 'day' | 'week' | 'month' | 'year';
 type ChartResult = {
-  meta?: { regularMarketPrice?: number; chartPreviousClose?: number; previousClose?: number };
+  meta?: { regularMarketPrice?: number; previousClose?: number };
   timestamp?: number[];
   indicators?: {
     adjclose?: Array<{ adjclose?: Array<number | null> }>;
@@ -13,7 +13,8 @@ type ChartResult = {
 };
 type ChartPayload = { chart?: { result?: ChartResult[] } };
 type MarketConfig = {
-  id: 'USDJPY' | 'US10Y' | 'US30Y';
+  id: 'USDJPY' | 'US10Y' | 'US30Y' | 'GOLD' | 'OIL';
+  providerSymbol: string;
   symbol: string;
   label: string;
   unit: string;
@@ -21,10 +22,17 @@ type MarketConfig = {
 };
 
 const marketConfigs: MarketConfig[] = [
-  { id: 'USDJPY', symbol: 'JPY=X', label: '美元／日圓', unit: '日圓／美元', decimals: 3 },
-  { id: 'US10Y', symbol: 'ZN=F', label: '10 年美債期貨', unit: '價格點（面額 100）', decimals: 3 },
-  { id: 'US30Y', symbol: 'ZB=F', label: '30 年美債期貨', unit: '價格點（面額 100）', decimals: 3 },
+  { id: 'USDJPY', providerSymbol: 'JPY=X', symbol: 'USD/JPY', label: '美元／日圓', unit: '日圓／美元', decimals: 2 },
+  { id: 'US10Y', providerSymbol: '^TNX', symbol: 'US10-YR', label: '美國公債10年期', unit: '殖利率（%）', decimals: 2 },
+  { id: 'US30Y', providerSymbol: '^TYX', symbol: 'US30-YR', label: '美國公債30年期', unit: '殖利率（%）', decimals: 2 },
+  { id: 'GOLD', providerSymbol: 'GC=F', symbol: 'GC=F', label: '黃金期貨', unit: '美元／盎司', decimals: 2 },
+  { id: 'OIL', providerSymbol: 'CL=F', symbol: 'CL=F', label: 'WTI 原油期貨', unit: '美元／桶', decimals: 2 },
 ];
+
+const chartCache = new Map<string, { result: ChartResult; fetchedAt: number }>();
+const chartRequests = new Map<string, Promise<ChartResult>>();
+const chartFreshMs = 55_000;
+const yahooTimeoutMs = 4_200;
 
 function startOfWeek(date: Date) {
   const copy = new Date(date);
@@ -74,24 +82,61 @@ function yahooConfig(mode: Mode) {
   return 'range=5y&interval=1mo';
 }
 
-async function fetchChart(symbol: string, mode: Mode) {
-  let failure: Error | null = null;
-  for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
-    try {
-      const response = await fetch(`https://${host}/v8/finance/chart/${encodeURIComponent(symbol)}?${yahooConfig(mode)}`, {
-        headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OptionFlow/1.0' },
-        cache: 'no-store',
-      });
-      if (!response.ok) throw new Error(`${symbol} history returned ${response.status}.`);
-      const payload = await response.json() as ChartPayload;
-      const result = payload.chart?.result?.[0];
-      if (result) return result;
-      throw new Error(`${symbol} history returned no data.`);
-    } catch (error) {
-      failure = error instanceof Error ? error : new Error(`${symbol} history is unavailable.`);
-    }
+async function fetchYahooChart(host: string, symbol: string, mode: Mode, sharedSignal: AbortSignal) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  sharedSignal.addEventListener('abort', abort, { once: true });
+  const timeout = setTimeout(() => controller.abort(), yahooTimeoutMs);
+  try {
+    const response = await fetch(`https://${host}/v8/finance/chart/${encodeURIComponent(symbol)}?${yahooConfig(mode)}`, {
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OptionFlow/1.0' },
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`${symbol} history returned ${response.status}.`);
+    const payload = await response.json() as ChartPayload;
+    const result = payload.chart?.result?.[0];
+    if (result) return result;
+    throw new Error(`${symbol} history returned no data.`);
+  } finally {
+    clearTimeout(timeout);
+    sharedSignal.removeEventListener('abort', abort);
   }
-  throw failure ?? new Error(`${symbol} history is unavailable.`);
+}
+
+async function fetchChart(symbol: string, mode: Mode, force = false) {
+  const key = `${symbol}:${mode}`;
+  const cached = chartCache.get(key);
+  if (!force && cached && Date.now() - cached.fetchedAt < chartFreshMs) return cached.result;
+  const pending = chartRequests.get(key);
+  if (pending) return pending;
+
+  const request = (async () => {
+    const sharedController = new AbortController();
+    let secondaryTimer: ReturnType<typeof setTimeout> | null = null;
+    const secondary = new Promise<ChartResult>((resolve, reject) => {
+      secondaryTimer = setTimeout(() => {
+        void fetchYahooChart('query2.finance.yahoo.com', symbol, mode, sharedController.signal).then(resolve, reject);
+      }, 250);
+    });
+    try {
+      const result = await Promise.any([
+        fetchYahooChart('query1.finance.yahoo.com', symbol, mode, sharedController.signal),
+        secondary,
+      ]);
+      chartCache.set(key, { result, fetchedAt: Date.now() });
+      return result;
+    } catch (error) {
+      if (cached) return cached.result;
+      throw error instanceof Error ? error : new Error(`${symbol} history is unavailable.`);
+    } finally {
+      if (secondaryTimer) clearTimeout(secondaryTimer);
+      sharedController.abort();
+    }
+  })().finally(() => chartRequests.delete(key));
+
+  chartRequests.set(key, request);
+  return request;
 }
 
 function chartPoints(result: ChartResult, adjusted: boolean) {
@@ -126,19 +171,21 @@ async function benchmarkReturns(symbol: string, mode: Mode) {
   });
 }
 
-async function marketHistory(config: MarketConfig, mode: Mode) {
-  const result = await fetchChart(config.symbol, mode);
+async function marketHistory(config: MarketConfig, mode: Mode, force = false) {
+  const result = await fetchChart(config.providerSymbol, mode, force);
   const points = chartPoints(result, false);
   const grouped = new Map<string, number>();
   points.forEach((point) => grouped.set(bucketKey(new Date(point.timestamp * 1000), mode), point.close));
   const last = points.at(-1)?.close ?? null;
   const prior = points.at(-2)?.close ?? null;
   const latest = typeof result.meta?.regularMarketPrice === 'number' ? result.meta.regularMarketPrice : last;
-  const previous = typeof result.meta?.chartPreviousClose === 'number'
-    ? result.meta.chartPreviousClose
-    : typeof result.meta?.previousClose === 'number' ? result.meta.previousClose : prior;
+  const previous = typeof result.meta?.previousClose === 'number' ? result.meta.previousClose : prior;
   return {
-    ...config,
+    id: config.id,
+    symbol: config.symbol,
+    label: config.label,
+    unit: config.unit,
+    decimals: config.decimals,
     values: bucketKeys(mode).map((key) => grouped.get(key) ?? null),
     latest,
     change: latest !== null && previous !== null ? latest - previous : null,
@@ -147,32 +194,40 @@ async function marketHistory(config: MarketConfig, mode: Mode) {
 }
 
 function emptyMarket(config: MarketConfig, mode: Mode) {
-  return { ...config, values: bucketKeys(mode).map(() => null), latest: null, change: null, changePercent: null };
+  return { id: config.id, symbol: config.symbol, label: config.label, unit: config.unit, decimals: config.decimals, values: bucketKeys(mode).map(() => null), latest: null, change: null, changePercent: null };
 }
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const modeParam = params.get('mode');
   const scope = params.get('scope') === 'markets' ? 'markets' : params.get('scope') === 'benchmarks' ? 'benchmarks' : 'all';
+  const marketGroup = params.get('group') === 'commodities' ? 'commodities' : 'rates';
+  const activeMarketConfigs = marketGroup === 'commodities'
+    ? marketConfigs.filter((config) => config.id === 'USDJPY' || config.id === 'GOLD' || config.id === 'OIL')
+    : marketConfigs.filter((config) => config.id === 'USDJPY' || config.id === 'US10Y' || config.id === 'US30Y');
+  const force = params.has('refresh');
   const mode: Mode = modeParam === 'day' || modeParam === 'week' || modeParam === 'year' ? modeParam : 'month';
   const emptyReturns = bucketKeys(mode).map(() => 0);
-  const benchmarkResults = scope === 'markets' ? [] : await Promise.allSettled([benchmarkReturns('SPY', mode), benchmarkReturns('BOXX', mode)]);
-  const marketResults = scope === 'benchmarks' ? [] : await Promise.allSettled(marketConfigs.map((config) => marketHistory(config, mode)));
+  const [benchmarkResults, marketResults] = await Promise.all([
+    scope === 'markets' ? Promise.resolve([]) : Promise.allSettled([benchmarkReturns('SPY', mode), benchmarkReturns('BOXX', mode)]),
+    scope === 'benchmarks' ? Promise.resolve([]) : Promise.allSettled(activeMarketConfigs.map((config) => marketHistory(config, mode, force))),
+  ]);
   const spy = benchmarkResults[0]?.status === 'fulfilled' ? benchmarkResults[0].value : emptyReturns;
   const boxx = benchmarkResults[1]?.status === 'fulfilled' ? benchmarkResults[1].value : emptyReturns;
-  const markets = marketConfigs.map((config, index) => marketResults[index]?.status === 'fulfilled' ? marketResults[index].value : emptyMarket(config, mode));
+  const markets = activeMarketConfigs.map((config, index) => marketResults[index]?.status === 'fulfilled' ? marketResults[index].value : emptyMarket(config, mode));
   const warnings = [
     ...benchmarkResults.flatMap((result, index) => result.status === 'rejected' ? [['SPY', 'BOXX'][index]] : []),
-    ...marketResults.flatMap((result, index) => result.status === 'rejected' ? [marketConfigs[index].symbol] : []),
+    ...marketResults.flatMap((result, index) => result.status === 'rejected' ? [activeMarketConfigs[index].providerSymbol] : []),
   ];
   if (warnings.length) console.warn(`Market data unavailable: ${warnings.join(', ')}`);
   return NextResponse.json({
     mode,
+    marketGroup,
     SPY: spy,
     BOXX: boxx,
     markets,
     warnings,
     updatedAt: new Date().toISOString(),
-    source: 'Yahoo Finance — adjusted close and daily close; Treasury prices use continuous futures proxies',
-  }, { headers: { 'Cache-Control': scope === 'markets' ? 'public, max-age=60, stale-while-revalidate=180' : 'public, max-age=300, stale-while-revalidate=900' } });
+    source: 'Yahoo Finance — adjusted close and daily close; U.S. Treasury cards use yield indexes; commodity cards use continuous front-month futures',
+  }, { headers: { 'Cache-Control': scope === 'markets' ? 'public, max-age=60, stale-while-revalidate=600' : 'public, max-age=300, stale-while-revalidate=900' } });
 }

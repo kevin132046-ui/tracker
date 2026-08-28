@@ -27,6 +27,7 @@ type Trade = {
 };
 
 type RangeMode = 'day' | 'week' | 'month' | 'year';
+type MacroMarketGroup = 'rates' | 'commodities';
 type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock';
 type PositionViewMode = 'visual' | 'details';
 type AllocationChartMode = 'donut' | 'bars';
@@ -60,7 +61,7 @@ type TechnicalData = {
   updatedAt: string;
 };
 type BenchmarkMarket = {
-  id: 'USDJPY' | 'US10Y' | 'US30Y';
+  id: 'USDJPY' | 'US10Y' | 'US30Y' | 'GOLD' | 'OIL';
   symbol: string;
   label: string;
   unit: string;
@@ -72,6 +73,7 @@ type BenchmarkMarket = {
 };
 type BenchmarkData = { SPY: number[]; BOXX: number[] };
 type MacroMarketData = { mode: RangeMode | null; markets: BenchmarkMarket[]; updatedAt: string | null };
+type MacroCacheEntry = { markets: BenchmarkMarket[]; updatedAt: string; fetchedAt: number };
 type BackgroundMode = 'default' | 'image';
 
 const loadBrokerHub = () => import('@/components/BrokerHub');
@@ -95,6 +97,8 @@ const backgroundModeKey = 'optionflow-background-mode';
 const backgroundPendingKey = 'optionflow-pending-background';
 const backgroundPendingModeKey = 'optionflow-pending-background-mode';
 const usdJpyRateKey = 'optionflow-usdjpy-rate';
+const usdJpyUpdatedAtKey = 'optionflow-usdjpy-updated-at';
+const macroMarketStorageKey = 'optionflow-macro-markets-v2';
 const localBackgroundPattern = /^data:image\/jpeg;base64,/i;
 const serverBackgroundPattern = /^\/api\/background\?image=1&version=\d{10,16}-[0-9a-f-]{36}$/i;
 const isLocalBackground = (value: string) => localBackgroundPattern.test(value);
@@ -111,6 +115,31 @@ const initialUsdJpyRate = () => {
   const savedRate = Number(window.localStorage.getItem(usdJpyRateKey));
   return Number.isFinite(savedRate) && savedRate > 50 ? savedRate : 150;
 };
+const initialUsdJpyUpdatedAt = () => {
+  if (typeof window === 'undefined') return null;
+  const value = window.localStorage.getItem(usdJpyUpdatedAtKey);
+  const timestamp = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isFinite(timestamp) && Date.now() - timestamp < 7 * 24 * 60 * 60 * 1_000 ? value : null;
+};
+const readStoredMacroMarket = (key: string): MacroCacheEntry | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(macroMarketStorageKey) ?? '{}') as Record<string, MacroCacheEntry>;
+    const entry = stored[key];
+    return entry && Array.isArray(entry.markets) && typeof entry.updatedAt === 'string' && Number.isFinite(entry.fetchedAt) ? entry : null;
+  } catch {
+    return null;
+  }
+};
+const writeStoredMacroMarket = (key: string, entry: MacroCacheEntry) => {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(macroMarketStorageKey) ?? '{}') as Record<string, MacroCacheEntry>;
+    stored[key] = entry;
+    window.localStorage.setItem(macroMarketStorageKey, JSON.stringify(stored));
+  } catch {
+    // Storage can be unavailable in private browsing; the in-memory cache still works.
+  }
+};
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 const monthsBefore = (dateString: string, months: number) => {
   const date = new Date(`${dateString}T00:00:00Z`);
@@ -125,6 +154,7 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
 const yenMoney = new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const percent = new Intl.NumberFormat('zh-TW', { style: 'percent', maximumFractionDigits: 1 });
 const precisePercent = new Intl.NumberFormat('zh-TW', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const signedPrecisePercent = (value: number) => `${value > 0 ? '+' : ''}${precisePercent.format(value)}`;
 const dateLabel = (date: string | null) => date ? new Intl.DateTimeFormat('zh-TW', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${date}T00:00:00Z`)) : '—';
 const clockFormatter = (timeZone: string) => new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 const easternClockFormatter = clockFormatter('America/New_York');
@@ -353,13 +383,15 @@ const MacroMarketCard = memo(function MacroMarketCard({ market, startLabel, endL
   const direction = (market.changePercent ?? 0) > 0 ? 'positive' : (market.changePercent ?? 0) < 0 ? 'negative' : 'neutral';
   const formatter = new Intl.NumberFormat('en-US', { minimumFractionDigits: market.decimals, maximumFractionDigits: market.decimals });
   const latest = market.latest === null ? '—' : `${market.id === 'USDJPY' ? '¥' : ''}${formatter.format(market.latest)}`;
-  const change = market.change === null ? '等待更新' : `${market.change >= 0 ? '+' : ''}${formatter.format(market.change)} · ${market.changePercent === null ? '—' : `${market.changePercent >= 0 ? '+' : ''}${precisePercent.format(market.changePercent)}`}`;
+  const changeArrow = market.change === null ? '' : market.change > 0 ? '▲' : market.change < 0 ? '▼' : '•';
+  const changeValue = market.change === null ? null : formatter.format(Math.abs(market.change));
+  const changePercent = market.changePercent === null ? '—' : precisePercent.format(Math.abs(market.changePercent));
   const gradientId = `macro-fill-${market.id}`;
   return <article className={`macro-market-card ${direction}`}>
-    <header><div><span>{market.id === 'USDJPY' ? 'FX' : 'UST'}</span><div><h4>{market.label}</h4><small>{market.unit}</small></div></div><b>{market.symbol}</b></header>
-    <div className="macro-market-quote"><strong>{latest}</strong><span>{change}</span></div>
+    <header><div><span>{market.id === 'USDJPY' ? 'FX' : market.id === 'GOLD' || market.id === 'OIL' ? 'CMD' : 'UST'}</span><div><h4>{market.label}</h4><small>{market.unit}</small></div></div><b>{market.symbol}</b></header>
+    <div className="macro-market-quote"><strong>{latest}</strong><span>{changeValue === null ? '等待更新' : <><b aria-hidden="true">{changeArrow}</b><em>{changeValue}</em><em>{changePercent}</em></>}</span></div>
     <div className="macro-history-chart">
-      {points ? <svg viewBox="0 0 100 54" preserveAspectRatio="none" role="img" aria-label={`${market.label}${rangeLabel}價格走勢`}><defs><linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="currentColor" stopOpacity=".2"/><stop offset="100%" stopColor="currentColor" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="50" y2="50"/><polygon points={`0,50 ${points} 100,50`} fill={`url(#${gradientId})`}/><polyline points={points}/></svg> : <span>暫時沒有歷史資料</span>}
+      {points ? <svg viewBox="0 0 100 54" preserveAspectRatio="none" role="img" aria-label={`${market.label}${rangeLabel}${market.id === 'USDJPY' ? '匯率' : market.id === 'US10Y' || market.id === 'US30Y' ? '殖利率' : '價格'}走勢`}><defs><linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="currentColor" stopOpacity=".2"/><stop offset="100%" stopColor="currentColor" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="50" y2="50"/><polygon points={`0,50 ${points} 100,50`} fill={`url(#${gradientId})`}/><polyline points={points}/></svg> : <span>暫時沒有歷史資料</span>}
     </div>
     <footer><span>{startLabel}</span><b>{rangeLabel}走勢</b><span>{endLabel}</span></footer>
   </article>;
@@ -518,7 +550,10 @@ export default function Home() {
   const [lotSavingId, setLotSavingId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [rangeMode, setRangeMode] = useState<RangeMode>('month');
+  const [returnHoverIndex, setReturnHoverIndex] = useState<number | null>(null);
   const [macroRangeMode, setMacroRangeMode] = useState<RangeMode>('month');
+  const [macroMarketGroup, setMacroMarketGroup] = useState<MacroMarketGroup>('rates');
+  const [macroDeckDirection, setMacroDeckDirection] = useState<'up' | 'down'>('up');
   const [allocationChartMode, setAllocationChartMode] = useState<AllocationChartMode>('donut');
   const [allocationGroupSelection, setAllocationGroupSelection] = useState<{ label: string; members: string[] } | null>(null);
   const [allocationHoveredLabel, setAllocationHoveredLabel] = useState<string | null>(null);
@@ -543,6 +578,7 @@ export default function Home() {
   const [lastQuoteAt, setLastQuoteAt] = useState<string | null>(null);
   const [marketSnapshots, setMarketSnapshots] = useState<Record<string, LiveQuote>>({});
   const [usdJpyRate, setUsdJpyRate] = useState(initialUsdJpyRate);
+  const [usdJpyUpdatedAt, setUsdJpyUpdatedAt] = useState<string | null>(initialUsdJpyUpdatedAt);
   const [benchmarks, setBenchmarks] = useState<{ mode: RangeMode | null } & BenchmarkData>({ mode: null, SPY: [], BOXX: [] });
   const [benchmarkLoading, setBenchmarkLoading] = useState(false);
   const [macroMarkets, setMacroMarkets] = useState<MacroMarketData>({ mode: null, markets: [], updatedAt: null });
@@ -577,7 +613,9 @@ export default function Home() {
   const backgroundGenerationRef = useRef(0);
   const editorQuoteCacheRef = useRef(new Map<string, { quote: LiveQuote; fetchedAt: number }>());
   const benchmarkCacheRef = useRef(new Map<RangeMode, BenchmarkData>());
-  const macroCacheRef = useRef(new Map<RangeMode, { markets: BenchmarkMarket[]; updatedAt: string; fetchedAt: number }>());
+  const macroCacheRef = useRef(new Map<string, MacroCacheEntry>());
+  const macroRefreshRequestedRef = useRef(false);
+  const macroDeckSwipeStartRef = useRef<number | null>(null);
   const technicalCacheRef = useRef(new Map<string, TechnicalData>());
   const allocationHistoryCacheRef = useRef(new Map<string, AllocationHistory>());
   const quoteRefreshInFlightRef = useRef(false);
@@ -590,6 +628,11 @@ export default function Home() {
       setToast('');
       toastTimerRef.current = null;
     }, 3200);
+  }, []);
+
+  const showMacroMarketGroup = useCallback((group: MacroMarketGroup, direction: 'up' | 'down') => {
+    setMacroDeckDirection(direction);
+    setMacroMarketGroup(group);
   }, []);
 
   useEffect(() => {
@@ -885,40 +928,67 @@ export default function Home() {
   useEffect(() => {
     const controller = new AbortController();
     let inFlight = false;
-    const cached = macroCacheRef.current.get(macroRangeMode);
-    if (cached) setMacroMarkets({ mode: macroRangeMode, markets: cached.markets, updatedAt: cached.updatedAt });
+    const cacheKey = `${macroRangeMode}:${macroMarketGroup}`;
+    const cached = macroCacheRef.current.get(cacheKey) ?? readStoredMacroMarket(cacheKey);
+    const mergeMarketState = (current: MacroMarketData, markets: BenchmarkMarket[], updatedAt: string) => {
+      const incomingIds = new Set(markets.map((market) => market.id));
+      const retained = current.mode === macroRangeMode ? current.markets.filter((market) => !incomingIds.has(market.id)) : [];
+      return { mode: macroRangeMode, markets: [...retained, ...markets], updatedAt };
+    };
+    if (cached) {
+      macroCacheRef.current.set(cacheKey, cached);
+      setMacroMarkets((current) => mergeMarketState(current, cached.markets, cached.updatedAt));
+    }
     else setMacroLoading(true);
-    const loadMarkets = async (quiet = false) => {
+    const forceRefresh = macroRefreshRequestedRef.current;
+    macroRefreshRequestedRef.current = false;
+    const loadMarkets = async (quiet = false, force = false) => {
       if (inFlight) return;
       inFlight = true;
       if (!quiet) setMacroLoading(true);
       try {
-        const refreshParam = macroRefreshKey > 0 ? `&refresh=${macroRefreshKey}` : '';
-        const response = await fetch(`/api/benchmarks?mode=${macroRangeMode}&scope=markets${refreshParam}`, { signal: controller.signal });
+        const refreshParam = force ? '&refresh=1' : '';
+        const response = await fetch(`/api/benchmarks?mode=${macroRangeMode}&scope=markets&group=${macroMarketGroup}${refreshParam}`, { signal: controller.signal });
         const payload = await response.json() as { markets?: BenchmarkMarket[]; updatedAt?: string; warnings?: string[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? '宏觀行情暫時無法取得');
         if (controller.signal.aborted) return;
-        const updatedAt = payload.updatedAt ?? new Date().toISOString();
-        const nextMarkets = payload.markets ?? [];
+        const incomingMarkets = payload.markets ?? [];
+        const fallbackMarkets = macroCacheRef.current.get(cacheKey)?.markets ?? cached?.markets ?? [];
+        let usedFallback = false;
+        const nextMarkets = incomingMarkets.length ? incomingMarkets.map((market) => {
+          const fallback = fallbackMarkets.find((candidate) => candidate.id === market.id);
+          if (market.latest !== null || !fallback || fallback.latest === null) return market;
+          usedFallback = true;
+          return { ...market, values: fallback.values, latest: fallback.latest, change: fallback.change, changePercent: fallback.changePercent };
+        }) : fallbackMarkets;
+        const freshUpdatedAt = payload.updatedAt ?? new Date().toISOString();
+        const updatedAt = usedFallback && cached?.updatedAt ? cached.updatedAt : freshUpdatedAt;
+        const freshFxRate = incomingMarkets.find((market) => market.id === 'USDJPY')?.latest;
         const fxRate = nextMarkets.find((market) => market.id === 'USDJPY')?.latest;
         if (typeof fxRate === 'number' && Number.isFinite(fxRate) && fxRate > 50) {
           setUsdJpyRate(fxRate);
           window.localStorage.setItem(usdJpyRateKey, String(fxRate));
         }
-        macroCacheRef.current.set(macroRangeMode, { markets: nextMarkets, updatedAt, fetchedAt: Date.now() });
-        setMacroMarkets({ mode: macroRangeMode, markets: nextMarkets, updatedAt });
-        setMacroError(payload.warnings?.length ? '部分資料源暫時無法更新，系統會自動重試' : '');
+        if (typeof freshFxRate === 'number' && Number.isFinite(freshFxRate) && freshFxRate > 50) {
+          setUsdJpyUpdatedAt(freshUpdatedAt);
+          window.localStorage.setItem(usdJpyUpdatedAtKey, freshUpdatedAt);
+        }
+        const entry = { markets: nextMarkets, updatedAt, fetchedAt: Date.now() };
+        macroCacheRef.current.set(cacheKey, entry);
+        writeStoredMacroMarket(cacheKey, entry);
+        setMacroMarkets((current) => mergeMarketState(current, nextMarkets, updatedAt));
+        setMacroError(payload.warnings?.length ? '部分即時資料暫時延遲，已保留最近一次有效報價' : '');
       } catch (error) {
-        if (!controller.signal.aborted) setMacroError(error instanceof Error ? error.message : '宏觀行情暫時無法取得');
+        if (!controller.signal.aborted) setMacroError(cached ? '即時資料暫時延遲，目前顯示最近一次有效報價' : error instanceof Error ? error.message : '宏觀行情暫時無法取得');
       } finally {
         inFlight = false;
         if (!controller.signal.aborted) setMacroLoading(false);
       }
     };
-    void loadMarkets(Boolean(cached));
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void loadMarkets(true); }, 60_000);
+    void loadMarkets(Boolean(cached), forceRefresh);
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void loadMarkets(true, false); }, 60_000);
     return () => { controller.abort(); window.clearInterval(timer); };
-  }, [macroRangeMode, macroRefreshKey]);
+  }, [macroMarketGroup, macroRangeMode, macroRefreshKey]);
 
   useEffect(() => {
     const currentDate = today();
@@ -1300,11 +1370,15 @@ export default function Home() {
   const rangeModeLabel = rangeMode === 'day' ? '日' : rangeMode === 'week' ? '週' : rangeMode === 'month' ? '月' : '年';
   const macroRangeModeLabel = macroRangeMode === 'day' ? '日' : macroRangeMode === 'week' ? '週' : macroRangeMode === 'month' ? '月' : '年';
   const macroTimeline = useMemo(() => buildReturnSeries([], macroRangeMode), [macroRangeMode]);
-  const activeMacroMarkets = macroMarkets.mode === macroRangeMode ? macroMarkets.markets : [];
-  const usdJpySnapshot = activeMacroMarkets.find((market) => market.id === 'USDJPY');
-  const usdJpyEstimated = !(typeof usdJpySnapshot?.latest === 'number' && Number.isFinite(usdJpySnapshot.latest) && usdJpySnapshot.latest > 50);
+  const activeMacroIds: BenchmarkMarket['id'][] = macroMarketGroup === 'rates' ? ['USDJPY', 'US10Y', 'US30Y'] : ['GOLD', 'OIL'];
+  const activeMacroMarkets = macroMarkets.mode === macroRangeMode ? activeMacroIds.flatMap((id) => {
+    const market = macroMarkets.markets.find((candidate) => candidate.id === id);
+    return market ? [market] : [];
+  }) : [];
+  const usdJpyEstimated = !(usdJpyRate > 50 && usdJpyUpdatedAt);
   const macroUpdatedLabel = macroMarkets.updatedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(macroMarkets.updatedAt)) : '等待更新';
   const chartDateStep = Math.max(1, Math.ceil((returnSeries.length - 1) / 5));
+  const activeReturnHoverIndex = returnHoverIndex !== null && returnSeries[returnHoverIndex] ? returnHoverIndex : null;
 
   const currentAllocationDate = today();
   const allocationPresets = [
@@ -1622,7 +1696,7 @@ export default function Home() {
         </section>
 
         {brokerHubEnabled && <Suspense fallback={<section className="broker-hub-loader" id="broker-hub" aria-busy="true"><span /><strong>正在開啟跨券商資產中樞…</strong></section>}>
-          <BrokerHub initialWorkspace={brokerWorkspaceSeed} usdJpyRate={usdJpyRate} usdJpyEstimated={usdJpyEstimated} usdJpyUpdatedAt={usdJpyEstimated ? null : macroMarkets.updatedAt} onNotify={notify} />
+          <BrokerHub initialWorkspace={brokerWorkspaceSeed} usdJpyRate={usdJpyRate} usdJpyEstimated={usdJpyEstimated} usdJpyUpdatedAt={usdJpyEstimated ? null : usdJpyUpdatedAt} onNotify={notify} />
         </Suspense>}
 
         <section ref={contentGridRef} className={`content-grid ${resizingPanels ? 'is-resizing' : ''}`} style={contentGridStyle}>
@@ -1648,16 +1722,33 @@ export default function Home() {
                 const y = chartY(item.value);
                 return <span key={item.key} className={item.value >= 0 ? 'point-positive' : 'point-negative'} style={{ left: `${x}%`, top: `${y}%` }} title={`${item.label}: ${percent.format(item.value)}`} />;
               })}</div>
+              {activeReturnHoverIndex !== null && (() => {
+                const item = returnSeries[activeReturnHoverIndex];
+                const x = returnSeries.length === 1 ? 50 : activeReturnHoverIndex / (returnSeries.length - 1) * 100;
+                const spyValue = activeBenchmarks.SPY[activeReturnHoverIndex] ?? 0;
+                const boxxValue = activeBenchmarks.BOXX[activeReturnHoverIndex] ?? 0;
+                return <><span className="return-hover-line" style={{ left: `${x}%` }} aria-hidden="true" /><div className={`return-chart-tooltip ${x < 18 ? 'align-left' : x > 82 ? 'align-right' : ''}`} style={{ left: `${x}%` }} role="status"><strong>{item.label}</strong><span><i className="portfolio-key" />我的組合 <b>{signedPrecisePercent(item.value)}</b></span><span><i className="spy-key" />SPY <b>{signedPrecisePercent(spyValue)}</b></span><span><i className="boxx-key" />BOXX <b>{signedPrecisePercent(boxxValue)}</b></span></div></>;
+              })()}
+              <div className="return-hover-zones" onMouseLeave={() => setReturnHoverIndex(null)}>{returnSeries.map((item, index) => {
+                const pointX = returnSeries.length === 1 ? 50 : index / (returnSeries.length - 1) * 100;
+                const previousX = index === 0 ? 0 : (index - 1) / (returnSeries.length - 1) * 100;
+                const nextX = index === returnSeries.length - 1 ? 100 : (index + 1) / (returnSeries.length - 1) * 100;
+                const left = index === 0 ? 0 : (previousX + pointX) / 2;
+                const right = index === returnSeries.length - 1 ? 100 : (pointX + nextX) / 2;
+                return <button type="button" key={`hover-${item.key}`} style={{ left: `${left}%`, width: `${right - left}%` }} aria-label={`${item.label}：我的組合 ${signedPrecisePercent(item.value)}，SPY ${signedPrecisePercent(activeBenchmarks.SPY[index] ?? 0)}，BOXX ${signedPrecisePercent(activeBenchmarks.BOXX[index] ?? 0)}`} onMouseEnter={() => setReturnHoverIndex(index)} onFocus={() => setReturnHoverIndex(index)} onBlur={() => setReturnHoverIndex(null)} onClick={() => setReturnHoverIndex(index)} />;
+              })}</div>
             </div>
             <div className="chart-dates">{returnSeries.map((item, index) => <span key={item.key} className={index !== 0 && index !== returnSeries.length - 1 && index % chartDateStep !== 0 ? 'hide-small-label' : ''}>{item.label}</span>)}</div>
             <section className="macro-market-section" aria-labelledby="macro-market-title">
-              <div className="macro-market-heading"><div><p className="eyebrow">Macro price monitor</p><h3 id="macro-market-title">匯率與美債價格波動</h3></div><div className="macro-market-actions"><div className="segmented macro-range-switch" role="group" aria-label="宏觀歷史期間">{([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={macroRangeMode === mode ? 'selected' : ''} aria-pressed={macroRangeMode === mode} onClick={() => setMacroRangeMode(mode)}>{label}</button>)}</div><button type="button" className="macro-refresh-button" disabled={macroLoading} onClick={() => setMacroRefreshKey((current) => current + 1)}>↻ 更新</button><span>美東 {macroUpdatedLabel} · 每 60 秒</span></div></div>
+              <div className="macro-market-heading"><div><p className="eyebrow">Macro price monitor</p><h3 id="macro-market-title">{macroMarketGroup === 'rates' ? '匯率與美債殖利率' : '黃金與原油期貨'}</h3></div><div className="macro-market-actions"><button type="button" className="macro-deck-toggle" onClick={() => showMacroMarketGroup(macroMarketGroup === 'rates' ? 'commodities' : 'rates', macroMarketGroup === 'rates' ? 'up' : 'down')} aria-label={macroMarketGroup === 'rates' ? '向上切換至黃金與原油期貨' : '向下切換至匯率與美債殖利率'}><span aria-hidden="true">{macroMarketGroup === 'rates' ? '↑' : '↓'}</span><b>{macroMarketGroup === 'rates' ? '黃金／原油' : '美元／美債'}</b><i aria-hidden="true"><em className={macroMarketGroup === 'rates' ? 'active' : ''} /><em className={macroMarketGroup === 'commodities' ? 'active' : ''} /></i></button><div className="segmented macro-range-switch" role="group" aria-label="宏觀歷史期間">{([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={macroRangeMode === mode ? 'selected' : ''} aria-pressed={macroRangeMode === mode} onClick={() => setMacroRangeMode(mode)}>{label}</button>)}</div><button type="button" className="macro-refresh-button" disabled={macroLoading} onClick={() => { macroRefreshRequestedRef.current = true; setMacroRefreshKey((current) => current + 1); }}>↻ 更新</button><span>美東 {macroUpdatedLabel} · 每 60 秒</span></div></div>
               {macroError && <p className="macro-market-error" role="status">{macroError}</p>}
-              <div className={`macro-market-grid ${macroLoading ? 'is-loading' : ''}`} aria-busy={macroLoading}>
-                {activeMacroMarkets.map((market) => <MacroMarketCard key={market.id} market={market} startLabel={macroTimeline[0]?.label ?? ''} endLabel={macroTimeline.at(-1)?.label ?? ''} rangeLabel={macroRangeModeLabel} />)}
-                {!activeMacroMarkets.length && [0, 1, 2].map((item) => <article className="macro-market-card macro-market-placeholder" key={item}><span /><b /><i /></article>)}
+              <div className={`macro-market-deck deck-${macroDeckDirection}`} onPointerDown={(event) => { if (event.pointerType === 'mouse' && event.button !== 0) return; macroDeckSwipeStartRef.current = event.clientY; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerUp={(event) => { const start = macroDeckSwipeStartRef.current; macroDeckSwipeStartRef.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); if (start === null) return; const distance = event.clientY - start; if (distance < -34 && macroMarketGroup === 'rates') showMacroMarketGroup('commodities', 'up'); if (distance > 34 && macroMarketGroup === 'commodities') showMacroMarketGroup('rates', 'down'); }} onPointerCancel={() => { macroDeckSwipeStartRef.current = null; }}>
+                <div key={`${macroMarketGroup}-${macroRangeMode}`} className={`macro-market-grid group-${macroMarketGroup} ${macroLoading ? 'is-loading' : ''}`} aria-busy={macroLoading}>
+                  {activeMacroMarkets.map((market) => <MacroMarketCard key={market.id} market={market} startLabel={macroTimeline[0]?.label ?? ''} endLabel={macroTimeline.at(-1)?.label ?? ''} rangeLabel={macroRangeModeLabel} />)}
+                  {!activeMacroMarkets.length && Array.from({ length: macroMarketGroup === 'rates' ? 3 : 2 }, (_, item) => <article className="macro-market-card macro-market-placeholder" key={item}><span /><b /><i /></article>)}
+                </div>
               </div>
-              <p className="macro-market-note">行情每 60 秒重新檢查；10 年與 30 年美債以 CBOT 連續近月期貨價格作為代理，換月時可能出現跳點。</p>
+              <p className="macro-market-note">{macroMarketGroup === 'rates' ? '美元／日圓顯示至小數點後 2 位；美國 10 年與 30 年公債顯示殖利率、變動點數與漲跌幅。' : '黃金與 WTI 原油採連續近月期貨價格；上下滑動卡片或使用推疊按鈕即可返回匯率與美債。'}</p>
             </section>
           </article>
 

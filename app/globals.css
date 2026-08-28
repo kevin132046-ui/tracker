@@ -393,3 +393,50 @@ button, a { touch-action: manipulation; }.shell.has-custom-background:before { t
   .settings-toggle { align-self: stretch; width: 100%; }
   .settings-toggle.is-on i { left: auto; right: 5px; transform: none; }
 }
+
+/* Precise return hover values without high-frequency pointer tracking. */
+.return-hover-zones { position: absolute; inset: 0; z-index: 4; }
+.return-hover-zones button { position: absolute; top: 0; bottom: 0; padding: 0; background: transparent; border: 0; cursor: crosshair; }
+.return-hover-zones button:focus-visible { outline: 2px solid rgba(47,115,237,.42); outline-offset: -2px; }
+.return-hover-line { position: absolute; top: 0; bottom: 0; z-index: 3; width: 1px; background: linear-gradient(to bottom, rgba(47,115,237,.1), rgba(47,115,237,.42), rgba(47,115,237,.08)); transform: translateX(-50%); pointer-events: none; }
+.return-chart-tooltip { position: absolute; top: 9px; z-index: 6; min-height: 40px; display: flex; align-items: center; gap: 13px; padding: 9px 12px; color: #536681; background: rgba(255,255,255,.97); border: 1px solid #dce5f1; border-radius: 10px; box-shadow: 0 10px 26px rgba(20,45,82,.14); font-size: 11px; font-weight: 800; white-space: nowrap; transform: translateX(-50%); pointer-events: none; }
+.return-chart-tooltip.align-left { transform: none; }
+.return-chart-tooltip.align-right { transform: translateX(-100%); }
+.return-chart-tooltip > strong { color: #22344f; font-size: 11.5px; }
+.return-chart-tooltip > span { display: inline-flex; align-items: center; gap: 5px; }
+.return-chart-tooltip i { width: 13px; height: 3px; flex: 0 0 auto; border-radius: 999px; }
+.return-chart-tooltip b { color: #172943; font-variant-numeric: tabular-nums; }
+
+/* Apple-style stacked macro cards: only the visible layer loads and animates. */
+.macro-deck-toggle { min-height: 38px; display: grid; grid-template-columns: auto auto auto; align-items: center; gap: 7px; padding: 6px 10px; color: #345f9d; background: linear-gradient(145deg, #f8fbff, #edf4ff); border: 1px solid #d7e5f7; border-radius: 11px; box-shadow: 0 5px 14px rgba(31,76,137,.08); cursor: pointer; }
+.macro-deck-toggle > span { width: 22px; height: 22px; display: grid; place-items: center; color: white; background: var(--blue); border-radius: 7px; font-size: 14px; font-weight: 900; }
+.macro-deck-toggle > b { font-size: 11.5px; font-weight: 900; white-space: nowrap; }
+.macro-deck-toggle > i { display: grid; gap: 3px; font-style: normal; }
+.macro-deck-toggle > i > em { width: 4px; height: 4px; display: block; background: #c5d1e2; border-radius: 50%; }
+.macro-deck-toggle > i > em.active { background: var(--blue); }
+.macro-market-deck { position: relative; padding-top: 8px; touch-action: pan-x; user-select: none; }
+.macro-market-deck::before, .macro-market-deck::after { content: ''; position: absolute; left: 5%; right: 5%; top: 4px; height: 20px; background: #f4f7fb; border: 1px solid #e2e8f1; border-radius: 14px; pointer-events: none; }
+.macro-market-deck::before { z-index: 0; transform: translateY(-7px) scale(.965); opacity: .58; }
+.macro-market-deck::after { z-index: 1; transform: translateY(-2px) scale(.985); opacity: .82; }
+.macro-market-deck .macro-market-grid { position: relative; z-index: 2; margin-top: 8px; }
+.macro-market-grid.group-commodities { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.deck-up .macro-market-grid { animation: macro-deck-rise .24s cubic-bezier(.22,.85,.32,1) both; }
+.deck-down .macro-market-grid { animation: macro-deck-drop .24s cubic-bezier(.22,.85,.32,1) both; }
+@keyframes macro-deck-rise { from { opacity: .35; transform: translate3d(0,16px,0) scale(.985); } }
+@keyframes macro-deck-drop { from { opacity: .35; transform: translate3d(0,-16px,0) scale(.985); } }
+.macro-market-quote { align-items: flex-start; flex-direction: column; gap: 6px; }
+.macro-market-quote strong { max-width: 100%; overflow: visible; font-size: clamp(25px, 2.1vw, 31px); text-overflow: clip; }
+.macro-market-quote span { display: inline-flex; align-items: center; gap: 7px; text-align: left; }
+.macro-market-quote span b, .macro-market-quote span em { font: inherit; font-style: normal; }
+.macro-market-quote span b { font-size: 10px; }
+
+@media (max-width: 720px) {
+  .return-chart-tooltip { max-width: min(94vw, 330px); flex-wrap: wrap; gap: 7px 11px; white-space: normal; }
+  .return-chart-tooltip > strong { flex-basis: 100%; }
+  .macro-deck-toggle { order: -1; }
+  .macro-market-grid.group-commodities { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deck-up .macro-market-grid, .deck-down .macro-market-grid { animation: none; }
+}

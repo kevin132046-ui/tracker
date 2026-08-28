@@ -8,6 +8,13 @@
       "when": 1787634632464,
       "tag": "0000_pretty_wasp",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787882466977,
+      "tag": "0001_mature_swarm",
+      "breakpoints": true
     }
   ]
 }

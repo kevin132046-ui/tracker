@@ -1,0 +1,280 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import styles from './DcfCalculator.module.css';
+
+type Currency = 'USD' | 'JPY';
+
+type Assumptions = {
+  ticker: string;
+  currency: Currency;
+  currentPrice: number;
+  freeCashFlow: number;
+  shares: number;
+  netCash: number;
+  growth: number;
+  years: number;
+  wacc: number;
+  terminalGrowth: number;
+  marginOfSafety: number;
+};
+
+type CompanyPayload = {
+  symbol: string;
+  name: string;
+  currency: string;
+  instrumentType: string;
+  price: number | null;
+  updatedAt: string;
+  metrics: { freeCashFlow: number | null; dilutedShares: number | null; netCash: number | null };
+  error?: string;
+};
+type SavedScenario = { id: number; name: string; ticker: string; currency: Currency; data: Assumptions; updatedAt: string };
+
+const defaultAssumptions: Assumptions = {
+  ticker: 'MSFT',
+  currency: 'USD',
+  currentPrice: 496,
+  freeCashFlow: 74,
+  shares: 7.43,
+  netCash: 31,
+  growth: 9,
+  years: 5,
+  wacc: 9,
+  terminalGrowth: 2.5,
+  marginOfSafety: 20,
+};
+
+function calculateDcf(input: Assumptions, waccOverride = input.wacc, terminalGrowthOverride = input.terminalGrowth) {
+  const wacc = waccOverride / 100;
+  const terminalGrowth = terminalGrowthOverride / 100;
+  const growth = input.growth / 100;
+  const valid = input.freeCashFlow > 0 && input.shares > 0 && input.years > 0 && wacc > terminalGrowth;
+  if (!valid) return null;
+  const projections = Array.from({ length: input.years }, (_, index) => {
+    const year = index + 1;
+    const fcf = input.freeCashFlow * ((1 + growth) ** year);
+    const presentValue = fcf / ((1 + wacc) ** year);
+    return { year, fcf, presentValue };
+  });
+  const finalFcf = projections.at(-1)?.fcf ?? input.freeCashFlow;
+  const terminalValue = finalFcf * (1 + terminalGrowth) / (wacc - terminalGrowth);
+  const terminalPresentValue = terminalValue / ((1 + wacc) ** input.years);
+  const forecastPresentValue = projections.reduce((sum, item) => sum + item.presentValue, 0);
+  const enterpriseValue = forecastPresentValue + terminalPresentValue;
+  const equityValue = enterpriseValue + input.netCash;
+  const intrinsicValue = equityValue / input.shares;
+  return {
+    projections,
+    forecastPresentValue,
+    terminalPresentValue,
+    terminalShare: enterpriseValue ? terminalPresentValue / enterpriseValue : 0,
+    enterpriseValue,
+    equityValue,
+    intrinsicValue,
+    upside: input.currentPrice > 0 ? intrinsicValue / input.currentPrice - 1 : null,
+    buyBelow: intrinsicValue * (1 - input.marginOfSafety / 100),
+  };
+}
+
+function money(value: number, currency: Currency) {
+  return new Intl.NumberFormat(currency === 'JPY' ? 'ja-JP' : 'en-US', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: currency === 'JPY' ? 0 : 2,
+  }).format(value);
+}
+
+function NumberField({ label, value, suffix, step = '0.1', min, max, onChange }: {
+  label: string;
+  value: number;
+  suffix?: string;
+  step?: string;
+  min?: number;
+  max?: number;
+  onChange: (value: number) => void;
+}) {
+  return <label className={styles.field}><span>{label}</span><span className={styles.inputShell}><input type="number" value={value} step={step} min={min} max={max} onChange={(event) => onChange(Number(event.target.value))} />{suffix && <i>{suffix}</i>}</span></label>;
+}
+
+export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicker?: string }) {
+  const [assumptions, setAssumptions] = useState<Assumptions>(() => ({
+    ...defaultAssumptions,
+    ticker: initialTicker || defaultAssumptions.ticker,
+    currency: initialTicker.endsWith('.T') ? 'JPY' : 'USD',
+    terminalGrowth: initialTicker.endsWith('.T') ? 1 : 2.5,
+    wacc: initialTicker.endsWith('.T') ? 7 : 9,
+  }));
+  const [companyName, setCompanyName] = useState('');
+  const [companyUpdatedAt, setCompanyUpdatedAt] = useState('');
+  const [companyLoading, setCompanyLoading] = useState(false);
+  const [companyMessage, setCompanyMessage] = useState('');
+  const [scenarioName, setScenarioName] = useState(`${initialTicker || 'MSFT'} Base`);
+  const [scenarios, setScenarios] = useState<SavedScenario[]>([]);
+  const [scenarioSaving, setScenarioSaving] = useState(false);
+  const result = useMemo(() => calculateDcf(assumptions), [assumptions]);
+  const set = <K extends keyof Assumptions>(key: K, value: Assumptions[K]) => setAssumptions((current) => ({ ...current, [key]: value }));
+  const fcfMaximum = Math.max(1, ...(result?.projections.map((item) => item.fcf) ?? [1]));
+  const waccValues = [-2, -1, 0, 1, 2].map((offset) => assumptions.wacc + offset);
+  const terminalValues = [-1, -.5, 0, .5, 1].map((offset) => assumptions.terminalGrowth + offset);
+  const unit = assumptions.currency === 'JPY' ? '十億日圓' : '十億美元';
+
+  const loadScenarios = useCallback(() => {
+    fetch('/api/dcf-scenarios', { cache: 'no-store' })
+      .then(async (response) => {
+        const payload = await response.json() as { scenarios?: SavedScenario[] };
+        if (response.ok && payload.scenarios) setScenarios(payload.scenarios);
+      }).catch(() => undefined);
+  }, []);
+
+  const loadCompany = useCallback(async (ticker: string) => {
+    const symbol = ticker.trim().toUpperCase();
+    if (!/^[A-Z0-9.-]{1,12}$/.test(symbol)) return setCompanyMessage('請輸入有效的股票代號。');
+    setCompanyLoading(true);
+    setCompanyMessage('');
+    try {
+      const response = await fetch(`/api/company?symbol=${encodeURIComponent(symbol)}`, { cache: 'no-store' });
+      const payload = await response.json() as CompanyPayload;
+      if (!response.ok) throw new Error(payload.error ?? '公司資料暫時無法取得。');
+      const currency: Currency = payload.currency === 'JPY' ? 'JPY' : 'USD';
+      setAssumptions((current) => ({
+        ...current,
+        ticker: payload.symbol,
+        currency,
+        currentPrice: typeof payload.price === 'number' ? payload.price : current.currentPrice,
+        freeCashFlow: typeof payload.metrics.freeCashFlow === 'number' ? Number((payload.metrics.freeCashFlow / 1e9).toFixed(3)) : current.freeCashFlow,
+        shares: typeof payload.metrics.dilutedShares === 'number' ? Number((payload.metrics.dilutedShares / 1e9).toFixed(4)) : current.shares,
+        netCash: typeof payload.metrics.netCash === 'number' ? Number((payload.metrics.netCash / 1e9).toFixed(3)) : current.netCash,
+        wacc: currency === 'JPY' && current.wacc === 9 ? 7 : current.wacc,
+        terminalGrowth: currency === 'JPY' && current.terminalGrowth === 2.5 ? 1 : current.terminalGrowth,
+      }));
+      setCompanyName(payload.name);
+      setCompanyUpdatedAt(payload.updatedAt);
+      setScenarioName(`${payload.symbol} Base`);
+      const missing = [payload.metrics.freeCashFlow, payload.metrics.dilutedShares, payload.metrics.netCash].filter((value) => typeof value !== 'number').length;
+      setCompanyMessage(payload.instrumentType === 'ETF'
+        ? 'ETF 不適合公司 DCF；請改用資產配置或成分股估值。'
+        : missing ? `已帶入可取得資料；另有 ${missing} 個基期欄位缺值，請手動確認。` : '最新可用公司資料已自動帶入。');
+    } catch (error) {
+      setCompanyMessage(error instanceof Error ? error.message : '公司資料暫時無法取得。');
+    } finally {
+      setCompanyLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadScenarios(); }, [loadScenarios]);
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => { void loadCompany(initialTicker || 'MSFT'); });
+    return () => window.cancelAnimationFrame(frame);
+  }, [initialTicker, loadCompany]);
+
+  async function saveScenario() {
+    const name = scenarioName.trim();
+    if (!name) return setCompanyMessage('請先輸入情境名稱。');
+    setScenarioSaving(true);
+    try {
+      const response = await fetch('/api/dcf-scenarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, ticker: assumptions.ticker, currency: assumptions.currency, data: assumptions }) });
+      const payload = await response.json() as { scenario?: SavedScenario; error?: string };
+      if (!response.ok || !payload.scenario) throw new Error(payload.error ?? '估值情境無法保存。');
+      setScenarios((current) => [payload.scenario!, ...current]);
+      setCompanyMessage(`「${payload.scenario.name}」已保存。`);
+    } catch (error) {
+      setCompanyMessage(error instanceof Error ? error.message : '估值情境無法保存。');
+    } finally {
+      setScenarioSaving(false);
+    }
+  }
+
+  function loadScenario(scenario: SavedScenario) {
+    if (!scenario.data) return;
+    setAssumptions({ ...defaultAssumptions, ...scenario.data });
+    setScenarioName(scenario.name);
+    setCompanyName('');
+    setCompanyUpdatedAt(scenario.updatedAt);
+    setCompanyMessage(`已載入「${scenario.name}」。`);
+  }
+
+  async function deleteScenario(id: number) {
+    try {
+      const response = await fetch(`/api/dcf-scenarios?id=${id}`, { method: 'DELETE' });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? '估值情境無法刪除。');
+      setScenarios((current) => current.filter((scenario) => scenario.id !== id));
+      setCompanyMessage('估值情境已刪除。');
+    } catch (error) {
+      setCompanyMessage(error instanceof Error ? error.message : '估值情境無法刪除。');
+    }
+  }
+
+  return <section className={styles.workspace} id="valuation" aria-labelledby="dcf-title">
+    <header className={styles.header}>
+      <div className={styles.identity}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={`/api/logo?ticker=${encodeURIComponent(assumptions.ticker || 'MSFT')}&v=5`} alt="" />
+        <div><p>Valuation workspace</p><h2 id="dcf-title">DCF 內在價值試算</h2><span>以自由現金流、WACC 與永續成長率估算企業價值</span></div>
+      </div>
+      <div className={styles.headerActions}><div className={styles.tickerControl}><label>Ticker<input value={assumptions.ticker} onChange={(event) => set('ticker', event.target.value.toUpperCase())} onKeyDown={(event) => { if (event.key === 'Enter') void loadCompany(assumptions.ticker); }} /></label><div role="group" aria-label="估值幣別"><button type="button" className={assumptions.currency === 'USD' ? styles.active : ''} onClick={() => set('currency', 'USD')}>USD</button><button type="button" className={assumptions.currency === 'JPY' ? styles.active : ''} onClick={() => set('currency', 'JPY')}>JPY</button></div></div><button type="button" className={styles.loadButton} disabled={companyLoading} onClick={() => void loadCompany(assumptions.ticker)}>{companyLoading ? '讀取中…' : '自動帶入資料'}</button></div>
+    </header>
+
+    <div className={styles.scenarioBar}><div><label>情境名稱<input value={scenarioName} onChange={(event) => setScenarioName(event.target.value)} /></label><button type="button" disabled={scenarioSaving} onClick={() => void saveScenario()}>{scenarioSaving ? '保存中…' : '儲存情境'}</button></div><div className={styles.savedScenarios}>{scenarios.length ? scenarios.slice(0, 6).map((scenario) => <span key={scenario.id}><button type="button" onClick={() => loadScenario(scenario)}>{scenario.name}<small>{scenario.ticker}</small></button><button type="button" aria-label={`刪除 ${scenario.name}`} onClick={() => void deleteScenario(scenario.id)}>×</button></span>) : <em>尚未保存估值情境</em>}</div></div>
+    {(companyMessage || companyName) && <p className={styles.dataStatus}><b>{companyName || assumptions.ticker}</b>{companyMessage}{companyUpdatedAt && <small>資料時間 {new Intl.DateTimeFormat('zh-TW', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(companyUpdatedAt))}</small>}</p>}
+
+    <div className={styles.summaryGrid}>
+      <article><span>每股內在價值</span><strong>{result ? money(result.intrinsicValue, assumptions.currency) : '—'}</strong><small>Base case</small></article>
+      <article><span>目前價格</span><strong>{money(assumptions.currentPrice, assumptions.currency)}</strong><small>{assumptions.ticker || '尚未選擇標的'}</small></article>
+      <article className={result && (result.upside ?? 0) >= 0 ? styles.positive : styles.negative}><span>潛在報酬</span><strong>{result?.upside === null || result?.upside === undefined ? '—' : `${result.upside >= 0 ? '+' : ''}${(result.upside * 100).toFixed(1)}%`}</strong><small>內在價值相對現價</small></article>
+      <article><span>安全邊際買入價</span><strong>{result ? money(result.buyBelow, assumptions.currency) : '—'}</strong><small>{assumptions.marginOfSafety}% margin of safety</small></article>
+    </div>
+
+    <div className={styles.mainGrid}>
+      <aside className={styles.assumptions}>
+        <div className={styles.sectionHeading}><div><b>01</b><span><strong>基期資料</strong><small>所有金額使用十億元，股數使用十億股。</small></span></div></div>
+        <div className={styles.fieldGrid}>
+          <NumberField label="目前股價" value={assumptions.currentPrice} step="0.01" min={0} suffix={assumptions.currency} onChange={(value) => set('currentPrice', value)} />
+          <NumberField label={`TTM 自由現金流（${unit}）`} value={assumptions.freeCashFlow} min={0} onChange={(value) => set('freeCashFlow', value)} />
+          <NumberField label="稀釋後股數（十億股）" value={assumptions.shares} min={0} onChange={(value) => set('shares', value)} />
+          <NumberField label={`淨現金／（淨負債）（${unit}）`} value={assumptions.netCash} onChange={(value) => set('netCash', value)} />
+        </div>
+        <div className={styles.sectionHeading}><div><b>02</b><span><strong>預測與折現</strong><small>百分比欄位輸入 9 代表 9%。</small></span></div></div>
+        <div className={styles.fieldGrid}>
+          <NumberField label="FCF 年成長率" value={assumptions.growth} suffix="%" onChange={(value) => set('growth', value)} />
+          <NumberField label="預測年數" value={assumptions.years} step="1" min={3} max={10} suffix="年" onChange={(value) => set('years', Math.max(3, Math.min(10, Math.round(value))))} />
+          <NumberField label="WACC" value={assumptions.wacc} suffix="%" min={0.1} onChange={(value) => set('wacc', value)} />
+          <NumberField label="永續成長率" value={assumptions.terminalGrowth} suffix="%" onChange={(value) => set('terminalGrowth', value)} />
+          <NumberField label="安全邊際" value={assumptions.marginOfSafety} suffix="%" min={0} max={90} onChange={(value) => set('marginOfSafety', value)} />
+        </div>
+        {!result && <p className={styles.error}>請確認自由現金流與股數大於 0，且 WACC 必須高於永續成長率。</p>}
+        {result && result.terminalShare > .75 && <p className={styles.warning}>終值占企業價值 {(result.terminalShare * 100).toFixed(1)}%，估值對 WACC 與永續成長率較敏感。</p>}
+      </aside>
+
+      <div className={styles.results}>
+        <article className={styles.resultCard}>
+          <div className={styles.cardHeading}><div><p>Projected cash flow</p><h3>年度自由現金流</h3></div><span>{unit}</span></div>
+          <div className={styles.projectionChart} aria-label="預測自由現金流長條圖">
+            <div><i style={{ height: `${Math.max(8, assumptions.freeCashFlow / fcfMaximum * 100)}%` }} /><span>TTM</span><b>{assumptions.freeCashFlow.toFixed(1)}</b></div>
+            {result?.projections.map((item) => <div key={item.year}><i style={{ height: `${Math.max(8, item.fcf / fcfMaximum * 100)}%` }} /><span>Y{item.year}</span><b>{item.fcf.toFixed(1)}</b></div>)}
+          </div>
+          <dl className={styles.bridge}><div><dt>預測期 FCF 現值</dt><dd>{result ? `${result.forecastPresentValue.toFixed(1)} ${unit}` : '—'}</dd></div><div><dt>終值現值</dt><dd>{result ? `${result.terminalPresentValue.toFixed(1)} ${unit}` : '—'}</dd></div><div><dt>企業價值</dt><dd>{result ? `${result.enterpriseValue.toFixed(1)} ${unit}` : '—'}</dd></div><div><dt>股權價值</dt><dd>{result ? `${result.equityValue.toFixed(1)} ${unit}` : '—'}</dd></div></dl>
+        </article>
+
+        <article className={styles.resultCard}>
+          <div className={styles.cardHeading}><div><p>Sensitivity</p><h3>WACC／永續成長敏感度</h3></div><span>每股價值</span></div>
+          <div className={styles.sensitivity}>
+            <div className={styles.corner}>WACC \ g</div>{terminalValues.map((value) => <b key={`head-${value}`}>{value.toFixed(1)}%</b>)}
+            {waccValues.flatMap((wacc) => {
+              const row = [<b key={`wacc-${wacc}`}>{wacc.toFixed(1)}%</b>];
+              terminalValues.forEach((terminalGrowth) => {
+                const cell = calculateDcf(assumptions, wacc, terminalGrowth);
+                const base = wacc === assumptions.wacc && terminalGrowth === assumptions.terminalGrowth;
+                const below = cell && assumptions.currentPrice > 0 && cell.intrinsicValue < assumptions.currentPrice;
+                row.push(<span key={`${wacc}-${terminalGrowth}`} className={`${base ? styles.baseCell : ''} ${below ? styles.belowCell : ''}`}>{cell ? money(cell.intrinsicValue, assumptions.currency) : '無效'}</span>);
+              });
+              return row;
+            })}
+          </div>
+        </article>
+      </div>
+    </div>
+    <footer className={styles.note}>簡化 DCF 以 TTM 自由現金流作為基期；ETF、銀行、保險與負自由現金流公司需使用其他估值模型。試算結果不構成投資建議。</footer>
+  </section>;
+}

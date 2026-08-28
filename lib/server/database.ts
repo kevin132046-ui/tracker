@@ -77,6 +77,17 @@ export async function ensureDatabase() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS dcf_scenarios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      ticker TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_dcf_scenarios_updated_at ON dcf_scenarios(updated_at)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_dcf_scenarios_ticker ON dcf_scenarios(ticker)'),
   ]);
 
   const seedMarker = await db.prepare("SELECT value FROM app_meta WHERE key = 'seed_trades_v1'").first<{ value: string }>();

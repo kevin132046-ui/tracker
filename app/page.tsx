@@ -1,6 +1,6 @@
 'use client';
 
-import type { ChangeEvent, CSSProperties, MouseEvent as ReactMouseEvent } from 'react';
+import type { ChangeEvent, CSSProperties } from 'react';
 import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BrokerWorkspace } from '@/lib/broker-workspace';
 
@@ -39,6 +39,7 @@ type AllocationHistory = {
   tradeCount: number;
   estimatedTickers: string[];
 };
+type AllocationItem = { label: string; value: number; tradeCount: number; estimated: boolean; members: string[]; share: number; color: string };
 type TechnicalRange = '3mo' | '6mo' | '1y';
 type TechnicalPoint = {
   date: string;
@@ -73,6 +74,8 @@ type MacroMarketData = { mode: RangeMode | null; markets: BenchmarkMarket[]; upd
 type BackgroundMode = 'default' | 'image';
 
 const BrokerHub = lazy(() => import('@/components/BrokerHub'));
+const DcfCalculator = lazy(() => import('@/components/DcfCalculator'));
+const CompanyFundamentals = lazy(() => import('@/components/CompanyFundamentals'));
 
 const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
 const companyNames: Record<string, string> = {
@@ -231,6 +234,66 @@ const CompanyLogo = memo(function CompanyLogo({ ticker, compact = false }: { tic
   </span>;
 });
 
+const AllocationDonut = memo(function AllocationDonut({ items, total, loading, activeLabel, onHover, onPin, onSelect }: {
+  items: AllocationItem[];
+  total: number;
+  loading: boolean;
+  activeLabel: string | null;
+  onHover: (label: string | null) => void;
+  onPin: (label: string | null) => void;
+  onSelect: (item: AllocationItem) => void;
+}) {
+  const segments = items.map((item, index) => {
+    const start = items.slice(0, index).reduce((sum, previous) => sum + previous.share, 0);
+    const midpoint = start + item.share / 2;
+    const angle = midpoint * Math.PI * 2 - Math.PI / 2;
+    const labelRadius = item.share < .04 ? (index % 2 ? 34 : 43) : 39;
+    return { ...item, index, start, labelX: 50 + Math.cos(angle) * labelRadius, labelY: 50 + Math.sin(angle) * labelRadius };
+  });
+  const active = segments.find((item) => item.label === activeLabel) ?? null;
+  const segmentProps = (item: typeof segments[number]) => ({
+    cx: 50,
+    cy: 50,
+    r: 39,
+    pathLength: 100,
+    strokeDasharray: `${Math.max(.12, item.share * 100)} ${Math.max(0, 100 - item.share * 100)}`,
+    strokeDashoffset: -item.start * 100,
+    transform: 'rotate(-90 50 50)',
+  });
+  const activate = (item: typeof segments[number]) => { onPin(item.label); onSelect(item); };
+  return <div className={`donut ${loading ? 'is-loading' : ''} ${items.length ? 'has-items' : ''}`}>
+    <svg className="donut-svg" viewBox="0 0 100 100" role="group" aria-label="按標的計算的互動持倉圓環">
+      <circle cx="50" cy="50" r="39" className="donut-track" />
+      {segments.map((item) => <circle key={`base-${item.label}`} {...segmentProps(item)} className="donut-segment" stroke={item.color} />)}
+      {active && <><circle {...segmentProps(active)} className="donut-segment-outline" stroke="white" /><circle {...segmentProps(active)} className="donut-segment-active" stroke={active.color} /></>}
+      {segments.map((item) => <circle
+        key={`hit-${item.label}`}
+        {...segmentProps(item)}
+        className="donut-segment-hit"
+        role="button"
+        tabIndex={0}
+        aria-pressed={activeLabel === item.label}
+        aria-label={`${item.label} ${companyNames[item.label] ?? ''}，${money.format(item.value)}，占 ${percent.format(item.share)}`}
+        onMouseEnter={() => onHover(item.label)}
+        onMouseLeave={() => onHover(null)}
+        onFocus={() => onHover(item.label)}
+        onBlur={() => onHover(null)}
+        onClick={() => activate(item)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(item); }
+          if (event.key === 'Escape') { event.preventDefault(); onPin(null); onHover(null); }
+        }}
+      />)}
+      {segments.map((item) => <text key={`label-${item.label}`} x={item.labelX} y={item.labelY} className={`donut-svg-label ${item.share < .04 ? 'is-small' : ''}`}>{percent.format(item.share)}</text>)}
+    </svg>
+    <span className={`donut-center ${active ? 'has-active-segment' : ''}`}>
+      <strong>{loading ? '讀取中…' : active ? active.label : money.format(total)}</strong>
+      {active && <span>{active.label === '其他' ? `${active.members.length} 個其他標的` : companyNames[active.label] ?? '持倉標的'}</span>}
+      <small>{active ? `${money.format(active.value)} · ${percent.format(active.share)}` : '目前曝險'}</small>
+    </span>
+  </div>;
+});
+
 const PriceSparkline = memo(function PriceSparkline({ ticker, values, changePercent }: { ticker: string; values: number[]; changePercent: number | null }) {
   const finite = values.filter((value) => Number.isFinite(value));
   if (finite.length < 2) return <span className="sparkline-placeholder">等待走勢</span>;
@@ -323,7 +386,7 @@ function lastIndicator(values: Array<number | null>) {
   return values.findLast((value): value is number => typeof value === 'number' && Number.isFinite(value)) ?? null;
 }
 
-const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, data, loading, error, stockTrades, lotSavingId, onRangeChange, onClose, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
+const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, data, loading, error, stockTrades, lotSavingId, onRangeChange, onClose, onOpenDcf, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
   symbol: string;
   range: TechnicalRange;
   data: TechnicalData | null;
@@ -333,6 +396,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
   lotSavingId: number | null;
   onRangeChange: (range: TechnicalRange) => void;
   onClose: () => void;
+  onOpenDcf: () => void;
   onAddLot: () => void;
   onSaveLot: (trade: Trade, openDate: string, entryPrice: number) => void;
   onEditLot: (trade: Trade) => void;
@@ -363,7 +427,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
     <header className="technical-header">
       <div className="technical-title"><CompanyLogo ticker={symbol} /><div><p className="eyebrow">Technical view</p><h2>{symbol} 股票走勢</h2><span>日線價格 · RSI 14 · MACD 12/26/9</span></div></div>
       {activeData && <div className="technical-quote"><span>最新收盤</span><strong>{priceMoney(activeData.latestPrice)}</strong><b className={activeData.change >= 0 ? 'positive' : 'negative'}>{activeData.change >= 0 ? '+' : ''}{priceMoney(activeData.change)} · {percent.format(activeData.changePercent)}</b></div>}
-      <div className="technical-actions"><div className="segmented" aria-label="技術走勢期間">{([['3mo', '3月'], ['6mo', '6月'], ['1y', '1年']] as const).map(([value, label]) => <button key={value} className={range === value ? 'selected' : ''} onClick={() => onRangeChange(value)}>{label}</button>)}</div><button type="button" className="technical-close" onClick={onClose}>返回持倉總覽</button></div>
+      <div className="technical-actions"><div className="segmented" aria-label="技術走勢期間">{([['3mo', '3月'], ['6mo', '6月'], ['1y', '1年']] as const).map(([value, label]) => <button key={value} className={range === value ? 'selected' : ''} onClick={() => onRangeChange(value)}>{label}</button>)}</div><button type="button" className="technical-close" onClick={onOpenDcf}>DCF 估值</button><button type="button" className="technical-close" onClick={onClose}>返回持倉總覽</button></div>
     </header>
     {loading && !activeData && <div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 日線資料…</div>}
     {!loading && error && <div className="technical-state error">{error}</div>}
@@ -389,6 +453,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
         <div className="macd-legend"><span><i className="macd-key"/>MACD</span><span><i className="signal-key"/>Signal</span><span><i className="histogram-key"/>Histogram</span></div>
       </article>
     </div>}
+    <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 公司資料…</div>}><CompanyFundamentals key={symbol} symbol={symbol} onOpenDcf={onOpenDcf} /></Suspense>
     <section className="stock-lots-section">
       <div className="stock-lots-heading"><div><p className="eyebrow">Cost basis</p><h3>買入均價與購買紀錄</h3><span>直接修改日期或均價；儲存後持倉、損益與圖表會立即重算。</span></div><button type="button" onClick={onAddLot}>＋新增 {symbol} 買入紀錄</button></div>
       <div className="stock-lot-summary"><div><span>股票加權均價</span><strong>{summaryLots.length ? priceMoney(averageEntry) : '—'}</strong></div><div><span>持股數量</span><strong>{totalQuantity || '—'}</strong></div><div><span>首次買入日期</span><strong>{firstPurchaseDate ? dateLabel(firstPurchaseDate) : '—'}</strong></div><div><span>購買紀錄</span><strong>{stockTrades.length} 筆</strong></div></div>
@@ -428,10 +493,14 @@ export default function Home() {
   const [macroRangeMode, setMacroRangeMode] = useState<RangeMode>('month');
   const [allocationChartMode, setAllocationChartMode] = useState<AllocationChartMode>('donut');
   const [allocationGroupSelection, setAllocationGroupSelection] = useState<{ label: string; members: string[] } | null>(null);
+  const [allocationHoveredLabel, setAllocationHoveredLabel] = useState<string | null>(null);
+  const [allocationPinnedLabel, setAllocationPinnedLabel] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterMode>('all');
   const [positionView, setPositionView] = useState<PositionViewMode>('visual');
   const [query, setQuery] = useState('');
-  const [activeSection, setActiveSection] = useState<'overview' | 'positions' | 'returns'>('overview');
+  const [activeSection, setActiveSection] = useState<'overview' | 'positions' | 'returns' | 'valuation'>('overview');
+  const [valuationOpen, setValuationOpen] = useState(false);
+  const [valuationTicker, setValuationTicker] = useState('MSFT');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [brokerHubEnabled, setBrokerHubEnabled] = useState(false);
   const [brokerHubLoading, setBrokerHubLoading] = useState(true);
@@ -828,14 +897,14 @@ export default function Home() {
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-      if (visible?.target.id === 'overview' || visible?.target.id === 'positions' || visible?.target.id === 'returns') setActiveSection(visible.target.id);
+      if (visible?.target.id === 'overview' || visible?.target.id === 'positions' || visible?.target.id === 'returns' || visible?.target.id === 'valuation') setActiveSection(visible.target.id);
     }, { rootMargin: '-22% 0px -58% 0px', threshold: [0, .15, .4, .7] });
-    ['overview', 'positions', 'returns'].forEach((id) => {
+    ['overview', 'positions', 'returns', 'valuation'].forEach((id) => {
       const section = document.getElementById(id);
       if (section) observer.observe(section);
     });
     return () => observer.disconnect();
-  }, []);
+  }, [valuationOpen]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1227,30 +1296,10 @@ export default function Home() {
       estimatedTickers: current ? [] : allocationHistory?.date === allocationDate ? allocationHistory.estimatedTickers : [],
     };
   }, [allocationDate, allocationHistory, currentAllocationDate, openTrades]);
-  const allocation = allocationSnapshot.items;
-  let gradientStart = 0;
-  const pieGradient = allocation.length ? `conic-gradient(${allocation.map((item) => {
-    const start = gradientStart;
-    gradientStart += item.share * 100;
-    return `${item.color} ${start}% ${gradientStart}%`;
-  }).join(', ')})` : '#e8eef7';
-  let labelStart = 0;
-  const donutLabels = allocation.map((item) => {
-    const midpoint = labelStart + item.share / 2;
-    labelStart += item.share;
-    const angle = midpoint * Math.PI * 2 - Math.PI / 2;
-    const isCompact = item.share < 0.04;
-    const radius = isCompact ? 0.49 : 0.39;
-    return {
-      ...item,
-      isCompact,
-      position: {
-        left: `${50 + Math.cos(angle) * radius * 100}%`,
-        top: `${50 + Math.sin(angle) * radius * 100}%`,
-        '--segment-color': item.color,
-      } as CSSProperties,
-    };
-  });
+  const allocation = allocationSnapshot.items as AllocationItem[];
+  const allocationFallbackLabel = allocationGroupSelection?.label ?? allocation.find((item) => drilledTicker && item.members.includes(drilledTicker))?.label ?? null;
+  const activeAllocationLabel = allocationHoveredLabel ?? allocationPinnedLabel ?? allocationFallbackLabel;
+  const activeAllocationItem = allocation.find((item) => item.label === activeAllocationLabel) ?? null;
 
   const filteredTrades = useMemo(() => enriched.filter((item) => {
     const matchesQuery = !query || `${item.trade.ticker} ${item.trade.event} ${item.trade.notes}`.toLowerCase().includes(query.toLowerCase());
@@ -1398,6 +1447,8 @@ export default function Home() {
     const currentDate = today();
     const cached = allocationHistoryCacheRef.current.get(date);
     setAllocationDate(date);
+    setAllocationHoveredLabel(null);
+    setAllocationPinnedLabel(null);
     setAllocationLoading(date !== currentDate && !cached);
     if (date === currentDate) setAllocationHistory(null);
     else if (cached) setAllocationHistory(cached);
@@ -1426,6 +1477,8 @@ export default function Home() {
 
   function returnToPositionsOverview() {
     setAllocationGroupSelection(null);
+    setAllocationHoveredLabel(null);
+    setAllocationPinnedLabel(null);
     setDrilledTicker(null);
     setQuery('');
     setPositionView('visual');
@@ -1435,7 +1488,15 @@ export default function Home() {
     window.requestAnimationFrame(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
 
+  function openValuation(ticker?: string) {
+    if (ticker) setValuationTicker(ticker);
+    setValuationOpen(true);
+    setActiveSection('valuation');
+    window.setTimeout(() => document.getElementById('valuation')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  }
+
   function selectAllocationItem(item: { label: string; members: string[] }) {
+    setAllocationPinnedLabel(item.label);
     if (item.members.length === 1) {
       openTickerDetails(item.members[0]);
       return;
@@ -1449,22 +1510,6 @@ export default function Home() {
     setTechnicalLoading(false);
     setTechnicalError('');
     window.requestAnimationFrame(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  }
-
-  function selectDonutSegment(event: ReactMouseEvent<HTMLDivElement>) {
-    if (allocationLoading || !allocation.length) return;
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - bounds.left - bounds.width / 2;
-    const y = event.clientY - bounds.top - bounds.height / 2;
-    const radius = Math.hypot(x, y);
-    if (radius < bounds.width * 0.28 || radius > bounds.width * 0.52) return;
-    const position = ((Math.atan2(y, x) + Math.PI / 2 + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2);
-    let end = 0;
-    const selected = allocation.find((item) => {
-      end += item.share;
-      return position <= end;
-    });
-    if (selected) selectAllocationItem(selected);
   }
 
   const marketOpen = (() => {
@@ -1505,6 +1550,7 @@ export default function Home() {
         <nav className="side-nav" aria-label="頁面切換">
           <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}><i>⚙</i><span>設定</span></button>
           {([['overview', '總覽', '⌂'], ['positions', '持倉', '▦'], ['returns', '收益', '⌁']] as const).map(([section, label, icon]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={() => setActiveSection(section)}><i>{icon}</i><span>{label}</span></a>)}
+          <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}><i>◇</i><span>估值</span></button>
           <div className="background-control">
             <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}><i>{backgroundSaving ? '◌' : '▧'}</i><span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
             {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" disabled={backgroundSaving} className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" disabled={backgroundSaving} className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
@@ -1594,14 +1640,11 @@ export default function Home() {
               <label><span>歷史日期</span><input type="date" min={earliestAllocationDate} max={currentAllocationDate} value={allocationDate} onChange={(event) => selectAllocationDate(event.target.value || currentAllocationDate)} /></label>
             </div>
             {allocationChartMode === 'donut' ? <div className="allocation-content">
-              <div className={`donut ${allocationLoading ? 'is-loading' : ''} ${allocation.length ? 'has-items' : ''}`} style={{ background: pieGradient }} role="img" aria-label={`${allocationDate} 按標的計算的持倉圓餅圖；點擊區塊可查看下方股票；${allocation.map((item) => `${item.label} ${percent.format(item.share)}`).join('、')}`} onClick={selectDonutSegment}>
-                {!allocationLoading && donutLabels.map((item) => <b className={`donut-segment-label ${item.isCompact ? 'is-compact' : ''}`} key={item.label} style={item.position} aria-hidden="true">{percent.format(item.share)}</b>)}
-                <span className="donut-center"><strong>{allocationLoading ? '讀取中…' : money.format(allocationSnapshot.total)}</strong><small>{allocationDate === currentAllocationDate ? '目前曝險' : allocationDate}</small></span>
-              </div>
+              <AllocationDonut items={allocation} total={allocationSnapshot.total} loading={allocationLoading} activeLabel={activeAllocationItem?.label ?? null} onHover={setAllocationHoveredLabel} onPin={setAllocationPinnedLabel} onSelect={selectAllocationItem} />
               <div className="legend">
                 {allocationLoading && <p className="allocation-empty">正在讀取歷史持倉…</p>}
                 {!allocationLoading && !allocation.length && <p className="allocation-empty">這個日期沒有持倉紀錄</p>}
-                {!allocationLoading && allocation.map((item) => <button type="button" className={`allocation-legend-item ${(drilledTicker === item.label || allocationGroupSelection?.label === item.label) ? 'is-selected' : ''}`} key={item.label} onClick={() => selectAllocationItem(item)} aria-label={`查看 ${item.label}，${money.format(item.value)}，占 ${percent.format(item.share)}`}><i style={{ background: item.color }} /><span>{item.label}</span><b>{money.format(item.value)}</b><strong>{percent.format(item.share)}</strong></button>)}
+                {!allocationLoading && allocation.map((item) => <button type="button" className={`allocation-legend-item ${activeAllocationItem?.label === item.label ? 'is-selected is-active' : ''}`} key={item.label} aria-pressed={activeAllocationItem?.label === item.label} onMouseEnter={() => setAllocationHoveredLabel(item.label)} onMouseLeave={() => setAllocationHoveredLabel(null)} onFocus={() => setAllocationHoveredLabel(item.label)} onBlur={() => setAllocationHoveredLabel(null)} onClick={() => selectAllocationItem(item)} aria-label={`查看 ${item.label}，${money.format(item.value)}，占 ${percent.format(item.share)}`}><i style={{ background: item.color }} /><span>{item.label}</span><b>{money.format(item.value)}</b><strong>{percent.format(item.share)}</strong></button>)}
               </div>
             </div> : <div className={`allocation-bars ${allocationLoading ? 'is-loading' : ''}`} role="list" aria-busy={allocationLoading} aria-label={`${allocationDate} 按標的計算的持倉長條圖`}>
               {allocationLoading && <p className="allocation-empty" role="status">正在讀取歷史持倉…</p>}
@@ -1624,11 +1667,14 @@ export default function Home() {
           lotSavingId={lotSavingId}
           onRangeChange={selectTechnicalRange}
           onClose={returnToPositionsOverview}
+          onOpenDcf={() => openValuation(drilledTicker)}
           onAddLot={() => setEditor({ ...blankTrade(), type: 'SDI', ticker: drilledTicker, event: 'STOCK', quoteMode: 'auto', currentPrice: technicalData?.symbol === drilledTicker ? technicalData.latestPrice : 0 })}
           onSaveLot={saveStockLot}
           onEditLot={(trade) => setEditor({ ...trade })}
           onDeleteLot={(trade) => setDeleteCandidate(trade)}
         />}
+
+        {valuationOpen && <Suspense fallback={<section className="broker-hub-loader" id="valuation" aria-busy="true"><span /><strong>正在開啟 DCF 估值工作區…</strong></section>}><DcfCalculator key={valuationTicker} initialTicker={valuationTicker} /></Suspense>}
 
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
@@ -1652,7 +1698,9 @@ export default function Home() {
               const marketChangePercent = extendedSession ? snapshot?.extendedChangePercent ?? null : snapshot?.regularChangePercent ?? null;
               const currentPriceLabel = extendedSession ? '正常收盤' : '目前價格';
               const marketMoveLabel = extendedSession === 'pre' ? '盤前漲跌' : extendedSession === 'post' ? '盤後漲跌' : '標的今日漲跌';
-              return <article className="visual-position-row" key={position.ticker}>
+              const rowAllocation = allocationDate === currentAllocationDate ? allocation.find((item) => item.members.includes(position.ticker)) : null;
+              const allocationLinked = Boolean(rowAllocation && activeAllocationItem?.label === rowAllocation.label);
+              return <article className={`visual-position-row ${allocationLinked ? 'is-allocation-linked' : ''}`} key={position.ticker} onMouseEnter={() => rowAllocation && setAllocationHoveredLabel(rowAllocation.label)} onMouseLeave={() => rowAllocation && setAllocationHoveredLabel(null)} onFocus={() => rowAllocation && setAllocationHoveredLabel(rowAllocation.label)} onBlur={() => rowAllocation && setAllocationHoveredLabel(null)}>
                 <span className="position-rank">{String(index + 1).padStart(2, '0')}</span>
                 <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · {position.strategy}</small></span></button>
                 <div className="visual-value"><span>持倉市值</span><strong>{money.format(position.marketValue)}</strong></div>

@@ -36,3 +36,20 @@ export const brokerHubState = sqliteTable('broker_hub_state', {
   data: text('data').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
+
+export const dcfScenarios = sqliteTable(
+  'dcf_scenarios',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(),
+    ticker: text('ticker').notNull(),
+    currency: text('currency').notNull(),
+    data: text('data').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_dcf_scenarios_updated_at').on(table.updatedAt),
+    index('idx_dcf_scenarios_ticker').on(table.ticker),
+  ],
+);

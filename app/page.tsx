@@ -3,6 +3,7 @@
 import type { ChangeEvent, CSSProperties } from 'react';
 import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BrokerWorkspace } from '@/lib/broker-workspace';
+import EditableHeroTitle from '@/components/EditableHeroTitle';
 
 type Trade = {
   id: number;
@@ -73,9 +74,12 @@ type BenchmarkData = { SPY: number[]; BOXX: number[] };
 type MacroMarketData = { mode: RangeMode | null; markets: BenchmarkMarket[]; updatedAt: string | null };
 type BackgroundMode = 'default' | 'image';
 
-const BrokerHub = lazy(() => import('@/components/BrokerHub'));
-const DcfCalculator = lazy(() => import('@/components/DcfCalculator'));
-const CompanyFundamentals = lazy(() => import('@/components/CompanyFundamentals'));
+const loadBrokerHub = () => import('@/components/BrokerHub');
+const loadDcfCalculator = () => import('@/components/DcfCalculator');
+const loadCompanyFundamentals = () => import('@/components/CompanyFundamentals');
+const BrokerHub = lazy(loadBrokerHub);
+const DcfCalculator = lazy(loadDcfCalculator);
+const CompanyFundamentals = lazy(loadCompanyFundamentals);
 
 const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
 const companyNames: Record<string, string> = {
@@ -590,7 +594,7 @@ export default function Home() {
 
   const openBrokerHub = useCallback(() => {
     setSettingsOpen(false);
-    window.requestAnimationFrame(() => document.getElementById('broker-hub')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    window.requestAnimationFrame(() => document.getElementById('broker-hub')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
   }, []);
 
   const toggleBrokerHub = useCallback(async () => {
@@ -608,7 +612,7 @@ export default function Home() {
       setBrokerHubEnabled(nextEnabled);
       setBrokerWorkspaceSeed(nextEnabled ? payload.workspace : null);
       notify(nextEnabled ? '跨券商資產追蹤已開啟' : '跨券商資產追蹤已關閉；已保存的資料不會刪除');
-      if (nextEnabled) window.requestAnimationFrame(() => document.getElementById('broker-hub')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      if (nextEnabled) window.requestAnimationFrame(() => document.getElementById('broker-hub')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
     } catch (error) {
       notify(error instanceof Error ? error.message : '功能狀態無法保存');
     } finally {
@@ -800,7 +804,14 @@ export default function Home() {
       const marketTimes = quotes.flatMap((quote) => typeof quote.marketTime === 'number' ? [quote.marketTime] : []);
       setMarketSnapshots((current) => ({ ...current, ...Object.fromEntries(quotes.map((quote) => [quote.ticker, quote])) }));
       setLastQuoteAt(marketTimes.length ? new Date(Math.max(...marketTimes) * 1000).toISOString() : payload.updatedAt ?? new Date().toISOString());
-      await fetchTrades();
+      if (quotes.length) {
+        const quotesByTicker = new Map(quotes.map((quote) => [quote.ticker.toUpperCase(), quote]));
+        setTrades((current) => current.map((trade) => {
+          if (trade.status !== 'open' || trade.quoteMode !== 'auto' || trade.type !== 'SDI' || !trade.ticker) return trade;
+          const quote = quotesByTicker.get(trade.ticker.toUpperCase());
+          return quote && trade.currentPrice !== quote.price ? { ...trade, currentPrice: quote.price } : trade;
+        }));
+      }
       if (announce) notify(`已更新 ${quotes.length} 個股票報價${payload.failed ? `，${payload.failed} 個暫時無法取得` : ''}`);
     } catch (error) {
       if (announce) notify(error instanceof Error ? error.message : '報價更新失敗');
@@ -808,17 +819,29 @@ export default function Home() {
       quoteRefreshInFlightRef.current = false;
       if (announce) setRefreshing(false);
     }
-  }, [fetchTrades, notify]);
+  }, [notify]);
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => {
-      fetchTrades().then(() => refreshQuotes(false)).catch((error) => { setLoading(false); notify(error.message); });
+      void fetchTrades().catch((error) => { setLoading(false); notify(error.message); });
     }, 0);
+    const quoteWarmup = window.setTimeout(() => {
+      if (document.visibilityState === 'visible') void refreshQuotes(false);
+    }, 900);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') refreshQuotes(false);
+      if (document.visibilityState === 'visible') void refreshQuotes(false);
     }, 60_000);
-    return () => { window.clearTimeout(initialLoad); window.clearInterval(timer); };
+    return () => { window.clearTimeout(initialLoad); window.clearTimeout(quoteWarmup); window.clearInterval(timer); };
   }, [fetchTrades, notify, refreshQuotes]);
+
+  useEffect(() => {
+    const preloadTimer = window.setTimeout(() => {
+      void loadDcfCalculator();
+      void loadCompanyFundamentals();
+      if (brokerHubEnabled) void loadBrokerHub();
+    }, 1_500);
+    return () => window.clearTimeout(preloadTimer);
+  }, [brokerHubEnabled]);
 
   useEffect(() => {
     const cached = benchmarkCacheRef.current.get(rangeMode);
@@ -829,7 +852,7 @@ export default function Home() {
     }
     const controller = new AbortController();
     setBenchmarkLoading(true);
-    fetch(`/api/benchmarks?mode=${rangeMode}&scope=benchmarks`, { cache: 'no-store', signal: controller.signal })
+    fetch(`/api/benchmarks?mode=${rangeMode}&scope=benchmarks`, { signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json() as { SPY?: number[]; BOXX?: number[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? '基準資料暫時無法取得');
@@ -855,7 +878,8 @@ export default function Home() {
       inFlight = true;
       if (!quiet) setMacroLoading(true);
       try {
-        const response = await fetch(`/api/benchmarks?mode=${macroRangeMode}&scope=markets&_=${Date.now()}`, { cache: 'no-store', signal: controller.signal });
+        const refreshParam = macroRefreshKey > 0 ? `&refresh=${macroRefreshKey}` : '';
+        const response = await fetch(`/api/benchmarks?mode=${macroRangeMode}&scope=markets${refreshParam}`, { signal: controller.signal });
         const payload = await response.json() as { markets?: BenchmarkMarket[]; updatedAt?: string; warnings?: string[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? '宏觀行情暫時無法取得');
         if (controller.signal.aborted) return;
@@ -906,7 +930,9 @@ export default function Home() {
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-      if (visible?.target.id === 'overview' || visible?.target.id === 'positions' || visible?.target.id === 'returns' || visible?.target.id === 'valuation') setActiveSection(visible.target.id);
+      if (visible?.target.id === 'overview' || visible?.target.id === 'positions' || visible?.target.id === 'returns' || visible?.target.id === 'valuation') {
+        setActiveSection((current) => current === visible.target.id ? current : visible.target.id as 'overview' | 'positions' | 'returns' | 'valuation');
+      }
     }, { rootMargin: '-22% 0px -58% 0px', threshold: [0, .15, .4, .7] });
     ['overview', 'positions', 'returns', 'valuation'].forEach((id) => {
       const section = document.getElementById(id);
@@ -1475,7 +1501,7 @@ export default function Home() {
       setTechnicalLoading(true);
       setTechnicalError('');
     }
-    window.requestAnimationFrame(() => document.getElementById('stock-analysis')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    window.requestAnimationFrame(() => document.getElementById('stock-analysis')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
   }
 
   function selectTechnicalRange(range: TechnicalRange) {
@@ -1495,14 +1521,14 @@ export default function Home() {
     setTechnicalData(null);
     setTechnicalLoading(false);
     setTechnicalError('');
-    window.requestAnimationFrame(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    window.requestAnimationFrame(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
   }
 
   function openValuation(ticker?: string) {
     if (ticker) setValuationTicker(ticker);
     setValuationOpen(true);
     setActiveSection('valuation');
-    window.setTimeout(() => document.getElementById('valuation')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    window.setTimeout(() => document.getElementById('valuation')?.scrollIntoView({ behavior: 'auto', block: 'start' }), 0);
   }
 
   function selectAllocationItem(item: { label: string; members: string[] }) {
@@ -1519,7 +1545,7 @@ export default function Home() {
     setTechnicalData(null);
     setTechnicalLoading(false);
     setTechnicalError('');
-    window.requestAnimationFrame(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    window.requestAnimationFrame(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
   }
 
   const marketOpen = (() => {
@@ -1559,7 +1585,7 @@ export default function Home() {
       <div className="page-frame">
         <nav className="side-nav" aria-label="頁面切換">
           <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}><i>⚙</i><span>設定</span></button>
-          {([['overview', '總覽', '⌂'], ['positions', '持倉', '▦'], ['returns', '收益', '⌁']] as const).map(([section, label, icon]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={() => setActiveSection(section)}><i>{icon}</i><span>{label}</span></a>)}
+          {([['overview', '總覽', '⌂'], ['positions', '持倉', '▦'], ['returns', '收益', '⌁']] as const).map(([section, label, icon]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}><i>{icon}</i><span>{label}</span></a>)}
           <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}><i>◇</i><span>估值</span></button>
           <div className="background-control">
             <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}><i>{backgroundSaving ? '◌' : '▧'}</i><span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
@@ -1569,7 +1595,7 @@ export default function Home() {
         </nav>
         <div className="dashboard">
         <section className="hero" id="overview">
-          <div><p className="eyebrow">Portfolio command center</p><h1>桐生<span>桔梗</span></h1></div>
+          <div><p className="eyebrow">Portfolio command center</p><EditableHeroTitle onNotify={notify} /></div>
           <LiveMarketClocks lastQuoteAt={lastQuoteAt} />
         </section>
 

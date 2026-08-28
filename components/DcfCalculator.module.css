@@ -18,4 +18,10 @@
 .savedScenarios { min-width: 0; display: flex; justify-content: flex-end; gap: 6px; overflow-x: auto; }.savedScenarios > span { display: flex; overflow: hidden; background: white; border: 1px solid #e0e6ef; border-radius: 8px; }.savedScenarios button { padding: 6px 8px; color: #536781; background: transparent; border: 0; font-size: 10px; font-weight: 800; cursor: pointer; }.savedScenarios button + button { color: #b63d51; border-left: 1px solid #e8ecf2; }.savedScenarios small { display: block; color: #8896a9; font-size: 8px; }.savedScenarios em { color: #8996a9; font-size: 10px; font-style: normal; }
 .dataStatus { display: flex; align-items: center; gap: 8px; margin: 0; padding: 9px 26px; color: #49627f; background: #f2f7ff; border-bottom: 1px solid #dfeafa; font-size: 10px; line-height: 1.45; }.dataStatus b { color: #245fae; }.dataStatus small { margin-left: auto; color: #8492a6; }
 
+.rangeHint { margin: 12px 0 0; color: #6e819c; font-size: 10.5px; font-weight: 700; line-height: 1.55; }
+.projectionChart { position: relative; overflow: hidden; }
+.projectionChart i { max-height: 100%; }
+.projectionChart > p { position: absolute; inset: 50% auto auto 50%; z-index: 2; width: min(320px,80%); margin: 0; padding: 12px 15px; color: #8b4050; background: rgba(255,248,249,.96); border: 1px solid #f0d7dc; border-radius: 10px; font-size: 11px; font-weight: 800; line-height: 1.5; text-align: center; transform: translate(-50%,-50%); }
+.projectionChart.invalidChart > div { opacity: .24; filter: grayscale(.3); }
+
 @media (max-width: 720px) { .headerActions { align-items: stretch; flex-direction: column; }.loadButton { width: 100%; }.scenarioBar { grid-template-columns: 1fr; padding: 12px 16px; }.scenarioBar > div:first-child { align-items: stretch; flex-direction: column; }.savedScenarios { justify-content: flex-start; }.dataStatus { align-items: flex-start; flex-direction: column; padding: 9px 16px; }.dataStatus small { margin-left: 0; } }

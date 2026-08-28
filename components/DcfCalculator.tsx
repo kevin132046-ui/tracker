@@ -45,21 +45,58 @@ const defaultAssumptions: Assumptions = {
   marginOfSafety: 20,
 };
 
+const currencyDefaults: Record<Currency, Pick<Assumptions, 'wacc' | 'terminalGrowth'>> = {
+  USD: { wacc: 9, terminalGrowth: 2.5 },
+  JPY: { wacc: 7, terminalGrowth: 1 },
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const finiteOr = (value: number, fallback: number) => Number.isFinite(value) ? value : fallback;
+
+function normalizeAssumptions(input: Assumptions): Assumptions {
+  const defaults = currencyDefaults[input.currency];
+  const wacc = clamp(finiteOr(input.wacc, defaults.wacc), 4, 25);
+  const terminalMaximum = Math.min(3.5, wacc - 1);
+  return {
+    ...input,
+    currentPrice: Math.max(0, finiteOr(input.currentPrice, 0)),
+    freeCashFlow: finiteOr(input.freeCashFlow, 0),
+    shares: Math.max(0, finiteOr(input.shares, 0)),
+    netCash: finiteOr(input.netCash, 0),
+    growth: clamp(finiteOr(input.growth, 0), -50, 50),
+    years: Math.round(clamp(finiteOr(input.years, 5), 3, 10)),
+    wacc,
+    terminalGrowth: clamp(finiteOr(input.terminalGrowth, defaults.terminalGrowth), -2, terminalMaximum),
+    marginOfSafety: clamp(finiteOr(input.marginOfSafety, 20), 0, 90),
+  };
+}
+
+function dcfErrors(input: Assumptions, waccOverride = input.wacc, terminalGrowthOverride = input.terminalGrowth) {
+  const errors: string[] = [];
+  if (!Number.isFinite(input.freeCashFlow) || input.freeCashFlow <= 0) errors.push('TTM 自由現金流必須大於 0');
+  if (!Number.isFinite(input.shares) || input.shares <= 0) errors.push('稀釋後股數必須大於 0');
+  if (!Number.isFinite(input.years) || input.years < 1) errors.push('預測年數必須大於 0');
+  if (!Number.isFinite(input.growth) || input.growth <= -100) errors.push('FCF 成長率必須高於 -100%');
+  if (!Number.isFinite(waccOverride) || waccOverride <= 0) errors.push('WACC 必須大於 0');
+  if (!Number.isFinite(terminalGrowthOverride) || waccOverride <= terminalGrowthOverride) errors.push('WACC 必須高於永續成長率');
+  return errors;
+}
+
 function calculateDcf(input: Assumptions, waccOverride = input.wacc, terminalGrowthOverride = input.terminalGrowth) {
   const wacc = waccOverride / 100;
   const terminalGrowth = terminalGrowthOverride / 100;
   const growth = input.growth / 100;
-  const valid = input.freeCashFlow > 0 && input.shares > 0 && input.years > 0 && wacc > terminalGrowth;
-  if (!valid) return null;
+  if (dcfErrors(input, waccOverride, terminalGrowthOverride).length) return null;
   const projections = Array.from({ length: input.years }, (_, index) => {
     const year = index + 1;
     const fcf = input.freeCashFlow * ((1 + growth) ** year);
-    const presentValue = fcf / ((1 + wacc) ** year);
+    const presentValue = fcf / ((1 + wacc) ** (year - .5));
     return { year, fcf, presentValue };
   });
   const finalFcf = projections.at(-1)?.fcf ?? input.freeCashFlow;
+  if (!Number.isFinite(finalFcf) || finalFcf <= 0) return null;
   const terminalValue = finalFcf * (1 + terminalGrowth) / (wacc - terminalGrowth);
-  const terminalPresentValue = terminalValue / ((1 + wacc) ** input.years);
+  const terminalPresentValue = terminalValue / ((1 + wacc) ** (input.years - .5));
   const forecastPresentValue = projections.reduce((sum, item) => sum + item.presentValue, 0);
   const enterpriseValue = forecastPresentValue + terminalPresentValue;
   const equityValue = enterpriseValue + input.netCash;
@@ -94,11 +131,37 @@ function NumberField({ label, value, suffix, step = '0.1', min, max, onChange }:
   max?: number;
   onChange: (value: number) => void;
 }) {
-  return <label className={styles.field}><span>{label}</span><span className={styles.inputShell}><input type="number" value={value} step={step} min={min} max={max} onChange={(event) => onChange(Number(event.target.value))} />{suffix && <i>{suffix}</i>}</span></label>;
+  const commit = (input: HTMLInputElement) => {
+    const parsed = Number(input.value);
+    if (!Number.isFinite(parsed)) {
+      input.value = String(value);
+      return;
+    }
+    const next = Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min ?? Number.NEGATIVE_INFINITY, parsed));
+    input.value = String(next);
+    onChange(next);
+  };
+  return <label className={styles.field}><span>{label}</span><span className={styles.inputShell}><input
+    key={String(value)}
+    type="number"
+    defaultValue={value}
+    step={step}
+    min={min}
+    max={max}
+    onFocus={(event) => event.currentTarget.select()}
+    onBlur={(event) => commit(event.currentTarget)}
+    onKeyDown={(event) => {
+      if (event.key === 'Enter') event.currentTarget.blur();
+      if (event.key === 'Escape') {
+        event.currentTarget.value = String(value);
+        event.currentTarget.blur();
+      }
+    }}
+  />{suffix && <i>{suffix}</i>}</span></label>;
 }
 
 export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicker?: string }) {
-  const [assumptions, setAssumptions] = useState<Assumptions>(() => ({
+  const [assumptions, setAssumptions] = useState<Assumptions>(() => normalizeAssumptions({
     ...defaultAssumptions,
     ticker: initialTicker || defaultAssumptions.ticker,
     currency: initialTicker.endsWith('.T') ? 'JPY' : 'USD',
@@ -113,8 +176,14 @@ export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicke
   const [scenarios, setScenarios] = useState<SavedScenario[]>([]);
   const [scenarioSaving, setScenarioSaving] = useState(false);
   const result = useMemo(() => calculateDcf(assumptions), [assumptions]);
-  const set = <K extends keyof Assumptions>(key: K, value: Assumptions[K]) => setAssumptions((current) => ({ ...current, [key]: value }));
-  const fcfMaximum = Math.max(1, ...(result?.projections.map((item) => item.fcf) ?? [1]));
+  const modelErrors = useMemo(() => dcfErrors(assumptions), [assumptions]);
+  const set = <K extends keyof Assumptions>(key: K, value: Assumptions[K]) => setAssumptions((current) => {
+    const next = { ...current, [key]: value };
+    return typeof value === 'number' ? normalizeAssumptions(next) : next;
+  });
+  const chartValues = [assumptions.freeCashFlow, ...(result?.projections.map((item) => item.fcf) ?? [])].filter((value) => Number.isFinite(value) && value > 0);
+  const fcfMaximum = Math.max(1, ...chartValues);
+  const barHeight = (value: number) => `${Math.min(100, Math.max(4, value / fcfMaximum * 100))}%`;
   const waccValues = [-2, -1, 0, 1, 2].map((offset) => assumptions.wacc + offset);
   const terminalValues = [-1, -.5, 0, .5, 1].map((offset) => assumptions.terminalGrowth + offset);
   const unit = assumptions.currency === 'JPY' ? '十億日圓' : '十億美元';
@@ -137,7 +206,7 @@ export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicke
       const payload = await response.json() as CompanyPayload;
       if (!response.ok) throw new Error(payload.error ?? '公司資料暫時無法取得。');
       const currency: Currency = payload.currency === 'JPY' ? 'JPY' : 'USD';
-      setAssumptions((current) => ({
+      setAssumptions((current) => normalizeAssumptions({
         ...current,
         ticker: payload.symbol,
         currency,
@@ -145,8 +214,8 @@ export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicke
         freeCashFlow: typeof payload.metrics.freeCashFlow === 'number' ? Number((payload.metrics.freeCashFlow / 1e9).toFixed(3)) : current.freeCashFlow,
         shares: typeof payload.metrics.dilutedShares === 'number' ? Number((payload.metrics.dilutedShares / 1e9).toFixed(4)) : current.shares,
         netCash: typeof payload.metrics.netCash === 'number' ? Number((payload.metrics.netCash / 1e9).toFixed(3)) : current.netCash,
-        wacc: currency === 'JPY' && current.wacc === 9 ? 7 : current.wacc,
-        terminalGrowth: currency === 'JPY' && current.terminalGrowth === 2.5 ? 1 : current.terminalGrowth,
+        wacc: currency !== current.currency ? currencyDefaults[currency].wacc : current.wacc,
+        terminalGrowth: currency !== current.currency ? currencyDefaults[currency].terminalGrowth : current.terminalGrowth,
       }));
       setCompanyName(payload.name);
       setCompanyUpdatedAt(payload.updatedAt);
@@ -187,11 +256,23 @@ export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicke
 
   function loadScenario(scenario: SavedScenario) {
     if (!scenario.data) return;
-    setAssumptions({ ...defaultAssumptions, ...scenario.data });
+    const original = { ...defaultAssumptions, ...scenario.data };
+    const normalized = normalizeAssumptions(original);
+    setAssumptions(normalized);
     setScenarioName(scenario.name);
     setCompanyName('');
     setCompanyUpdatedAt(scenario.updatedAt);
-    setCompanyMessage(`已載入「${scenario.name}」。`);
+    setCompanyMessage(original.terminalGrowth !== normalized.terminalGrowth || original.wacc !== normalized.wacc
+      ? `已載入「${scenario.name}」，並將 WACC／永續成長率修正至有效範圍。`
+      : `已載入「${scenario.name}」。`);
+  }
+
+  function switchCurrency(currency: Currency) {
+    setAssumptions((current) => normalizeAssumptions({
+      ...current,
+      currency,
+      ...currencyDefaults[currency],
+    }));
   }
 
   async function deleteScenario(id: number) {
@@ -213,7 +294,7 @@ export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicke
         <img src={`/api/logo?ticker=${encodeURIComponent(assumptions.ticker || 'MSFT')}&v=5`} alt="" />
         <div><p>Valuation workspace</p><h2 id="dcf-title">DCF 內在價值試算</h2><span>以自由現金流、WACC 與永續成長率估算企業價值</span></div>
       </div>
-      <div className={styles.headerActions}><div className={styles.tickerControl}><label>Ticker<input value={assumptions.ticker} onChange={(event) => set('ticker', event.target.value.toUpperCase())} onKeyDown={(event) => { if (event.key === 'Enter') void loadCompany(assumptions.ticker); }} /></label><div role="group" aria-label="估值幣別"><button type="button" className={assumptions.currency === 'USD' ? styles.active : ''} onClick={() => set('currency', 'USD')}>USD</button><button type="button" className={assumptions.currency === 'JPY' ? styles.active : ''} onClick={() => set('currency', 'JPY')}>JPY</button></div></div><button type="button" className={styles.loadButton} disabled={companyLoading} onClick={() => void loadCompany(assumptions.ticker)}>{companyLoading ? '讀取中…' : '自動帶入資料'}</button></div>
+      <div className={styles.headerActions}><div className={styles.tickerControl}><label>Ticker<input value={assumptions.ticker} onChange={(event) => set('ticker', event.target.value.toUpperCase())} onKeyDown={(event) => { if (event.key === 'Enter') void loadCompany(assumptions.ticker); }} /></label><div role="group" aria-label="估值幣別"><button type="button" className={assumptions.currency === 'USD' ? styles.active : ''} onClick={() => switchCurrency('USD')}>USD</button><button type="button" className={assumptions.currency === 'JPY' ? styles.active : ''} onClick={() => switchCurrency('JPY')}>JPY</button></div></div><button type="button" className={styles.loadButton} disabled={companyLoading} onClick={() => void loadCompany(assumptions.ticker)}>{companyLoading ? '讀取中…' : '自動帶入資料'}</button></div>
     </header>
 
     <div className={styles.scenarioBar}><div><label>情境名稱<input value={scenarioName} onChange={(event) => setScenarioName(event.target.value)} /></label><button type="button" disabled={scenarioSaving} onClick={() => void saveScenario()}>{scenarioSaving ? '保存中…' : '儲存情境'}</button></div><div className={styles.savedScenarios}>{scenarios.length ? scenarios.slice(0, 6).map((scenario) => <span key={scenario.id}><button type="button" onClick={() => loadScenario(scenario)}>{scenario.name}<small>{scenario.ticker}</small></button><button type="button" aria-label={`刪除 ${scenario.name}`} onClick={() => void deleteScenario(scenario.id)}>×</button></span>) : <em>尚未保存估值情境</em>}</div></div>
@@ -237,22 +318,24 @@ export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicke
         </div>
         <div className={styles.sectionHeading}><div><b>02</b><span><strong>預測與折現</strong><small>百分比欄位輸入 9 代表 9%。</small></span></div></div>
         <div className={styles.fieldGrid}>
-          <NumberField label="FCF 年成長率" value={assumptions.growth} suffix="%" onChange={(value) => set('growth', value)} />
+          <NumberField label="FCF 年成長率" value={assumptions.growth} suffix="%" min={-50} max={50} onChange={(value) => set('growth', value)} />
           <NumberField label="預測年數" value={assumptions.years} step="1" min={3} max={10} suffix="年" onChange={(value) => set('years', Math.max(3, Math.min(10, Math.round(value))))} />
-          <NumberField label="WACC" value={assumptions.wacc} suffix="%" min={0.1} onChange={(value) => set('wacc', value)} />
-          <NumberField label="永續成長率" value={assumptions.terminalGrowth} suffix="%" onChange={(value) => set('terminalGrowth', value)} />
+          <NumberField label="WACC" value={assumptions.wacc} suffix="%" min={4} max={25} onChange={(value) => set('wacc', value)} />
+          <NumberField label="永續成長率" value={assumptions.terminalGrowth} suffix="%" min={-2} max={Math.min(3.5, assumptions.wacc - 1)} onChange={(value) => set('terminalGrowth', value)} />
           <NumberField label="安全邊際" value={assumptions.marginOfSafety} suffix="%" min={0} max={90} onChange={(value) => set('marginOfSafety', value)} />
         </div>
-        {!result && <p className={styles.error}>請確認自由現金流與股數大於 0，且 WACC 必須高於永續成長率。</p>}
+        <p className={styles.rangeHint}>輸入框會整欄取代原值；永續成長率上限為 3.5%，並至少低於 WACC 1 個百分點。</p>
+        {!result && <p className={styles.error}>{modelErrors.length ? modelErrors.join('；') : '目前假設無法完成估值。'}</p>}
         {result && result.terminalShare > .75 && <p className={styles.warning}>終值占企業價值 {(result.terminalShare * 100).toFixed(1)}%，估值對 WACC 與永續成長率較敏感。</p>}
       </aside>
 
       <div className={styles.results}>
         <article className={styles.resultCard}>
           <div className={styles.cardHeading}><div><p>Projected cash flow</p><h3>年度自由現金流</h3></div><span>{unit}</span></div>
-          <div className={styles.projectionChart} aria-label="預測自由現金流長條圖">
-            <div><i style={{ height: `${Math.max(8, assumptions.freeCashFlow / fcfMaximum * 100)}%` }} /><span>TTM</span><b>{assumptions.freeCashFlow.toFixed(1)}</b></div>
-            {result?.projections.map((item) => <div key={item.year}><i style={{ height: `${Math.max(8, item.fcf / fcfMaximum * 100)}%` }} /><span>Y{item.year}</span><b>{item.fcf.toFixed(1)}</b></div>)}
+          <div className={`${styles.projectionChart} ${!result ? styles.invalidChart : ''}`} aria-label="預測自由現金流長條圖">
+            <div><i style={{ height: barHeight(assumptions.freeCashFlow) }} /><span>TTM</span><b>{Number.isFinite(assumptions.freeCashFlow) ? assumptions.freeCashFlow.toFixed(1) : '—'}</b></div>
+            {result?.projections.map((item) => <div key={item.year}><i style={{ height: barHeight(item.fcf) }} /><span>Y{item.year}</span><b>{item.fcf.toFixed(1)}</b></div>)}
+            {!result && <p>請先修正左側假設，預測圖會自動恢復。</p>}
           </div>
           <dl className={styles.bridge}><div><dt>預測期 FCF 現值</dt><dd>{result ? `${result.forecastPresentValue.toFixed(1)} ${unit}` : '—'}</dd></div><div><dt>終值現值</dt><dd>{result ? `${result.terminalPresentValue.toFixed(1)} ${unit}` : '—'}</dd></div><div><dt>企業價值</dt><dd>{result ? `${result.enterpriseValue.toFixed(1)} ${unit}` : '—'}</dd></div><div><dt>股權價值</dt><dd>{result ? `${result.equityValue.toFixed(1)} ${unit}` : '—'}</dd></div></dl>
         </article>
@@ -275,6 +358,6 @@ export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicke
         </article>
       </div>
     </div>
-    <footer className={styles.note}>簡化 DCF 以 TTM 自由現金流作為基期；ETF、銀行、保險與負自由現金流公司需使用其他估值模型。試算結果不構成投資建議。</footer>
+    <footer className={styles.note}>簡化 DCF 以 TTM 自由現金流作為基期，採期中折現並以淨現金銜接股權價值；ETF、銀行、保險與負自由現金流公司需使用其他估值模型。試算結果不構成投資建議。</footer>
   </section>;
 }

@@ -136,6 +136,15 @@ const normalizeTickerForMarket = (ticker: string | null | undefined, market: 'US
 };
 const normalizedUsdAmount = (trade: Trade, value: number, usdJpyRate: number) => (trade.market === 'JP' || isJapaneseTicker(trade.ticker)) && usdJpyRate > 0 ? value / usdJpyRate : value;
 
+function investedCapitalUsd(trade: Trade, usdJpyRate: number) {
+  const stock = trade.type === 'SDI' || trade.event === 'STOCK';
+  const multiplier = stock ? 1 : 100;
+  const entryCost = Math.abs(trade.entryPrice * trade.quantity * multiplier) + Math.max(0, trade.fees);
+  const shortOption = !stock && trade.type.toLowerCase() === 'sell';
+  const nativeCapital = shortOption && trade.collateral > 0 ? trade.collateral : entryCost;
+  return normalizedUsdAmount(trade, nativeCapital, usdJpyRate);
+}
+
 function selectZeroNumberInput(target: EventTarget | null) {
   if (!(target instanceof HTMLInputElement) || (target.type !== 'number' && target.inputMode !== 'decimal') || target.readOnly || target.disabled) return;
   if (target.value !== '' && Number(target.value) === 0) target.select();
@@ -1212,7 +1221,8 @@ export default function Home() {
   const closedTrades = useMemo(() => enriched.filter((item) => item.trade.status === 'closed'), [enriched]);
   const openPnl = openTrades.reduce((sum, item) => sum + item.pnl, 0);
   const trackedValue = openTrades.reduce((sum, item) => sum + item.marketValue, 0);
-  const capitalAtRisk = openTrades.reduce((sum, item) => sum + normalizedUsdAmount(item.trade, item.trade.collateral, usdJpyRate), 0);
+  const capitalAtRisk = openTrades.reduce((sum, item) => sum + investedCapitalUsd(item.trade, usdJpyRate), 0);
+  const openReturnOnCapital = capitalAtRisk > 0 ? openPnl / capitalAtRisk : null;
   const currentRocYear = Number(today().slice(0, 4));
   const annualRocSummary = useMemo(() => {
     const completed = closedTrades.filter((item) => item.trade.closeDate?.startsWith(`${currentRocYear}-`)
@@ -1565,8 +1575,8 @@ export default function Home() {
 
         <section className="metric-grid" aria-label="投資組合摘要">
           <article className="metric-card featured"><p>追蹤市值</p><strong>{loading ? '—' : money.format(trackedValue)}</strong><span>{openTrades.length} 筆未平倉持倉</span></article>
-          <article className="metric-card"><p>未實現損益</p><strong className={openPnl >= 0 ? 'positive' : 'negative'}>{loading ? '—' : money.format(openPnl)}</strong><span>{openPnl >= 0 ? '目前高於成本' : '目前低於成本'}</span></article>
-          <article className="metric-card"><p>擔保／投入資本</p><strong>{loading ? '—' : money.format(capitalAtRisk)}</strong><span>依 Collateral 欄位統計</span></article>
+          <article className="metric-card"><p>未實現損益</p><strong className={openPnl >= 0 ? 'positive' : 'negative'}>{loading ? '—' : money.format(openPnl)}</strong><span className={`metric-return ${openReturnOnCapital === null ? '' : openReturnOnCapital >= 0 ? 'positive' : 'negative'}`}>{loading ? '計算中…' : openReturnOnCapital === null ? '尚無可計算投入資本' : `投入資本報酬率 ${openReturnOnCapital >= 0 ? '+' : ''}${percent.format(openReturnOnCapital)}`}</span></article>
+          <article className="metric-card"><p>擔保／投入資本</p><strong>{loading ? '—' : money.format(capitalAtRisk)}</strong><span>股票採買入成本；賣方選擇權採擔保金</span></article>
           <article className="metric-card" title="本年度已實現損益 ÷ 資金占用年數（投入資本 × 持有天數 ÷ 365）"><p>本年度加權年化 ROC</p><strong className={annualRocSummary.value === null ? '' : annualRocSummary.value >= 0 ? 'positive' : 'negative'}>{loading || annualRocSummary.value === null ? '—' : percent.format(annualRocSummary.value)}</strong><span>{currentRocYear} · {annualRocSummary.count} 筆有效平倉交易</span></article>
         </section>
 

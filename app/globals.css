@@ -50,6 +50,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .metric-card, .panel { background: var(--surface); border: 1px solid var(--line); box-shadow: 0 12px 36px rgba(18,45,85,.055); }
 .metric-card { min-height: 139px; border-radius: 15px; padding: 23px; position: relative; overflow: hidden; }.metric-card:before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #d6e1f1; }.metric-card.featured { background: linear-gradient(145deg, #fff, #f4f8ff); }.metric-card.featured:before { background: var(--blue); }
 .metric-card p { margin: 0 0 14px; color: #71819b; font-size: 11px; font-weight: 750; }.metric-card strong { display: block; color: #14213a; font-size: clamp(23px, 2.15vw, 32px); letter-spacing: -.035em; }.metric-card > span { display: block; margin-top: 12px; color: #8a98ae; font-size: 10px; }
+.metric-card > span.metric-return { font-size: 12px; font-weight: 850; letter-spacing: -.01em; }.metric-card > span.metric-return.positive { color: #178c67; }.metric-card > span.metric-return.negative { color: #dd4960; }
 .positive { color: var(--green) !important; }.negative { color: var(--red) !important; }
 
 .content-grid { display: flex; align-items: stretch; gap: 0; margin-bottom: 14px; }.return-panel { flex: 0 0 calc(var(--return-panel-ratio, 60%) - 9px); min-width: 0; }.allocation-panel { flex: 1 1 0; min-width: 0; container-type: inline-size; }

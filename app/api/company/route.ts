@@ -6,15 +6,21 @@ const metricTypes = [
   'trailingMarketCap', 'trailingPeRatio', 'trailingForwardPeRatio', 'trailingPsRatio',
   'trailingPbRatio', 'trailingEnterprisesValueEBITDARatio', 'trailingFreeCashFlow',
   'trailingStockBasedCompensation', 'trailingNetIncome', 'trailingTotalRevenue',
-  'trailingOperatingIncome', 'quarterlyTotalDebt',
-  'quarterlyCashCashEquivalentsAndShortTermInvestments', 'quarterlyCashAndCashEquivalents',
-  'quarterlyNetIncome', 'quarterlyTotalRevenue', 'trailingCashDividendsPaid',
+  'trailingOperatingIncome', 'quarterlyFreeCashFlow', 'annualFreeCashFlow',
+  'quarterlyOperatingCashFlow', 'annualOperatingCashFlow',
+  'quarterlyCapitalExpenditure', 'annualCapitalExpenditure',
+  'quarterlyStockBasedCompensation', 'annualStockBasedCompensation',
+  'quarterlyNetIncome', 'annualNetIncome', 'quarterlyTotalRevenue', 'annualTotalRevenue',
+  'quarterlyOperatingIncome', 'annualOperatingIncome', 'quarterlyTotalDebt', 'annualTotalDebt',
+  'quarterlyCashCashEquivalentsAndShortTermInvestments', 'annualCashCashEquivalentsAndShortTermInvestments',
+  'quarterlyCashAndCashEquivalents', 'annualCashAndCashEquivalents', 'trailingCashDividendsPaid',
   'annualCashDividendsPaid', 'quarterlyDilutedAverageShares', 'trailingDilutedAverageShares',
 ] as const;
 
 type TimeSeriesPoint = { asOfDate?: string; reportedValue?: { raw?: number } };
 type TimeSeriesResult = { meta?: { type?: string | string[] }; [key: string]: unknown };
 type TimeSeriesPayload = { timeseries?: { result?: TimeSeriesResult[]; error?: { description?: string } } };
+type HistoryPoint = { date: string; value: number };
 type ChartPayload = { chart?: { result?: Array<{
   meta?: { symbol?: string; shortName?: string; longName?: string; currency?: string; exchangeName?: string; fullExchangeName?: string; regularMarketPrice?: number; instrumentType?: string };
   events?: { dividends?: Record<string, { date?: number; amount?: number }> };
@@ -41,6 +47,28 @@ const points = (result: TimeSeriesResult | undefined) => {
     .sort((a, b) => a.date.localeCompare(b.date));
 };
 
+const combineSeries = (
+  left: HistoryPoint[],
+  right: HistoryPoint[],
+  calculate: (leftValue: number, rightValue: number) => number | null,
+) => {
+  const rightByDate = new Map(right.map((point) => [point.date, point.value]));
+  return left.flatMap((point) => {
+    const rightValue = rightByDate.get(point.date);
+    if (rightValue === undefined) return [];
+    const value = calculate(point.value, rightValue);
+    return value !== null && Number.isFinite(value) ? [{ date: point.date, value }] : [];
+  });
+};
+
+const mergeSeries = (preferred: HistoryPoint[], fallback: HistoryPoint[]) => {
+  const merged = new Map(fallback.map((point) => [point.date, point.value]));
+  preferred.forEach((point) => merged.set(point.date, point.value));
+  return [...merged.entries()]
+    .map(([date, value]) => ({ date, value }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+};
+
 const ratio = (numerator: number | null, denominator: number | null) => numerator === null || denominator === null || denominator === 0 ? null : numerator / denominator;
 const yearOverYear = (series: Array<{ date: string; value: number }>) => {
   if (series.length < 2) return null;
@@ -62,7 +90,7 @@ export async function GET(request: Request) {
 
   try {
     const now = Math.floor(Date.now() / 1000);
-    const period1 = now - 3 * 366 * 86_400;
+    const period1 = now - 8 * 366 * 86_400;
     let timeSeries: TimeSeriesPayload | null = null;
     let chart: ChartPayload | null = null;
     for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
@@ -86,6 +114,49 @@ export async function GET(request: Request) {
     const resultList = timeSeries.timeseries?.result ?? [];
     const byType = new Map(resultList.map((result) => [metricType(result) ?? '', result]));
     const get = (type: string) => raw(byType.get(type));
+    const buildHistory = (period: 'quarterly' | 'annual') => {
+      const limit = period === 'quarterly' ? 12 : 8;
+      const series = (metric: string) => points(byType.get(`${period}${metric}`)).slice(-limit);
+      const operatingCashFlow = series('OperatingCashFlow');
+      const capitalExpenditure = series('CapitalExpenditure');
+      const calculatedFreeCashFlow = combineSeries(
+        operatingCashFlow,
+        capitalExpenditure,
+        (operatingCash, capex) => operatingCash - Math.abs(capex),
+      );
+      const freeCashFlow = mergeSeries(series('FreeCashFlow'), calculatedFreeCashFlow).slice(-limit);
+      const stockBasedCompensation = series('StockBasedCompensation');
+      const revenue = series('TotalRevenue');
+      const netIncomeSeries = series('NetIncome');
+      const operatingIncomeSeries = series('OperatingIncome');
+      const cash = mergeSeries(
+        series('CashCashEquivalentsAndShortTermInvestments'),
+        series('CashAndCashEquivalents'),
+      ).slice(-limit);
+      const debt = series('TotalDebt');
+      return {
+        freeCashFlow,
+        adjustedFreeCashFlow: combineSeries(freeCashFlow, stockBasedCompensation, (fcf, sbc) => fcf - sbc),
+        operatingCashFlow,
+        capitalExpenditure,
+        stockBasedCompensation,
+        stockBasedCompensationImpact: combineSeries(
+          freeCashFlow,
+          stockBasedCompensation,
+          (fcf, sbc) => fcf === 0 ? null : -sbc / Math.abs(fcf),
+        ),
+        revenue,
+        netIncome: netIncomeSeries,
+        operatingIncome: operatingIncomeSeries,
+        profitMargin: combineSeries(netIncomeSeries, revenue, (income, sales) => sales === 0 ? null : income / sales),
+        operatingMargin: combineSeries(operatingIncomeSeries, revenue, (income, sales) => sales === 0 ? null : income / sales),
+        cash,
+        debt,
+        netCash: combineSeries(cash, debt, (cashValue, debtValue) => cashValue - debtValue),
+      };
+    };
+    const quarterlyHistory = buildHistory('quarterly');
+    const annualHistory = buildHistory('annual');
     const marketCap = get('trailingMarketCap');
     const freeCashFlow = get('trailingFreeCashFlow');
     const stockBasedCompensation = get('trailingStockBasedCompensation');
@@ -117,6 +188,7 @@ export async function GET(request: Request) {
         evToEbitda: get('trailingEnterprisesValueEBITDARatio'),
         priceToBook: get('trailingPbRatio'),
         freeCashFlow,
+        quarterlyFreeCashFlow: quarterlyHistory.freeCashFlow.at(-1)?.value ?? null,
         freeCashFlowYield: ratio(freeCashFlow, marketCap),
         adjustedFreeCashFlow,
         adjustedFreeCashFlowYield: ratio(adjustedFreeCashFlow, marketCap),
@@ -134,6 +206,10 @@ export async function GET(request: Request) {
         latestDividendDate: latestDividend?.date ? new Date(latestDividend.date * 1000).toISOString().slice(0, 10) : null,
         latestDividendAmount: latestDividend?.amount ?? null,
         dilutedShares,
+      },
+      history: {
+        quarterly: quarterlyHistory,
+        annual: annualHistory,
       },
       source: 'Yahoo Finance — fundamentals time series and exchange chart data',
     }, { headers: { 'Cache-Control': 'public, max-age=900, stale-while-revalidate=1800' } });

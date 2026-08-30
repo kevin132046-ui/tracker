@@ -125,16 +125,17 @@ export async function POST() {
   try {
     const db = await ensureDatabase();
     const tickerRows = await db.prepare(`SELECT DISTINCT ticker FROM trades
-      WHERE status = 'open' AND ticker IS NOT NULL`).all<{ ticker: string }>();
+      WHERE status = 'open' AND ticker IS NOT NULL AND quote_mode = 'auto' AND type = 'SDI'`).all<{ ticker: string }>();
     const tickers = tickerRows.results.map((row) => row.ticker).filter(Boolean);
     const settled = await Promise.allSettled(tickers.map(async (ticker) => ({ ticker, ...(await fetchLatestPrice(ticker)) })));
     const quotes = settled.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+    const failedTickers = settled.flatMap((result, index) => result.status === 'rejected' ? [tickers[index]] : []);
     const now = new Date().toISOString();
     if (quotes.length) {
       await db.batch(quotes.map((quote) => db.prepare(`UPDATE trades SET current_price = ?, updated_at = ?
         WHERE ticker = ? AND status = 'open' AND quote_mode = 'auto' AND type = 'SDI'`).bind(quote.price, now, quote.ticker)));
     }
-    return NextResponse.json({ quotes, failed: settled.length - quotes.length, updatedAt: now, source: 'Yahoo Finance — latest regular or extended-hours quote' });
+    return NextResponse.json({ quotes, failed: failedTickers.length, failedTickers, updatedAt: now, source: 'Yahoo Finance — latest regular or extended-hours quote' });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to refresh prices.' }, { status: 502 });
   }

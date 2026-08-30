@@ -68,9 +68,10 @@ export async function GET(request: Request) {
     });
 
     const hasJapaneseStocks = stockTickers.some((ticker) => ticker.toUpperCase().endsWith('.T'));
+    const hasJpyCash = trades.some((trade) => trade.type === 'CASH' && trade.ticker === 'JPY');
     let usdJpyRate = fallbackUsdJpyRate;
     let estimatedUsdJpy = false;
-    if (hasJapaneseStocks) {
+    if (hasJapaneseStocks || hasJpyCash) {
       try {
         const historicalUsdJpy = await historicalClose('JPY=X', date);
         if (historicalUsdJpy > 0) usdJpyRate = historicalUsdJpy;
@@ -83,17 +84,21 @@ export async function GET(request: Request) {
     const groups = new Map<string, { label: string; value: number; tradeCount: number; estimated: boolean }>();
     for (const trade of trades) {
       const label = trade.ticker || '其他';
+      const cash = trade.type === 'CASH' || trade.event === 'CASH';
       const stock = trade.type === 'SDI' || trade.event === 'STOCK';
       const historicalPrice = stock && trade.ticker ? historicalPrices.get(trade.ticker) : undefined;
-      const nativeValue = stock
+      const nativeValue = cash
+        ? Math.abs(trade.quantity)
+        : stock
         ? (historicalPrice ?? trade.entryPrice) * Math.abs(trade.quantity)
         : trade.collateral || Math.abs(trade.entryPrice * trade.quantity * 100);
       const japaneseStock = stock && Boolean(trade.ticker?.toUpperCase().endsWith('.T'));
-      const value = japaneseStock ? nativeValue / usdJpyRate : nativeValue;
+      const jpyCash = cash && trade.ticker === 'JPY';
+      const value = japaneseStock || jpyCash ? nativeValue / usdJpyRate : nativeValue;
       const group = groups.get(label) ?? { label, value: 0, tradeCount: 0, estimated: false };
       group.value += Math.max(0, value);
       group.tradeCount += 1;
-      group.estimated ||= (stock && historicalPrice === undefined) || (japaneseStock && estimatedUsdJpy);
+      group.estimated ||= (stock && historicalPrice === undefined) || ((japaneseStock || jpyCash) && estimatedUsdJpy);
       groups.set(label, group);
     }
     const positions = [...groups.values()].sort((a, b) => b.value - a.value);
@@ -103,7 +108,7 @@ export async function GET(request: Request) {
       total: positions.reduce((sum, position) => sum + position.value, 0),
       tradeCount: trades.length,
       estimatedTickers: positions.filter((position) => position.estimated).map((position) => position.label),
-      source: 'Yahoo Finance historical adjusted close; Japanese equities converted to USD with historical USD/JPY; option exposure uses collateral',
+      source: 'Yahoo Finance historical adjusted close; Japanese equities and JPY cash converted to USD with historical USD/JPY; option exposure uses collateral; cash uses recorded balance',
     }, { headers: { 'Cache-Control': 'private, max-age=300' } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to load allocation history.' }, { status: 502 });

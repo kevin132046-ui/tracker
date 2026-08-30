@@ -33,11 +33,17 @@
 .historySummary span { display: block; font-size: 10px; font-weight: 750; }
 .historySummary strong { display: block; margin-top: 3px; color: #173156; font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .historyControls { display: flex; align-items: center; gap: 8px; }
+.overlayControl { min-height: 38px; display: flex; align-items: center; gap: 7px; padding: 3px 5px 3px 10px; color: #657a97; background: #edf1f7; border-radius: 10px; font-size: 10px; font-weight: 850; }
+.overlayControl select { min-height: 32px; max-width: 145px; padding: 0 25px 0 9px; color: #23476f; background: #fff; border: 0; border-radius: 7px; outline: none; font-size: 11px; font-weight: 800; }
+.overlayControl select:focus-visible { box-shadow: 0 0 0 2px #8eb8ff; }
 .segmented { display: flex; gap: 3px; padding: 3px; background: #edf1f7; border-radius: 10px; }
 .segmented button { min-width: 41px; height: 32px; padding: 0 9px; color: #687b97; background: transparent; border: 0; border-radius: 7px; font-size: 11px; font-weight: 850; cursor: pointer; }
 .segmented button[aria-pressed="true"] { color: #fff; background: #2f73ed; box-shadow: 0 4px 10px rgba(47,115,237,.2); }
 .segmented button:focus-visible { outline: 2px solid #8eb8ff; outline-offset: 1px; }
 .chartViewport { width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; }
+.overlayLegend { position: sticky; left: 18px; z-index: 2; min-height: 32px; display: flex; align-items: center; gap: 15px; margin-bottom: -32px; padding: 8px 18px 0; pointer-events: none; }
+.overlayLegend span { display: inline-flex; align-items: center; gap: 6px; color: #526780; font-size: 10px; font-weight: 850; }
+.overlayLegend i { width: 17px; height: 3px; border-radius: 99px; }
 .chartSvg { display: block; width: 100%; min-width: 680px; height: 300px; }
 .gridLine { stroke: #e5eaf2; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .zeroLine { stroke: #bcc9da; stroke-width: 1.25; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
@@ -47,11 +53,14 @@
 .chartBarNegative { fill: #df4b63 !important; }
 .chartBarActive { opacity: 1; stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke; filter: drop-shadow(0 3px 5px rgba(22,45,80,.16)); }
 .chartLine { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.overlayLine { stroke-width: 2.4; stroke-dasharray: 7 5; opacity: .92; }
+.overlayPoint { fill: #fff; stroke-width: 2.4; }
 .chartPoint { fill: #fff; stroke-width: 3; vector-effect: non-scaling-stroke; transition: r .14s ease; }
 .guideLine { stroke: #8ea4c4; stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
 .tooltipBox { fill: #122747; stroke: rgba(255,255,255,.3); stroke-width: 1; filter: drop-shadow(0 6px 10px rgba(20,40,70,.16)); }
 .tooltipDate { fill: #acc4e7; font-size: 10px; font-weight: 750; }
 .tooltipValue { fill: #fff; font-size: 13px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.tooltipSecondary { fill: #d5e3f6; font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .chartHitZone,.chartHitZone:focus,.chartHitZone:focus-visible { outline: none; }
 .chartEmpty { min-height: 265px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; color: #7c8ca2; }
 .chartEmpty strong { color: #52657f; font-size: 14px; }
@@ -79,6 +88,7 @@
   .historyHeader > div:first-child { grid-column: 1 / -1; }
   .historySummary { padding-left: 0; border-left: 0; }
   .historyControls { grid-column: auto; justify-self: end; }
+  .overlayControl { width: 100%; grid-column: 1 / -1; justify-content: space-between; }
   .segmented button { min-width: 36px; padding: 0 7px; }
   .chartSvg { height: 260px; }
   .loading,.error { margin: 0 16px 18px; }

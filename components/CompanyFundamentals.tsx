@@ -124,12 +124,16 @@ function MetricRow({
 function HistoryChart({
   series,
   config,
+  secondarySeries = [],
+  secondaryConfig = null,
   period,
   chartKind,
   currency,
 }: {
   series: HistoryPoint[];
   config: MetricConfig;
+  secondarySeries?: HistoryPoint[];
+  secondaryConfig?: MetricConfig | null;
   period: HistoryPeriod;
   chartKind: ChartKind;
   currency: string;
@@ -144,7 +148,7 @@ function HistoryChart({
     const bottom = 48;
     const plotWidth = width - left - right;
     const plotHeight = height - top - bottom;
-    const values = series.map((point) => point.value);
+    const values = [...series, ...secondarySeries].map((point) => point.value);
     let minimum = Math.min(0, ...values);
     let maximum = Math.max(0, ...values);
     if (minimum === maximum) {
@@ -162,19 +166,24 @@ function HistoryChart({
     const y = (value: number) => top + ((maximum - value) / range) * plotHeight;
     const ticks = Array.from({ length: 5 }, (_, index) => maximum - (range * index) / 4);
     const linePath = series.map((point, index) => `${index ? 'L' : 'M'} ${x(index).toFixed(2)} ${y(point.value).toFixed(2)}`).join(' ');
-    return { width, height, left, right, top, bottom, plotWidth, plotHeight, xStep, x, y, ticks, linePath };
-  }, [series]);
+    const secondaryXStep = secondarySeries.length ? plotWidth / secondarySeries.length : plotWidth;
+    const secondaryX = (index: number) => left + secondaryXStep * (index + .5);
+    const secondaryPath = secondarySeries.map((point, index) => `${index ? 'L' : 'M'} ${secondaryX(index).toFixed(2)} ${y(point.value).toFixed(2)}`).join(' ');
+    return { width, height, left, right, top, bottom, plotWidth, plotHeight, xStep, x, y, ticks, linePath, secondaryPath };
+  }, [secondarySeries, series]);
 
   if (!series.length) return <div className={styles.chartEmpty}><strong>這個期間暫無可用歷史資料</strong><span>資料缺值會保留空白，不會以 0 代替。</span></div>;
 
   const activePoint = activeIndex === null ? null : series[activeIndex];
+  const activeSecondaryPoint = activePoint ? secondarySeries.find((point) => point.date === activePoint.date) ?? null : null;
   const activeX = activeIndex === null ? 0 : geometry.x(activeIndex);
   const activeY = activePoint ? geometry.y(activePoint.value) : 0;
-  const tooltipX = Math.min(geometry.width - 176, Math.max(geometry.left, activeX - 76));
-  const tooltipY = Math.max(6, activeY - 58);
+  const tooltipX = Math.min(geometry.width - 200, Math.max(geometry.left, activeX - 88));
+  const tooltipY = Math.max(6, activeY - (activeSecondaryPoint ? 74 : 58));
   const barWidth = Math.min(62, geometry.xStep * .58);
 
   return <div className={styles.chartViewport}>
+    {secondaryConfig && secondarySeries.length > 0 && <div className={styles.overlayLegend}><span><i style={{ background: config.color }} />{config.label}</span><span><i style={{ background: secondaryConfig.color }} />{secondaryConfig.label}</span></div>}
     <svg className={styles.chartSvg} viewBox={`0 0 ${geometry.width} ${geometry.height}`} role="img" aria-label={`${config.label}${period === 'quarterly' ? '季度' : '年度'}歷史${chartKind === 'bar' ? '長條' : '折線'}圖`}>
       {geometry.ticks.map((tick, index) => {
         const y = geometry.top + (geometry.plotHeight * index) / 4;
@@ -191,12 +200,14 @@ function HistoryChart({
         <path d={geometry.linePath} className={styles.chartLine} style={{ stroke: config.color }} />
         {series.map((point, index) => <circle key={point.date} cx={geometry.x(index)} cy={geometry.y(point.value)} r={activeIndex === index ? 6 : 4} className={styles.chartPoint} style={{ stroke: config.color }} />)}
       </>}
+      {secondaryConfig && secondarySeries.length > 0 && <><path d={geometry.secondaryPath} className={`${styles.chartLine} ${styles.overlayLine}`} style={{ stroke: secondaryConfig.color }} />{secondarySeries.map((point, index) => <circle key={`overlay-${point.date}`} cx={geometry.left + (geometry.plotWidth / secondarySeries.length) * (index + .5)} cy={geometry.y(point.value)} r="3.5" className={`${styles.chartPoint} ${styles.overlayPoint}`} style={{ stroke: secondaryConfig.color }} />)}</>}
       {series.map((point, index) => <text key={`label-${point.date}`} x={geometry.x(index)} y={geometry.height - 17} textAnchor="middle" className={styles.dateLabel}>{periodLabel(point.date, period)}</text>)}
       {activePoint && <g pointerEvents="none">
         <line x1={activeX} x2={activeX} y1={geometry.top} y2={geometry.height - geometry.bottom} className={styles.guideLine} />
-        <rect x={tooltipX} y={tooltipY} width="152" height="45" rx="9" className={styles.tooltipBox} />
+        <rect x={tooltipX} y={tooltipY} width="176" height={activeSecondaryPoint ? 61 : 45} rx="9" className={styles.tooltipBox} />
         <text x={tooltipX + 12} y={tooltipY + 17} className={styles.tooltipDate}>{periodLabel(activePoint.date, period)}</text>
         <text x={tooltipX + 12} y={tooltipY + 35} className={styles.tooltipValue}>{formatHistoryValue(activePoint.value, config, currency)}</text>
+        {activeSecondaryPoint && secondaryConfig && <text x={tooltipX + 12} y={tooltipY + 51} className={styles.tooltipSecondary}>{secondaryConfig.label} {formatHistoryValue(activeSecondaryPoint.value, secondaryConfig, currency)}</text>}
       </g>}
       {series.map((point, index) => <rect
         key={`zone-${point.date}`}
@@ -231,6 +242,7 @@ export default function CompanyFundamentals({ symbol, valuationOpen, onOpenDcf, 
   const [hoveredMetric, setHoveredMetric] = useState<HistoryMetricKey | null>(null);
   const [period, setPeriod] = useState<HistoryPeriod>('quarterly');
   const [chartKind, setChartKind] = useState<ChartKind>('bar');
+  const [overlayMetric, setOverlayMetric] = useState<HistoryMetricKey | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -251,6 +263,7 @@ export default function CompanyFundamentals({ symbol, valuationOpen, onOpenDcf, 
   const selectMetric = useCallback((metric: HistoryMetricKey) => {
     setSelectedMetric(metric);
     setHoveredMetric(null);
+    setOverlayMetric(null);
     setChartKind(historyMetricConfig[metric].defaultChart);
   }, []);
 
@@ -260,6 +273,10 @@ export default function CompanyFundamentals({ symbol, valuationOpen, onOpenDcf, 
   const activeMetric = hoveredMetric ?? selectedMetric;
   const activeConfig = historyMetricConfig[activeMetric];
   const activeSeries = data?.history?.[period]?.[activeMetric] ?? [];
+  const overlayOptions = (Object.keys(historyMetricConfig) as HistoryMetricKey[]).filter((key) => key !== activeMetric && historyMetricConfig[key].format === activeConfig.format && (data?.history?.[period]?.[key]?.length ?? 0) > 0);
+  const activeOverlayMetric = overlayMetric && overlayOptions.includes(overlayMetric) ? overlayMetric : null;
+  const overlayConfig = activeOverlayMetric ? historyMetricConfig[activeOverlayMetric] : null;
+  const overlaySeries = activeOverlayMetric ? data?.history?.[period]?.[activeOverlayMetric] ?? [] : [];
   const latestPoint = activeSeries.at(-1);
   const interactive = (key: HistoryMetricKey) => ({
     historyKey: key,
@@ -286,9 +303,10 @@ export default function CompanyFundamentals({ symbol, valuationOpen, onOpenDcf, 
           <div className={styles.historyControls} aria-label="歷史圖表控制">
             <div className={styles.segmented} aria-label="資料期間"><button type="button" aria-pressed={period === 'quarterly'} onClick={() => setPeriod('quarterly')}>季</button><button type="button" aria-pressed={period === 'annual'} onClick={() => setPeriod('annual')}>年</button></div>
             <div className={styles.segmented} aria-label="圖表形式"><button type="button" aria-pressed={chartKind === 'bar'} onClick={() => setChartKind('bar')}>長條</button><button type="button" aria-pressed={chartKind === 'line'} onClick={() => setChartKind('line')}>折線</button></div>
+            <label className={styles.overlayControl}><span>疊圖</span><select value={activeOverlayMetric ?? ''} onChange={(event) => setOverlayMetric(event.target.value ? event.target.value as HistoryMetricKey : null)}><option value="">不疊加</option>{overlayOptions.map((key) => <option key={key} value={key}>{historyMetricConfig[key].label}</option>)}</select></label>
           </div>
         </div>
-        <HistoryChart key={`${activeMetric}-${period}-${chartKind}`} series={activeSeries} config={activeConfig} period={period} chartKind={chartKind} currency={currency} />
+        <HistoryChart key={`${activeMetric}-${activeOverlayMetric ?? 'none'}-${period}-${chartKind}`} series={activeSeries} config={activeConfig} secondarySeries={overlaySeries} secondaryConfig={overlayConfig} period={period} chartKind={chartKind} currency={currency} />
         <span className={styles.srOnly} aria-live="polite">{activeConfig.label}，{latestPoint ? `${periodLabel(latestPoint.date, period)} ${formatHistoryValue(latestPoint.value, activeConfig, currency)}` : '目前沒有可用歷史資料'}</span>
         </section>
       </div>

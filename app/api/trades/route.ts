@@ -6,9 +6,12 @@ export const dynamic = 'force-dynamic';
 type TradeInput = Omit<TradeRow, 'id' | 'createdAt' | 'updatedAt' | 'sourceRow'> & { sourceRow?: number | null };
 
 function clean(input: Partial<TradeInput>): TradeInput {
-  const ticker = String(input.ticker ?? '').trim().toUpperCase().slice(0, 12) || null;
-  const event = String(input.event ?? 'PUT').trim().toUpperCase().slice(0, 24);
-  const type = String(input.type ?? 'Sell').trim().slice(0, 12);
+  const requestedType = String(input.type ?? 'Sell').trim().slice(0, 12);
+  const cash = requestedType.toUpperCase() === 'CASH';
+  const requestedTicker = String(input.ticker ?? '').trim().toUpperCase().slice(0, 12);
+  const ticker = cash ? (requestedTicker === 'JPY' ? 'JPY' : 'USD') : requestedTicker || null;
+  const event = cash ? 'CASH' : String(input.event ?? 'PUT').trim().toUpperCase().slice(0, 24);
+  const type = cash ? 'CASH' : requestedType;
   const openDate = String(input.openDate ?? '').slice(0, 10);
   const closeDate = input.closeDate ? String(input.closeDate).slice(0, 10) : null;
   const status = closeDate ? 'closed' : 'open';
@@ -20,16 +23,16 @@ function clean(input: Partial<TradeInput>): TradeInput {
   return {
     type,
     openDate,
-    expiryDate: input.expiryDate ? String(input.expiryDate).slice(0, 10) : null,
+    expiryDate: cash ? null : input.expiryDate ? String(input.expiryDate).slice(0, 10) : null,
     closeDate,
     ticker,
     event,
-    strike: input.strike ? String(input.strike).trim().slice(0, 30) : null,
+    strike: cash ? null : input.strike ? String(input.strike).trim().slice(0, 30) : null,
     quantity: Math.max(0, Number(input.quantity ?? 0)),
-    entryPrice: Math.max(0, Number(input.entryPrice ?? 0)),
-    currentPrice: rawCurrent === null || rawCurrent === undefined || rawCurrent === '' ? null : Math.max(0, Number(rawCurrent)),
-    fees: Math.max(0, Number(input.fees ?? 0)),
-    collateral: Math.max(0, Number(input.collateral ?? 0)),
+    entryPrice: cash ? 1 : Math.max(0, Number(input.entryPrice ?? 0)),
+    currentPrice: cash ? 1 : rawCurrent === null || rawCurrent === undefined || rawCurrent === '' ? null : Math.max(0, Number(rawCurrent)),
+    fees: cash ? 0 : Math.max(0, Number(input.fees ?? 0)),
+    collateral: cash ? Math.max(0, Number(input.quantity ?? 0)) : Math.max(0, Number(input.collateral ?? 0)),
     notes: String(input.notes ?? '').trim().slice(0, 1000),
     status,
     quoteMode: input.quoteMode === 'auto' && type === 'SDI' ? 'auto' : 'manual',

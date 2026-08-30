@@ -44,24 +44,44 @@ type AllocationHistory = {
   estimatedTickers: string[];
 };
 type AllocationItem = { label: string; value: number; tradeCount: number; estimated: boolean; members: string[]; share: number; color: string };
-type TechnicalRange = '3mo' | '6mo' | '1y';
+type TechnicalRange = '1d' | '1w' | '1mo' | '3mo' | '6mo' | '1y' | 'custom';
+type PriceChartMode = 'line' | 'candles';
 type TechnicalPoint = {
   date: string;
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
   close: number;
   rsi: number | null;
   macd: number | null;
   signal: number | null;
   histogram: number | null;
+  ma20: number | null;
+  ma50: number | null;
+  ma200: number | null;
+  bollMiddle: number | null;
+  bollUpper: number | null;
+  bollLower: number | null;
 };
 type TechnicalData = {
   symbol: string;
   range: TechnicalRange;
+  from: string;
+  to: string;
+  interval: string;
+  intervalLabel: string;
   points: TechnicalPoint[];
   latestPrice: number;
+  previousClose: number;
   change: number;
   changePercent: number;
+  currency: string;
+  marketTime: number;
   updatedAt: string;
 };
+type TechnicalCacheEntry = { data: TechnicalData; fetchedAt: number };
+const emptyTechnicalPoints: TechnicalPoint[] = [];
 type BenchmarkMarket = {
   id: 'USDJPY' | 'US10Y' | 'US30Y' | 'GOLD' | 'OIL';
   symbol: string;
@@ -438,12 +458,16 @@ const LiveMarketClocks = memo(function LiveMarketClocks({ lastQuoteAt }: { lastQ
   </div>;
 });
 
-function chartBounds(values: Array<number | null>, includeZero = false) {
+function chartBounds(values: Array<number | null>, includeZero = false, paddingRatio = .1) {
   const valid = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
   if (!valid.length) return { min: 0, max: 1 };
   let min = Math.min(...valid, ...(includeZero ? [0] : []));
   let max = Math.max(...valid, ...(includeZero ? [0] : []));
-  const padding = (max - min || Math.abs(max) * .04 || 1) * .1;
+  if (min === max) {
+    const singleValuePadding = Math.abs(max) * .01 || 1;
+    return { min: min - singleValuePadding, max: max + singleValuePadding };
+  }
+  const padding = (max - min || Math.abs(max) * .04 || 1) * paddingRatio;
   min -= padding;
   max += padding;
   return { min, max };
@@ -459,13 +483,51 @@ function technicalPoints(values: Array<number | null>, min: number, max: number)
     : []).join(' ');
 }
 
+function technicalBandPolygon(upper: Array<number | null>, lower: Array<number | null>, min: number, max: number) {
+  const valid = upper.flatMap((value, index) => typeof value === 'number' && Number.isFinite(value) && typeof lower[index] === 'number' && Number.isFinite(lower[index])
+    ? [{ index, upper: value, lower: lower[index] as number }]
+    : []);
+  if (valid.length < 2) return '';
+  const x = (index: number) => upper.length === 1 ? 50 : index / (upper.length - 1) * 100;
+  return [
+    ...valid.map((point) => `${x(point.index)},${technicalY(point.upper, min, max)}`),
+    ...valid.toReversed().map((point) => `${x(point.index)},${technicalY(point.lower, min, max)}`),
+  ].join(' ');
+}
+
+function aggregateCandles(points: TechnicalPoint[], maximum = 180) {
+  if (points.length <= maximum) return points;
+  const bucketSize = Math.ceil(points.length / maximum);
+  const result: TechnicalPoint[] = [];
+  for (let index = 0; index < points.length; index += bucketSize) {
+    const bucket = points.slice(index, index + bucketSize);
+    const first = bucket[0];
+    const last = bucket.at(-1)!;
+    result.push({
+      ...last,
+      open: first.open,
+      high: Math.max(...bucket.map((point) => point.high)),
+      low: Math.min(...bucket.map((point) => point.low)),
+      close: last.close,
+    });
+  }
+  return result;
+}
+
+function signedPrice(ticker: string, value: number) {
+  if (Math.abs(value) < .0000001) return nativeMoney(ticker, 0);
+  return `${value > 0 ? '+' : '−'}${nativeMoney(ticker, Math.abs(value))}`;
+}
+
 function lastIndicator(values: Array<number | null>) {
   return values.findLast((value): value is number => typeof value === 'number' && Number.isFinite(value)) ?? null;
 }
 
-const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, data, loading, error, stockTrades, lotSavingId, valuationOpen, onRangeChange, onClose, onOpenDcf, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
+const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, customFrom, customTo, data, loading, error, stockTrades, lotSavingId, valuationOpen, onRangeChange, onCustomRangeApply, onClose, onOpenDcf, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
   symbol: string;
   range: TechnicalRange;
+  customFrom: string;
+  customTo: string;
   data: TechnicalData | null;
   loading: boolean;
   error: string;
@@ -473,6 +535,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
   lotSavingId: number | null;
   valuationOpen: boolean;
   onRangeChange: (range: TechnicalRange) => void;
+  onCustomRangeApply: (from: string, to: string) => void;
   onClose: () => void;
   onOpenDcf: () => void;
   onAddLot: () => void;
@@ -481,16 +544,44 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
   onDeleteLot: (trade: Trade) => void;
 }) {
   const [priceHoverIndex, setPriceHoverIndex] = useState<number | null>(null);
+  const [priceChartMode, setPriceChartMode] = useState<PriceChartMode>('line');
+  const [customRangeOpen, setCustomRangeOpen] = useState(range === 'custom');
+  const [draftFrom, setDraftFrom] = useState(customFrom);
+  const [draftTo, setDraftTo] = useState(customTo);
+  const [overlays, setOverlays] = useState({ boll: false, ma20: true, ma50: false, ma200: false });
   const activeData = data?.symbol === symbol && data.range === range ? data : null;
-  const points = activeData?.points ?? [];
-  const closes = points.map((point) => point.close);
-  const rsi = points.map((point) => point.rsi);
-  const macd = points.map((point) => point.macd);
-  const signal = points.map((point) => point.signal);
-  const histogram = points.map((point) => point.histogram);
-  const priceBounds = chartBounds(closes);
-  const macdBounds = chartBounds([...macd, ...signal, ...histogram], true);
-  const dateIndexes = points.length ? [...new Set([0, Math.round((points.length - 1) * .25), Math.round((points.length - 1) * .5), Math.round((points.length - 1) * .75), points.length - 1])] : [];
+  const points = activeData?.points ?? emptyTechnicalPoints;
+  const chartSeries = useMemo(() => {
+    const closes = points.map((point) => point.close);
+    const highs = points.map((point) => point.high);
+    const lows = points.map((point) => point.low);
+    const ma20 = points.map((point) => point.ma20);
+    const ma50 = points.map((point) => point.ma50);
+    const ma200 = points.map((point) => point.ma200);
+    const bollUpper = points.map((point) => point.bollUpper);
+    const bollLower = points.map((point) => point.bollLower);
+    const rsi = points.map((point) => point.rsi);
+    const macd = points.map((point) => point.macd);
+    const signal = points.map((point) => point.signal);
+    const histogram = points.map((point) => point.histogram);
+    const priceScaleValues: Array<number | null> = [
+      ...(priceChartMode === 'candles' ? [...highs, ...lows] : closes),
+      ...(overlays.ma20 ? ma20 : []),
+      ...(overlays.ma50 ? ma50 : []),
+      ...(overlays.ma200 ? ma200 : []),
+      ...(overlays.boll ? [...bollUpper, ...bollLower] : []),
+    ];
+    return {
+      closes, highs, lows, ma20, ma50, ma200, bollUpper, bollLower, rsi, macd, signal, histogram,
+      priceBounds: chartBounds(priceScaleValues, false, 0),
+      macdBounds: chartBounds([...macd, ...signal, ...histogram], true),
+      dateIndexes: points.length ? [...new Set([0, Math.round((points.length - 1) * .25), Math.round((points.length - 1) * .5), Math.round((points.length - 1) * .75), points.length - 1])] : [],
+      periodHigh: highs.length ? Math.max(...highs) : 0,
+      periodLow: lows.length ? Math.min(...lows) : 0,
+      candles: aggregateCandles(points),
+    };
+  }, [points, priceChartMode, overlays]);
+  const { closes, ma20, ma50, ma200, bollUpper, bollLower, rsi, macd, signal, histogram, priceBounds, macdBounds, dateIndexes, periodHigh, periodLow, candles } = chartSeries;
   const latestRsi = lastIndicator(rsi);
   const latestMacd = lastIndicator(macd);
   const latestSignal = lastIndicator(signal);
@@ -508,27 +599,36 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
   const selectPriceAtClientX = (clientX: number, left: number, width: number) => {
     if (!points.length || width <= 0) return;
     const ratio = Math.max(0, Math.min(1, (clientX - left) / width));
-    setPriceHoverIndex(Math.round(ratio * (points.length - 1)));
+    const nextIndex = Math.round(ratio * (points.length - 1));
+    setPriceHoverIndex((current) => current === nextIndex ? current : nextIndex);
   };
+  const toggleOverlay = (key: keyof typeof overlays) => setOverlays((current) => ({ ...current, [key]: !current[key] }));
+  const pointDateLabel = (point: TechnicalPoint, short = false) => new Intl.DateTimeFormat('zh-TW', activeData?.interval === '1d'
+    ? { month: 'numeric', day: 'numeric' }
+    : short
+      ? { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }
+      : { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(point.timestamp * 1000));
 
   return <section className="panel stock-analysis-panel" id="stock-analysis" aria-live="polite">
     <header className="technical-header">
-      <div className="technical-title"><CompanyLogo ticker={symbol} /><div><p className="eyebrow">Technical view</p><div className="technical-title-heading"><h2>{symbol} 股票走勢</h2><button type="button" className="technical-back-inline" onClick={onClose}>← 返回持倉總覽</button></div><span>日線價格 · RSI 14 · MACD 12/26/9</span></div></div>
-      {activeData && <div className="technical-quote"><span>最新收盤</span><strong>{priceMoney(activeData.latestPrice)}</strong><b className={activeData.change >= 0 ? 'positive' : 'negative'}>{activeData.change >= 0 ? '+' : ''}{priceMoney(activeData.change)} · {percent.format(activeData.changePercent)}</b></div>}
-      <div className="technical-actions"><div className="segmented" aria-label="技術走勢期間">{([['3mo', '3月'], ['6mo', '6月'], ['1y', '1年']] as const).map(([value, label]) => <button key={value} className={range === value ? 'selected' : ''} onClick={() => { setPriceHoverIndex(null); onRangeChange(value); }}>{label}</button>)}</div><button type="button" className={`technical-close ${valuationOpen ? 'is-active' : ''}`} aria-pressed={valuationOpen} onClick={onOpenDcf}>{valuationOpen ? '關閉 DCF 估值' : '開啟 DCF 估值'}</button></div>
+      <div className="technical-title"><CompanyLogo ticker={symbol} /><div><p className="eyebrow">Technical view</p><div className="technical-title-heading"><h2>{symbol} 股票走勢</h2><button type="button" className="technical-back-inline" onClick={onClose}>← 返回持倉總覽</button></div><span>{activeData?.intervalLabel ?? '價格'} · RSI 14 · MACD 12/26/9</span></div></div>
+      {activeData && <div className="technical-quote"><span>最新價格</span><strong>{priceMoney(activeData.latestPrice)}</strong><b className={activeData.change >= 0 ? 'positive' : 'negative'}>{signedPrice(symbol, activeData.change)} · {signedPrecisePercent(activeData.changePercent)}</b><small>前收 {priceMoney(activeData.previousClose)}</small></div>}
+      <div className="technical-actions"><div className="segmented technical-range-switch" aria-label="技術走勢期間">{([['1d', '1日'], ['1w', '1週'], ['1mo', '1月'], ['3mo', '3月'], ['6mo', '6月'], ['1y', '1年']] as const).map(([value, label]) => <button key={value} className={range === value ? 'selected' : ''} aria-pressed={range === value} onClick={() => { setPriceHoverIndex(null); setCustomRangeOpen(false); onRangeChange(value); }}>{label}</button>)}<button className={range === 'custom' ? 'selected' : ''} aria-pressed={range === 'custom'} onClick={() => setCustomRangeOpen((current) => !current)}>自訂</button></div><button type="button" className={`technical-close ${valuationOpen ? 'is-active' : ''}`} aria-pressed={valuationOpen} onClick={onOpenDcf}>{valuationOpen ? '關閉 DCF 估值' : '開啟 DCF 估值'}</button></div>
     </header>
+    {customRangeOpen && <form className="technical-custom-range" onSubmit={(event) => { event.preventDefault(); if (draftFrom && draftTo && draftFrom < draftTo) { setPriceHoverIndex(null); onCustomRangeApply(draftFrom, draftTo); } }}><span>自由調整期間</span><label>開始<input type="date" required max={draftTo || today()} value={draftFrom} onChange={(event) => setDraftFrom(event.target.value)} /></label><i>—</i><label>結束<input type="date" required min={draftFrom} max={today()} value={draftTo} onChange={(event) => setDraftTo(event.target.value)} /></label><button type="submit" disabled={!draftFrom || !draftTo || draftFrom >= draftTo}>套用</button></form>}
     {loading && !activeData && <div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 日線資料…</div>}
     {!loading && error && <div className="technical-state error">{error}</div>}
     {activeData && <div className={`technical-grid ${loading ? 'is-refreshing' : ''}`}>
       <article className="technical-card price-card">
-        <div className="technical-card-heading"><div><span>Price trend</span><h3>價格走勢</h3></div><p><strong>{priceMoney(Math.max(...closes))}</strong>期間高點</p></div>
+        <div className="technical-card-heading"><div><span>Price trend</span><h3>價格走勢</h3></div><div className="technical-period-stats"><p><strong>{priceMoney(periodHigh)}</strong>期間高點</p><p><strong>{priceMoney(periodLow)}</strong>期間低點</p></div></div>
+        <div className="technical-chart-controls"><div className="segmented technical-chart-mode" role="group" aria-label="價格圖表類型"><button type="button" className={priceChartMode === 'line' ? 'selected' : ''} aria-pressed={priceChartMode === 'line'} onClick={() => { setPriceChartMode('line'); setPriceHoverIndex(null); }}>折線</button><button type="button" className={priceChartMode === 'candles' ? 'selected' : ''} aria-pressed={priceChartMode === 'candles'} onClick={() => { setPriceChartMode('candles'); setPriceHoverIndex(null); }}>蠟燭</button></div><div className="technical-overlay-switches" role="group" aria-label="技術線疊圖">{([['boll', 'Boll', 'boll'], ['ma20', 'MA20', 'ma20'], ['ma50', 'MA50', 'ma50'], ['ma200', 'MA200', 'ma200']] as const).map(([key, label, tone]) => <button type="button" key={key} className={`${overlays[key] ? 'is-active' : ''} ${tone}`} aria-pressed={overlays[key]} onClick={() => toggleOverlay(key)}><i />{label}</button>)}</div></div>
         <div className="technical-chart large"><span className="technical-axis top">{priceMoney(priceBounds.max)}</span><span className="technical-axis bottom">{priceMoney(priceBounds.min)}</span><svg
           className="technical-price-svg"
           viewBox="0 0 100 100"
           preserveAspectRatio="none"
           role="img"
           tabIndex={0}
-          aria-label={`${symbol} 日線價格走勢；滑鼠移動、觸控或方向鍵可查看日期與價格`}
+          aria-label={`${symbol} ${activeData.intervalLabel}價格走勢；滑鼠移動、觸控或方向鍵可查看日期與價格`}
           onPointerMove={(event) => { const rect = event.currentTarget.getBoundingClientRect(); selectPriceAtClientX(event.clientX, rect.left, rect.width); }}
           onPointerDown={(event) => { const rect = event.currentTarget.getBoundingClientRect(); selectPriceAtClientX(event.clientX, rect.left, rect.width); }}
           onPointerLeave={(event) => { if (event.pointerType === 'mouse') setPriceHoverIndex(null); }}
@@ -542,8 +642,17 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
             if (event.key === 'Home') { event.preventDefault(); setPriceHoverIndex(0); }
             if (event.key === 'End') { event.preventDefault(); setPriceHoverIndex(points.length - 1); }
           }}
-        ><defs><linearGradient id={`price-fill-${symbol}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".25"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="93" y2="93" className="technical-grid-line"/><polygon points={`0,93 ${technicalPoints(closes, priceBounds.min, priceBounds.max)} 100,93`} fill={`url(#price-fill-${symbol})`}/><polyline points={technicalPoints(closes, priceBounds.min, priceBounds.max)} className="technical-price-line"/>{activePricePoint && <line x1={activePriceX} x2={activePriceX} y1="7" y2="93" className="technical-price-guide"/>}</svg>{activePricePoint && <><span className="technical-price-dot" style={{ left: `${activePriceX}%`, top: `${activePriceY}%` }} aria-hidden="true"/><div className={`technical-price-tooltip ${activePriceX > 78 ? 'align-right' : activePriceX < 22 ? 'align-left' : ''}`} style={{ left: `${activePriceX}%`, top: `${Math.max(20, Math.min(84, activePriceY))}%` }} role="status"><span>{new Intl.DateTimeFormat('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric' }).format(new Date(`${activePricePoint.date}T00:00:00Z`))}</span><strong>{priceMoney(activePricePoint.close)}</strong></div></>}</div>
-        <div className="technical-dates">{dateIndexes.map((index) => <span key={points[index].date}>{new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric' }).format(new Date(`${points[index].date}T00:00:00Z`))}</span>)}</div>
+        ><defs><linearGradient id={`price-fill-${symbol}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".25"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="93" y2="93" className="technical-grid-line"/>{overlays.boll && <><polygon points={technicalBandPolygon(bollUpper, bollLower, priceBounds.min, priceBounds.max)} className="technical-boll-band"/><polyline points={technicalPoints(bollUpper, priceBounds.min, priceBounds.max)} className="technical-boll-line"/><polyline points={technicalPoints(bollLower, priceBounds.min, priceBounds.max)} className="technical-boll-line"/></>}{priceChartMode === 'line' ? <><polygon points={`0,93 ${technicalPoints(closes, priceBounds.min, priceBounds.max)} 100,93`} fill={`url(#price-fill-${symbol})`}/><polyline points={technicalPoints(closes, priceBounds.min, priceBounds.max)} className="technical-price-line"/></> : <g className="technical-candles">{candles.map((point, index) => {
+          const x = candles.length === 1 ? 50 : index / (candles.length - 1) * 100;
+          const width = Math.max(.28, Math.min(1.35, 62 / candles.length));
+          const openY = technicalY(point.open, priceBounds.min, priceBounds.max);
+          const closeY = technicalY(point.close, priceBounds.min, priceBounds.max);
+          const highY = technicalY(point.high, priceBounds.min, priceBounds.max);
+          const lowY = technicalY(point.low, priceBounds.min, priceBounds.max);
+          const rising = point.close >= point.open;
+          return <g key={`${point.timestamp}-${index}`} className={rising ? 'technical-candle rising' : 'technical-candle falling'}><line x1={x} x2={x} y1={highY} y2={lowY}/>{Math.abs(openY - closeY) < .35 ? <line className="technical-candle-doji" x1={x - width / 2} x2={x + width / 2} y1={closeY} y2={closeY}/> : <rect x={x - width / 2} y={Math.min(openY, closeY)} width={width} height={Math.max(.35, Math.abs(openY - closeY))}/>}</g>;
+        })}</g>}{overlays.ma20 && <polyline points={technicalPoints(ma20, priceBounds.min, priceBounds.max)} className="technical-ma-line ma20"/>}{overlays.ma50 && <polyline points={technicalPoints(ma50, priceBounds.min, priceBounds.max)} className="technical-ma-line ma50"/>}{overlays.ma200 && <polyline points={technicalPoints(ma200, priceBounds.min, priceBounds.max)} className="technical-ma-line ma200"/>}{activePricePoint && <line x1={activePriceX} x2={activePriceX} y1="7" y2="93" className="technical-price-guide"/>}</svg>{activePricePoint && <>{priceChartMode === 'line' && <span className="technical-price-dot" style={{ left: `${activePriceX}%`, top: `${activePriceY}%` }} aria-hidden="true"/>}<div className={`technical-price-tooltip ${priceChartMode === 'candles' ? 'is-ohlc' : ''} ${activePriceX > 78 ? 'align-right' : activePriceX < 22 ? 'align-left' : ''}`} style={{ left: `${activePriceX}%`, top: `${Math.max(24, Math.min(84, activePriceY))}%` }} role="status"><span>{pointDateLabel(activePricePoint)}</span>{priceChartMode === 'candles' ? <div className="technical-tooltip-ohlc"><span>開 <b>{priceMoney(activePricePoint.open)}</b></span><span>高 <b>{priceMoney(activePricePoint.high)}</b></span><span>低 <b>{priceMoney(activePricePoint.low)}</b></span><span>收 <b>{priceMoney(activePricePoint.close)}</b></span></div> : <strong>{priceMoney(activePricePoint.close)}</strong>}<div className="technical-tooltip-overlays">{overlays.boll && activePricePoint.bollUpper !== null && <span>Boll {priceMoney(activePricePoint.bollUpper)} / {priceMoney(activePricePoint.bollLower ?? 0)}</span>}{overlays.ma20 && activePricePoint.ma20 !== null && <span>MA20 {priceMoney(activePricePoint.ma20)}</span>}{overlays.ma50 && activePricePoint.ma50 !== null && <span>MA50 {priceMoney(activePricePoint.ma50)}</span>}{overlays.ma200 && activePricePoint.ma200 !== null && <span>MA200 {priceMoney(activePricePoint.ma200)}</span>}</div></div></>}</div>
+        <div className="technical-dates">{dateIndexes.map((index) => <span key={`${points[index].timestamp}-${index}`}>{pointDateLabel(points[index], true)}</span>)}</div>
       </article>
       <article className="technical-card indicator-card">
         <div className="technical-card-heading"><div><span>Momentum</span><h3>RSI（14）</h3></div><p className={latestRsi !== null && latestRsi >= 70 ? 'negative' : latestRsi !== null && latestRsi <= 30 ? 'positive' : ''}><strong>{latestRsi?.toFixed(1) ?? '—'}</strong>{latestRsi !== null && latestRsi >= 70 ? '偏熱' : latestRsi !== null && latestRsi <= 30 ? '偏弱' : '中性區間'}</p></div>
@@ -556,7 +665,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
           const x = histogram.length === 1 ? 50 : index / (histogram.length - 1) * 100;
           const zero = technicalY(0, macdBounds.min, macdBounds.max);
           const y = technicalY(value, macdBounds.min, macdBounds.max);
-          return <rect key={points[index].date} x={x - Math.max(.2, 38 / histogram.length)} y={Math.min(y, zero)} width={Math.max(.4, 76 / histogram.length)} height={Math.max(.45, Math.abs(zero - y))} className={value >= 0 ? 'macd-bar positive-bar' : 'macd-bar negative-bar'} />;
+          return <rect key={`${points[index].timestamp}-${index}`} x={x - Math.max(.2, 38 / histogram.length)} y={Math.min(y, zero)} width={Math.max(.4, 76 / histogram.length)} height={Math.max(.45, Math.abs(zero - y))} className={value >= 0 ? 'macd-bar positive-bar' : 'macd-bar negative-bar'} />;
         })}<polyline points={technicalPoints(macd, macdBounds.min, macdBounds.max)} className="technical-macd-line"/><polyline points={technicalPoints(signal, macdBounds.min, macdBounds.max)} className="technical-signal-line"/></svg></div>
         <div className="macd-legend"><span><i className="macd-key"/>MACD</span><span><i className="signal-key"/>Signal</span><span><i className="histogram-key"/>Histogram</span></div>
       </article>
@@ -581,10 +690,12 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
         </form>)}
       </div>
     </section>
-    <footer className="technical-note">技術指標依交易所每日調整收盤價計算，僅供持倉追蹤，不構成投資建議。</footer>
+    <footer className="technical-note">價格、OHLC 與技術指標採同一組交易所時段資料計算；短期間使用分時 K，長期間使用日 K。僅供持倉追蹤，不構成投資建議。</footer>
   </section>;
 }, (previous, next) => previous.symbol === next.symbol
   && previous.range === next.range
+  && previous.customFrom === next.customFrom
+  && previous.customTo === next.customTo
   && previous.data === next.data
   && previous.loading === next.loading
   && previous.error === next.error
@@ -656,6 +767,8 @@ export default function Home() {
   const [backgroundSaving, setBackgroundSaving] = useState(false);
   const [drilledTicker, setDrilledTicker] = useState<string | null>(null);
   const [technicalRange, setTechnicalRange] = useState<TechnicalRange>('6mo');
+  const [technicalCustomFrom, setTechnicalCustomFrom] = useState(() => monthsBefore(today(), 6));
+  const [technicalCustomTo, setTechnicalCustomTo] = useState(today);
   const [technicalData, setTechnicalData] = useState<TechnicalData | null>(null);
   const [technicalLoading, setTechnicalLoading] = useState(false);
   const [technicalError, setTechnicalError] = useState('');
@@ -672,7 +785,7 @@ export default function Home() {
   const macroCacheRef = useRef(new Map<string, MacroCacheEntry>());
   const macroRefreshRequestedRef = useRef(false);
   const macroDeckSwipeStartRef = useRef<number | null>(null);
-  const technicalCacheRef = useRef(new Map<string, TechnicalData>());
+  const technicalCacheRef = useRef(new Map<string, TechnicalCacheEntry>());
   const allocationHistoryCacheRef = useRef(new Map<string, AllocationHistory>());
   const quoteRefreshInFlightRef = useRef(false);
   const toastTimerRef = useRef<number | null>(null);
@@ -1392,21 +1505,23 @@ export default function Home() {
 
   useEffect(() => {
     if (!drilledTicker) return;
-    const cacheKey = `${drilledTicker}:${technicalRange}`;
+    const customQuery = technicalRange === 'custom' ? `&from=${technicalCustomFrom}&to=${technicalCustomTo}` : '';
+    const cacheKey = `${drilledTicker}:${technicalRange}:${technicalRange === 'custom' ? `${technicalCustomFrom}:${technicalCustomTo}` : ''}`;
     const cached = technicalCacheRef.current.get(cacheKey);
-    if (cached) {
-      setTechnicalData(cached);
+    if (cached && Date.now() - cached.fetchedAt < 120_000) {
+      setTechnicalData(cached.data);
       setTechnicalError('');
       setTechnicalLoading(false);
       return;
     }
     const controller = new AbortController();
-    fetch(`/api/technical?symbol=${encodeURIComponent(drilledTicker)}&range=${technicalRange}`, { cache: 'no-store', signal: controller.signal })
+    setTechnicalLoading(true);
+    fetch(`/api/technical?symbol=${encodeURIComponent(drilledTicker)}&range=${technicalRange}${customQuery}`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json() as TechnicalData & { error?: string };
         if (!response.ok) throw new Error(payload.error ?? '技術指標暫時無法取得');
         if (!controller.signal.aborted) {
-          technicalCacheRef.current.set(cacheKey, payload);
+          technicalCacheRef.current.set(cacheKey, { data: payload, fetchedAt: Date.now() });
           setTechnicalData(payload);
           setTechnicalError('');
         }
@@ -1418,7 +1533,7 @@ export default function Home() {
       })
       .finally(() => { if (!controller.signal.aborted) setTechnicalLoading(false); });
     return () => controller.abort();
-  }, [drilledTicker, technicalRange]);
+  }, [drilledTicker, technicalRange, technicalCustomFrom, technicalCustomTo]);
 
   const selectSymbol = useCallback((suggestion: SymbolSuggestion) => {
     setEditor((current) => current ? { ...current, ticker: suggestion.symbol, market: isJapaneseTicker(suggestion.symbol) ? 'JP' : 'US' } : current);
@@ -1749,6 +1864,18 @@ export default function Home() {
     setTechnicalError('');
   }
 
+  function applyTechnicalCustomRange(from: string, to: string) {
+    if (!from || !to || from >= to) {
+      notify('請選擇有效的自訂開始與結束日期');
+      return;
+    }
+    setTechnicalCustomFrom(from);
+    setTechnicalCustomTo(to);
+    setTechnicalRange('custom');
+    setTechnicalLoading(true);
+    setTechnicalError('');
+  }
+
   function returnToPositionsOverview() {
     setAllocationGroupSelection(null);
     setAllocationHoveredLabel(null);
@@ -1968,6 +2095,8 @@ export default function Home() {
           key={drilledTicker}
           symbol={drilledTicker}
           range={technicalRange}
+          customFrom={technicalCustomFrom}
+          customTo={technicalCustomTo}
           data={technicalData}
           loading={technicalLoading}
           error={technicalError}
@@ -1975,9 +2104,10 @@ export default function Home() {
           lotSavingId={lotSavingId}
           valuationOpen={valuationOpen && valuationTicker === drilledTicker}
           onRangeChange={selectTechnicalRange}
+          onCustomRangeApply={applyTechnicalCustomRange}
           onClose={returnToPositionsOverview}
           onOpenDcf={() => toggleValuation(drilledTicker)}
-          onAddLot={() => setEditor({ ...blankTrade(), type: 'SDI', ticker: drilledTicker, event: 'STOCK', quoteMode: 'auto', currentPrice: technicalData?.symbol === drilledTicker ? technicalData.latestPrice : 0 })}
+          onAddLot={() => setEditor({ ...blankTrade(), type: 'SDI', ticker: drilledTicker, event: 'STOCK', quoteMode: 'auto' })}
           onSaveLot={saveStockLot}
           onEditLot={(trade) => setEditor({ ...trade })}
           onDeleteLot={(trade) => setDeleteCandidate(trade)}

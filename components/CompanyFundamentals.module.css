@@ -5,6 +5,10 @@
 .header span { color: #7b8ba2; font-size: 12px; }
 .header button { min-height: 42px; padding: 0 15px; color: #245fc0; white-space: nowrap; background: #eef5ff; border: 1px solid #d4e3f9; border-radius: 10px; font-size: 12px; font-weight: 850; cursor: pointer; }
 .header button:hover { color: white; background: #2f73ed; border-color: #2f73ed; }
+.headerActions { display: flex; align-items: center; gap: 9px; }
+.header button.activeAction { color: white; background: #2f73ed; border-color: #2f73ed; }
+.header button.returnButton { color: #536781; background: #f5f7fa; border-color: #dde4ed; }
+.header button.returnButton:hover { color: #203550; background: #e9eef5; border-color: #cdd8e6; }
 .grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; padding: 0 27px 14px; }
 .grid article { min-width: 0; padding: 17px; background: linear-gradient(160deg,#fbfcfe,#f7f9fd); border: 1px solid #e2e8f1; border-radius: 14px; }
 .grid article.dividend { grid-column: span 2; align-self: start; }
@@ -41,13 +45,14 @@
 .dateLabel { fill: #637690; font-size: 10px; }
 .chartBar { opacity: .82; transition: opacity .14s ease; }
 .chartBarNegative { fill: #df4b63 !important; }
-.chartBarActive { opacity: 1; }
+.chartBarActive { opacity: 1; stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke; filter: drop-shadow(0 3px 5px rgba(22,45,80,.16)); }
 .chartLine { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .chartPoint { fill: #fff; stroke-width: 3; vector-effect: non-scaling-stroke; transition: r .14s ease; }
 .guideLine { stroke: #8ea4c4; stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
 .tooltipBox { fill: #122747; stroke: rgba(255,255,255,.3); stroke-width: 1; filter: drop-shadow(0 6px 10px rgba(20,40,70,.16)); }
 .tooltipDate { fill: #acc4e7; font-size: 10px; font-weight: 750; }
 .tooltipValue { fill: #fff; font-size: 13px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.chartHitZone,.chartHitZone:focus,.chartHitZone:focus-visible { outline: none; }
 .chartEmpty { min-height: 265px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; color: #7c8ca2; }
 .chartEmpty strong { color: #52657f; font-size: 14px; }
 .chartEmpty span { font-size: 11px; }
@@ -66,6 +71,7 @@
 }
 @media (max-width: 720px) {
   .header { align-items: stretch; flex-direction: column; padding: 19px 16px 15px; }
+  .headerActions { display: grid; grid-template-columns: 1fr 1fr; }
   .header button { width: 100%; }
   .grid { grid-template-columns: 1fr; padding: 0 16px 12px; }
   .grid article.dividend,.historyPanel { grid-column: auto; }

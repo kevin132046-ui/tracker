@@ -446,7 +446,7 @@ function lastIndicator(values: Array<number | null>) {
   return values.findLast((value): value is number => typeof value === 'number' && Number.isFinite(value)) ?? null;
 }
 
-const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, data, loading, error, stockTrades, lotSavingId, onRangeChange, onClose, onOpenDcf, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
+const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, data, loading, error, stockTrades, lotSavingId, valuationOpen, onRangeChange, onClose, onOpenDcf, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
   symbol: string;
   range: TechnicalRange;
   data: TechnicalData | null;
@@ -454,6 +454,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
   error: string;
   stockTrades: Trade[];
   lotSavingId: number | null;
+  valuationOpen: boolean;
   onRangeChange: (range: TechnicalRange) => void;
   onClose: () => void;
   onOpenDcf: () => void;
@@ -462,6 +463,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
   onEditLot: (trade: Trade) => void;
   onDeleteLot: (trade: Trade) => void;
 }) {
+  const [priceHoverIndex, setPriceHoverIndex] = useState<number | null>(null);
   const activeData = data?.symbol === symbol && data.range === range ? data : null;
   const points = activeData?.points ?? [];
   const closes = points.map((point) => point.close);
@@ -482,19 +484,48 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
   const firstPurchaseDate = summaryLots.reduce((first, trade) => !first || trade.openDate < first ? trade.openDate : first, '');
   const currencySymbol = isJapaneseTicker(symbol) ? '¥' : '$';
   const priceMoney = (value: number) => nativeMoney(symbol, value);
+  const activePriceIndex = priceHoverIndex !== null && points[priceHoverIndex] ? priceHoverIndex : null;
+  const activePricePoint = activePriceIndex === null ? null : points[activePriceIndex];
+  const activePriceX = activePriceIndex === null ? 0 : points.length === 1 ? 50 : activePriceIndex / (points.length - 1) * 100;
+  const activePriceY = activePricePoint ? technicalY(activePricePoint.close, priceBounds.min, priceBounds.max) : 0;
+  const selectPriceAtClientX = (clientX: number, left: number, width: number) => {
+    if (!points.length || width <= 0) return;
+    const ratio = Math.max(0, Math.min(1, (clientX - left) / width));
+    setPriceHoverIndex(Math.round(ratio * (points.length - 1)));
+  };
 
   return <section className="panel stock-analysis-panel" id="stock-analysis" aria-live="polite">
     <header className="technical-header">
       <div className="technical-title"><CompanyLogo ticker={symbol} /><div><p className="eyebrow">Technical view</p><h2>{symbol} 股票走勢</h2><span>日線價格 · RSI 14 · MACD 12/26/9</span></div></div>
       {activeData && <div className="technical-quote"><span>最新收盤</span><strong>{priceMoney(activeData.latestPrice)}</strong><b className={activeData.change >= 0 ? 'positive' : 'negative'}>{activeData.change >= 0 ? '+' : ''}{priceMoney(activeData.change)} · {percent.format(activeData.changePercent)}</b></div>}
-      <div className="technical-actions"><div className="segmented" aria-label="技術走勢期間">{([['3mo', '3月'], ['6mo', '6月'], ['1y', '1年']] as const).map(([value, label]) => <button key={value} className={range === value ? 'selected' : ''} onClick={() => onRangeChange(value)}>{label}</button>)}</div><button type="button" className="technical-close" onClick={onOpenDcf}>DCF 估值</button><button type="button" className="technical-close" onClick={onClose}>返回持倉總覽</button></div>
+      <div className="technical-actions"><div className="segmented" aria-label="技術走勢期間">{([['3mo', '3月'], ['6mo', '6月'], ['1y', '1年']] as const).map(([value, label]) => <button key={value} className={range === value ? 'selected' : ''} onClick={() => { setPriceHoverIndex(null); onRangeChange(value); }}>{label}</button>)}</div><button type="button" className={`technical-close ${valuationOpen ? 'is-active' : ''}`} aria-pressed={valuationOpen} onClick={onOpenDcf}>{valuationOpen ? '關閉 DCF 估值' : '開啟 DCF 估值'}</button><button type="button" className="technical-close" onClick={onClose}>返回持倉總覽</button></div>
     </header>
     {loading && !activeData && <div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 日線資料…</div>}
     {!loading && error && <div className="technical-state error">{error}</div>}
     {activeData && <div className={`technical-grid ${loading ? 'is-refreshing' : ''}`}>
       <article className="technical-card price-card">
         <div className="technical-card-heading"><div><span>Price trend</span><h3>價格走勢</h3></div><p><strong>{priceMoney(Math.max(...closes))}</strong>期間高點</p></div>
-        <div className="technical-chart large"><span className="technical-axis top">{priceMoney(priceBounds.max)}</span><span className="technical-axis bottom">{priceMoney(priceBounds.min)}</span><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`${symbol} 日線價格走勢`}><defs><linearGradient id={`price-fill-${symbol}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".25"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="93" y2="93" className="technical-grid-line"/><polygon points={`0,93 ${technicalPoints(closes, priceBounds.min, priceBounds.max)} 100,93`} fill={`url(#price-fill-${symbol})`}/><polyline points={technicalPoints(closes, priceBounds.min, priceBounds.max)} className="technical-price-line"/></svg></div>
+        <div className="technical-chart large"><span className="technical-axis top">{priceMoney(priceBounds.max)}</span><span className="technical-axis bottom">{priceMoney(priceBounds.min)}</span><svg
+          className="technical-price-svg"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          role="img"
+          tabIndex={0}
+          aria-label={`${symbol} 日線價格走勢；滑鼠移動、觸控或方向鍵可查看日期與價格`}
+          onPointerMove={(event) => { const rect = event.currentTarget.getBoundingClientRect(); selectPriceAtClientX(event.clientX, rect.left, rect.width); }}
+          onPointerDown={(event) => { const rect = event.currentTarget.getBoundingClientRect(); selectPriceAtClientX(event.clientX, rect.left, rect.width); }}
+          onPointerLeave={(event) => { if (event.pointerType === 'mouse') setPriceHoverIndex(null); }}
+          onFocus={() => setPriceHoverIndex(points.length ? points.length - 1 : null)}
+          onBlur={() => setPriceHoverIndex(null)}
+          onKeyDown={(event) => {
+            if (!points.length) return;
+            const current = activePriceIndex ?? points.length - 1;
+            if (event.key === 'ArrowLeft') { event.preventDefault(); setPriceHoverIndex(Math.max(0, current - 1)); }
+            if (event.key === 'ArrowRight') { event.preventDefault(); setPriceHoverIndex(Math.min(points.length - 1, current + 1)); }
+            if (event.key === 'Home') { event.preventDefault(); setPriceHoverIndex(0); }
+            if (event.key === 'End') { event.preventDefault(); setPriceHoverIndex(points.length - 1); }
+          }}
+        ><defs><linearGradient id={`price-fill-${symbol}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".25"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="93" y2="93" className="technical-grid-line"/><polygon points={`0,93 ${technicalPoints(closes, priceBounds.min, priceBounds.max)} 100,93`} fill={`url(#price-fill-${symbol})`}/><polyline points={technicalPoints(closes, priceBounds.min, priceBounds.max)} className="technical-price-line"/>{activePricePoint && <line x1={activePriceX} x2={activePriceX} y1="7" y2="93" className="technical-price-guide"/>}</svg>{activePricePoint && <><span className="technical-price-dot" style={{ left: `${activePriceX}%`, top: `${activePriceY}%` }} aria-hidden="true"/><div className={`technical-price-tooltip ${activePriceX > 78 ? 'align-right' : activePriceX < 22 ? 'align-left' : ''}`} style={{ left: `${activePriceX}%`, top: `${Math.max(20, Math.min(84, activePriceY))}%` }} role="status"><span>{new Intl.DateTimeFormat('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric' }).format(new Date(`${activePricePoint.date}T00:00:00Z`))}</span><strong>{priceMoney(activePricePoint.close)}</strong></div></>}</div>
         <div className="technical-dates">{dateIndexes.map((index) => <span key={points[index].date}>{new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric' }).format(new Date(`${points[index].date}T00:00:00Z`))}</span>)}</div>
       </article>
       <article className="technical-card indicator-card">
@@ -513,7 +544,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
         <div className="macd-legend"><span><i className="macd-key"/>MACD</span><span><i className="signal-key"/>Signal</span><span><i className="histogram-key"/>Histogram</span></div>
       </article>
     </div>}
-    <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 公司資料…</div>}><CompanyFundamentals key={symbol} symbol={symbol} onOpenDcf={onOpenDcf} /></Suspense>
+    <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 公司資料…</div>}><CompanyFundamentals key={symbol} symbol={symbol} valuationOpen={valuationOpen} onOpenDcf={onOpenDcf} onReturn={onClose} /></Suspense>
     <section className="stock-lots-section">
       <div className="stock-lots-heading"><div><p className="eyebrow">Cost basis</p><h3>買入均價與購買紀錄</h3><span>直接修改日期或均價；儲存後持倉、損益與圖表會立即重算。</span></div><button type="button" onClick={onAddLot}>＋新增 {symbol} 買入紀錄</button></div>
       <div className="stock-lot-summary"><div><span>股票加權均價</span><strong>{summaryLots.length ? priceMoney(averageEntry) : '—'}</strong></div><div><span>持股數量</span><strong>{totalQuantity || '—'}</strong></div><div><span>首次買入日期</span><strong>{firstPurchaseDate ? dateLabel(firstPurchaseDate) : '—'}</strong></div><div><span>購買紀錄</span><strong>{stockTrades.length} 筆</strong></div></div>
@@ -541,7 +572,8 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, d
   && previous.loading === next.loading
   && previous.error === next.error
   && previous.stockTrades === next.stockTrades
-  && previous.lotSavingId === next.lotSavingId);
+  && previous.lotSavingId === next.lotSavingId
+  && previous.valuationOpen === next.valuationOpen);
 
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -1620,6 +1652,21 @@ export default function Home() {
     window.setTimeout(() => document.getElementById('valuation')?.scrollIntoView({ behavior: 'auto', block: 'start' }), 0);
   }
 
+  function closeValuation() {
+    setValuationOpen(false);
+    setActiveSection(drilledTicker ? 'positions' : 'overview');
+    window.requestAnimationFrame(() => document.getElementById(drilledTicker ? 'stock-analysis' : 'overview')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
+  }
+
+  function toggleValuation(ticker?: string) {
+    const target = ticker || valuationTicker;
+    if (valuationOpen && target === valuationTicker) {
+      closeValuation();
+      return;
+    }
+    openValuation(target);
+  }
+
   function selectAllocationItem(item: { label: string; members: string[] }) {
     setAllocationPinnedLabel(item.label);
     if (item.members.length === 1) {
@@ -1661,7 +1708,7 @@ export default function Home() {
       <header className="topbar">
         <a className="brand" href="#top" aria-label="OptionFlow 首頁">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="brand-logo" src="/optionflow-logo.jpg" alt="" width="40" height="40" />
+          <img className="brand-logo" src="/optionflow-logo.jpg" alt="" width="52" height="52" />
           <span>OPTIONFLOW</span>
         </a>
         <div className="header-actions">
@@ -1684,7 +1731,7 @@ export default function Home() {
         </nav>
         <div className="dashboard">
         <section className="hero" id="overview">
-          <div><p className="eyebrow">Portfolio command center</p><EditableHeroTitle onNotify={notify} /></div>
+          <div><EditableHeroTitle onNotify={notify} /></div>
           <LiveMarketClocks lastQuoteAt={lastQuoteAt} />
         </section>
 
@@ -1800,6 +1847,7 @@ export default function Home() {
         </section>
 
         {drilledTicker && <StockTechnicalPanel
+          key={drilledTicker}
           symbol={drilledTicker}
           range={technicalRange}
           data={technicalData}
@@ -1807,16 +1855,17 @@ export default function Home() {
           error={technicalError}
           stockTrades={selectedStockTrades}
           lotSavingId={lotSavingId}
+          valuationOpen={valuationOpen && valuationTicker === drilledTicker}
           onRangeChange={selectTechnicalRange}
           onClose={returnToPositionsOverview}
-          onOpenDcf={() => openValuation(drilledTicker)}
+          onOpenDcf={() => toggleValuation(drilledTicker)}
           onAddLot={() => setEditor({ ...blankTrade(), type: 'SDI', ticker: drilledTicker, event: 'STOCK', quoteMode: 'auto', currentPrice: technicalData?.symbol === drilledTicker ? technicalData.latestPrice : 0 })}
           onSaveLot={saveStockLot}
           onEditLot={(trade) => setEditor({ ...trade })}
           onDeleteLot={(trade) => setDeleteCandidate(trade)}
         />}
 
-        {valuationOpen && <Suspense fallback={<section className="broker-hub-loader" id="valuation" aria-busy="true"><span /><strong>正在開啟 DCF 估值工作區…</strong></section>}><DcfCalculator key={valuationTicker} initialTicker={valuationTicker} /></Suspense>}
+        {valuationOpen && <Suspense fallback={<section className="broker-hub-loader" id="valuation" aria-busy="true"><span /><strong>正在開啟 DCF 估值工作區…</strong></section>}><DcfCalculator key={valuationTicker} initialTicker={valuationTicker} onClose={closeValuation} /></Suspense>}
 
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">

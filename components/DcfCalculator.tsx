@@ -160,7 +160,7 @@ function NumberField({ label, value, suffix, step = '0.1', min, max, onChange }:
   />{suffix && <i>{suffix}</i>}</span></label>;
 }
 
-export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicker?: string }) {
+export default function DcfCalculator({ initialTicker = 'MSFT', onClose }: { initialTicker?: string; onClose?: () => void }) {
   const [assumptions, setAssumptions] = useState<Assumptions>(() => normalizeAssumptions({
     ...defaultAssumptions,
     ticker: initialTicker || defaultAssumptions.ticker,
@@ -294,7 +294,7 @@ export default function DcfCalculator({ initialTicker = 'MSFT' }: { initialTicke
         <img src={`/api/logo?ticker=${encodeURIComponent(assumptions.ticker || 'MSFT')}&v=6`} alt="" width="58" height="58" decoding="async" draggable={false} />
         <div><p>Valuation workspace</p><h2 id="dcf-title">DCF 內在價值試算</h2><span>以自由現金流、WACC 與永續成長率估算企業價值</span></div>
       </div>
-      <div className={styles.headerActions}><div className={styles.tickerControl}><label>Ticker<input value={assumptions.ticker} onChange={(event) => set('ticker', event.target.value.toUpperCase())} onKeyDown={(event) => { if (event.key === 'Enter') void loadCompany(assumptions.ticker); }} /></label><div role="group" aria-label="估值幣別"><button type="button" className={assumptions.currency === 'USD' ? styles.active : ''} onClick={() => switchCurrency('USD')}>USD</button><button type="button" className={assumptions.currency === 'JPY' ? styles.active : ''} onClick={() => switchCurrency('JPY')}>JPY</button></div></div><button type="button" className={styles.loadButton} disabled={companyLoading} onClick={() => void loadCompany(assumptions.ticker)}>{companyLoading ? '讀取中…' : '自動帶入資料'}</button></div>
+      <div className={styles.headerActions}><div className={styles.tickerControl}><label>Ticker<input value={assumptions.ticker} onChange={(event) => set('ticker', event.target.value.toUpperCase())} onKeyDown={(event) => { if (event.key === 'Enter') void loadCompany(assumptions.ticker); }} /></label><div role="group" aria-label="估值幣別"><button type="button" className={assumptions.currency === 'USD' ? styles.active : ''} onClick={() => switchCurrency('USD')}>USD</button><button type="button" className={assumptions.currency === 'JPY' ? styles.active : ''} onClick={() => switchCurrency('JPY')}>JPY</button></div></div><button type="button" className={styles.loadButton} disabled={companyLoading} onClick={() => void loadCompany(assumptions.ticker)}>{companyLoading ? '讀取中…' : '自動帶入資料'}</button>{onClose && <button type="button" className={styles.closeButton} onClick={onClose}>關閉估值表</button>}</div>
     </header>
 
     <div className={styles.scenarioBar}><div><label>情境名稱<input value={scenarioName} onChange={(event) => setScenarioName(event.target.value)} /></label><button type="button" disabled={scenarioSaving} onClick={() => void saveScenario()}>{scenarioSaving ? '保存中…' : '儲存情境'}</button></div><div className={styles.savedScenarios}>{scenarios.length ? scenarios.slice(0, 6).map((scenario) => <span key={scenario.id}><button type="button" onClick={() => loadScenario(scenario)}>{scenario.name}<small>{scenario.ticker}</small></button><button type="button" aria-label={`刪除 ${scenario.name}`} onClick={() => void deleteScenario(scenario.id)}>×</button></span>) : <em>尚未保存估值情境</em>}</div></div>

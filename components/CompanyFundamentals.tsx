@@ -200,6 +200,7 @@ function HistoryChart({
       </g>}
       {series.map((point, index) => <rect
         key={`zone-${point.date}`}
+        className={styles.chartHitZone}
         x={geometry.left + geometry.xStep * index}
         y={geometry.top}
         width={geometry.xStep}
@@ -209,7 +210,10 @@ function HistoryChart({
         role="button"
         aria-label={`${periodLabel(point.date, period)}，${config.label} ${formatHistoryValue(point.value, config, currency)}`}
         onPointerEnter={() => setActiveIndex(index)}
-        onPointerDown={() => setActiveIndex(index)}
+        onPointerDown={(event) => {
+          if (event.pointerType === 'mouse') event.preventDefault();
+          setActiveIndex(index);
+        }}
         onPointerLeave={() => setActiveIndex(null)}
         onFocus={() => setActiveIndex(index)}
         onBlur={() => setActiveIndex(null)}
@@ -218,7 +222,7 @@ function HistoryChart({
   </div>;
 }
 
-export default function CompanyFundamentals({ symbol, onOpenDcf }: { symbol: string; onOpenDcf: () => void }) {
+export default function CompanyFundamentals({ symbol, valuationOpen, onOpenDcf, onReturn }: { symbol: string; valuationOpen: boolean; onOpenDcf: () => void; onReturn: () => void }) {
   const [data, setData] = useState<CompanyPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -265,7 +269,7 @@ export default function CompanyFundamentals({ symbol, onOpenDcf }: { symbol: str
   });
 
   return <section className={styles.section} aria-labelledby="company-fundamentals-title">
-    <header className={styles.header}><div><p>Company fundamentals</p><h3 id="company-fundamentals-title">公司資訊與財務品質</h3><span>{data ? `${data.name} · ${data.exchange || data.currency}` : `載入 ${symbol} 的估值、現金流與資產負債資料`}</span></div><button type="button" onClick={onOpenDcf}>開啟 {symbol} DCF 估值</button></header>
+    <header className={styles.header}><div><p>Company fundamentals</p><h3 id="company-fundamentals-title">公司資訊與財務品質</h3><span>{data ? `${data.name} · ${data.exchange || data.currency}` : `載入 ${symbol} 的估值、現金流與資產負債資料`}</span></div><div className={styles.headerActions}><button type="button" className={valuationOpen ? styles.activeAction : ''} aria-pressed={valuationOpen} onClick={onOpenDcf}>{valuationOpen ? `關閉 ${symbol} DCF 估值` : `開啟 ${symbol} DCF 估值`}</button><button type="button" className={styles.returnButton} onClick={onReturn}>返回持倉總覽</button></div></header>
     {loading && <div className={styles.loading} role="status"><i />正在整理最新可用公司資料…</div>}
     {!loading && error && <div className={styles.error}><span>{error}</span><button type="button" onClick={retryLoad}>重新載入</button></div>}
     {!loading && data && <>

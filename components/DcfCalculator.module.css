@@ -25,3 +25,29 @@
 .projectionChart.invalidChart > div { opacity: .24; filter: grayscale(.3); }
 
 @media (max-width: 720px) { .headerActions { align-items: stretch; flex-direction: column; }.loadButton { width: 100%; }.scenarioBar { grid-template-columns: 1fr; padding: 12px 16px; }.scenarioBar > div:first-child { align-items: stretch; flex-direction: column; }.savedScenarios { justify-content: flex-start; }.dataStatus { align-items: flex-start; flex-direction: column; padding: 9px 16px; }.dataStatus small { margin-left: 0; } }
+
+/* Larger valuation visuals keep the sensitivity matrix readable without changing its calculations. */
+.closeButton { min-height: 42px; padding: 0 13px; color: #536781; white-space: nowrap; background: #f4f7fa; border: 1px solid #dae3ee; border-radius: 10px; font-size: 11px; font-weight: 850; cursor: pointer; }
+.closeButton:hover { color: #213752; background: #e9eff6; border-color: #cbd8e7; }
+.resultCard { padding: 23px; }
+.cardHeading h3 { font-size: 22px; }
+.cardHeading > span { color: #6f8098; font-size: 12px; font-weight: 850; }
+.projectionChart { height: 270px; padding-top: 28px; }
+.projectionChart i { width: min(50px,74%); border-radius: 8px 8px 2px 2px; }
+.projectionChart span,.projectionChart b { font-size: 12px; }
+.bridge { margin-top: 19px; }
+.bridge div { padding: 12px; }
+.bridge dt { font-size: 10.5px; }
+.bridge dd { margin-top: 6px; font-size: 13px; }
+.sensitivity { grid-template-columns: 90px repeat(5,minmax(104px,1fr)); gap: 8px; margin-top: 20px; }
+.sensitivity b,.sensitivity span,.corner { min-height: 56px; padding: 10px; border-radius: 10px; font-size: 13px; }
+.sensitivity b,.corner { color: #5e718d; background: #eaf0f7; font-weight: 900; }
+.sensitivity span { color: #107759; border-color: #d2ebe2; font-weight: 900; }
+
+@media (max-width: 720px) {
+  .loadButton,.closeButton { width: 100%; }
+  .resultCard { padding: 17px; }
+  .projectionChart { height: 230px; }
+  .sensitivity { grid-template-columns: 82px repeat(5,96px); gap: 6px; }
+  .sensitivity b,.sensitivity span,.corner { min-height: 52px; padding: 8px; font-size: 12px; }
+}

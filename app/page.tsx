@@ -26,6 +26,10 @@ type Trade = {
   market?: 'US' | 'JP';
   sourceRow?: number | null;
   derived?: boolean;
+  dividendSourceTicker?: string;
+  dividendAmountPerShare?: number;
+  dividendGross?: number;
+  dividendTax?: number;
 };
 
 type RangeMode = 'day' | 'week' | 'month' | 'year';
@@ -102,6 +106,16 @@ type DividendCash = {
   USD: { gross: number; tax: number; net: number; count: number };
   JPY: { gross: number; tax: number; net: number; count: number };
 };
+type DividendEvent = {
+  ticker: string;
+  currency: 'USD' | 'JPY';
+  date: string;
+  amountPerShare: number;
+  quantity: number;
+  gross: number;
+  tax: number;
+  net: number;
+};
 
 const loadBrokerHub = () => import('@/components/BrokerHub');
 const loadDcfCalculator = () => import('@/components/DcfCalculator');
@@ -112,9 +126,9 @@ const CompanyFundamentals = lazy(loadCompanyFundamentals);
 
 const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
 const companyNames: Record<string, string> = {
-  AAPL: 'Apple', AMZN: 'Amazon', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
+  AAPL: 'Apple', AMZN: 'Amazon', AXP: 'American Express', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
   CNC: 'Centene', META: 'Meta Platforms', MSFT: 'Microsoft', NVDA: 'NVIDIA', SPGI: 'S&P Global', SPY: 'SPDR S&P 500',
-  TRV: 'The Travelers Companies', TSLA: 'Tesla', TTWO: 'Take-Two Interactive', V: 'Visa',
+  TRV: 'The Travelers Companies', TSLA: 'Tesla', TTWO: 'Take-Two Interactive', V: 'Visa', VST: 'Vistra',
   '7203.T': 'Toyota Motor', '6758.T': 'Sony Group', '9984.T': 'SoftBank Group', '6861.T': 'Keyence',
   '8306.T': 'Mitsubishi UFJ Financial Group', '8035.T': 'Tokyo Electron', '9983.T': 'Fast Retailing', '7974.T': 'Nintendo',
 };
@@ -189,6 +203,144 @@ const easternClockFormatter = clockFormatter('America/New_York');
 const japanClockFormatter = clockFormatter('Asia/Tokyo');
 const easternZoneFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' });
 const easternZoneName = (timestamp: number) => easternZoneFormatter.formatToParts(new Date(timestamp)).find((part) => part.type === 'timeZoneName')?.value ?? 'ET';
+const japaneseCalendarFormatter = new Intl.DateTimeFormat('ja-JP-u-ca-japanese', { timeZone: 'Asia/Tokyo', era: 'long', year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+
+type ZonedDate = { year: number; month: number; day: number };
+type MarketCalendarStatus = {
+  japaneseDate: string;
+  japanHoliday: string | null;
+  japanClosedReason: string | null;
+  usClosedReason: string | null;
+};
+
+const dateKey = (year: number, month: number, day: number) => `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+const zonedDateKey = (date: ZonedDate) => dateKey(date.year, date.month, date.day);
+const zonedDate = (timestamp: number, timeZone: string): ZonedDate => {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(timestamp));
+  return {
+    year: Number(parts.find((part) => part.type === 'year')?.value),
+    month: Number(parts.find((part) => part.type === 'month')?.value),
+    day: Number(parts.find((part) => part.type === 'day')?.value),
+  };
+};
+const weekday = ({ year, month, day }: ZonedDate) => new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+const nthWeekday = (year: number, month: number, targetWeekday: number, occurrence: number) => {
+  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  return 1 + ((targetWeekday - firstWeekday + 7) % 7) + (occurrence - 1) * 7;
+};
+const lastWeekday = (year: number, month: number, targetWeekday: number) => {
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const lastDayWeekday = new Date(Date.UTC(year, month - 1, lastDay)).getUTCDay();
+  return lastDay - ((lastDayWeekday - targetWeekday + 7) % 7);
+};
+const addUtcDays = (date: ZonedDate, offset: number): ZonedDate => {
+  const value = new Date(Date.UTC(date.year, date.month - 1, date.day + offset));
+  return { year: value.getUTCFullYear(), month: value.getUTCMonth() + 1, day: value.getUTCDate() };
+};
+const japaneseHolidayCache = new Map<number, Map<string, string>>();
+const usHolidayCache = new Map<number, Map<string, string>>();
+
+function japaneseHolidays(year: number) {
+  const cached = japaneseHolidayCache.get(year);
+  if (cached) return cached;
+  const base = new Map<string, string>();
+  const add = (month: number, day: number, name: string) => base.set(dateKey(year, month, day), name);
+  add(1, 1, '元日');
+  add(1, nthWeekday(year, 1, 1, 2), '成人の日');
+  add(2, 11, '建国記念の日');
+  add(2, 23, '天皇誕生日');
+  add(3, Math.floor(20.8431 + .242194 * (year - 1980) - Math.floor((year - 1980) / 4)), '春分の日');
+  add(4, 29, '昭和の日');
+  add(5, 3, '憲法記念日');
+  add(5, 4, 'みどりの日');
+  add(5, 5, 'こどもの日');
+  add(7, nthWeekday(year, 7, 1, 3), '海の日');
+  add(8, 11, '山の日');
+  add(9, nthWeekday(year, 9, 1, 3), '敬老の日');
+  add(9, Math.floor(23.2488 + .242194 * (year - 1980) - Math.floor((year - 1980) / 4)), '秋分の日');
+  add(10, nthWeekday(year, 10, 1, 2), 'スポーツの日');
+  add(11, 3, '文化の日');
+  add(11, 23, '勤労感謝の日');
+
+  const holidays = new Map(base);
+  for (let month = 1; month <= 12; month += 1) {
+    const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    for (let day = 2; day < days; day += 1) {
+      const key = dateKey(year, month, day);
+      if (holidays.has(key)) continue;
+      const current = { year, month, day };
+      if (base.has(zonedDateKey(addUtcDays(current, -1))) && base.has(zonedDateKey(addUtcDays(current, 1)))) holidays.set(key, '国民の休日');
+    }
+  }
+  [...base.entries()].forEach(([key, name]) => {
+    const [holidayYear, holidayMonth, holidayDay] = key.split('-').map(Number);
+    if (new Date(Date.UTC(holidayYear, holidayMonth - 1, holidayDay)).getUTCDay() !== 0) return;
+    let substitute = addUtcDays({ year: holidayYear, month: holidayMonth, day: holidayDay }, 1);
+    while (holidays.has(zonedDateKey(substitute))) substitute = addUtcDays(substitute, 1);
+    holidays.set(zonedDateKey(substitute), `振替休日（${name}）`);
+  });
+  japaneseHolidayCache.set(year, holidays);
+  return holidays;
+}
+
+function easterSunday(year: number): ZonedDate {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  return { year, month, day: ((h + l - 7 * m + 114) % 31) + 1 };
+}
+
+function usMarketHolidays(year: number) {
+  const cached = usHolidayCache.get(year);
+  if (cached) return cached;
+  const holidays = new Map<string, string>();
+  const add = (date: ZonedDate, name: string) => holidays.set(dateKey(date.year, date.month, date.day), name);
+  const observed = (month: number, day: number, name: string, saturdayObserved = true) => {
+    const actual = { year, month, day };
+    const dayOfWeek = weekday(actual);
+    if (dayOfWeek === 6 && saturdayObserved) add(addUtcDays(actual, -1), name);
+    else if (dayOfWeek === 0) add(addUtcDays(actual, 1), name);
+    else add(actual, name);
+  };
+  observed(1, 1, '元旦', false);
+  add({ year, month: 1, day: nthWeekday(year, 1, 1, 3) }, '馬丁路德金恩紀念日');
+  add({ year, month: 2, day: nthWeekday(year, 2, 1, 3) }, '華盛頓誕辰');
+  add(addUtcDays(easterSunday(year), -2), '耶穌受難日');
+  add({ year, month: 5, day: lastWeekday(year, 5, 1) }, '陣亡將士紀念日');
+  observed(6, 19, '六月節');
+  observed(7, 4, '美國獨立日');
+  add({ year, month: 9, day: nthWeekday(year, 9, 1, 1) }, '勞動節');
+  add({ year, month: 11, day: nthWeekday(year, 11, 4, 4) }, '感恩節');
+  observed(12, 25, '聖誕節');
+  usHolidayCache.set(year, holidays);
+  return holidays;
+}
+
+function marketCalendarStatus(timestamp: number): MarketCalendarStatus {
+  const japanDate = zonedDate(timestamp, 'Asia/Tokyo');
+  const usDate = zonedDate(timestamp, 'America/New_York');
+  const japanHoliday = japaneseHolidays(japanDate.year).get(dateKey(japanDate.year, japanDate.month, japanDate.day)) ?? null;
+  const japanWeekend = weekday(japanDate) === 0 || weekday(japanDate) === 6;
+  const japanExchangeHoliday = japanDate.month === 1 && [2, 3].includes(japanDate.day) ? '年始休業' : japanDate.month === 12 && japanDate.day === 31 ? '年末休業' : null;
+  const usHoliday = usMarketHolidays(usDate.year).get(dateKey(usDate.year, usDate.month, usDate.day)) ?? null;
+  const usWeekend = weekday(usDate) === 0 || weekday(usDate) === 6;
+  return {
+    japaneseDate: japaneseCalendarFormatter.format(new Date(timestamp)),
+    japanHoliday,
+    japanClosedReason: japanWeekend ? '週末' : japanExchangeHoliday ?? japanHoliday,
+    usClosedReason: usWeekend ? '週末' : usHoliday,
+  };
+}
 const isJapaneseTicker = (ticker: string | null | undefined) => Boolean(ticker?.toUpperCase().endsWith('.T'));
 const isCashTrade = (trade: Pick<Trade, 'type' | 'event'>) => trade.type === 'CASH' || trade.event === 'CASH' || trade.event === 'DIVIDEND';
 const isYenTicker = (ticker: string | null | undefined) => ticker?.toUpperCase() === 'JPY' || isJapaneseTicker(ticker);
@@ -455,6 +607,25 @@ const LiveMarketClocks = memo(function LiveMarketClocks({ lastQuoteAt }: { lastQ
     <div className="clock-stack-heading"><span>即時市場時間</span><div className="clock-zone-switch" role="group" aria-label="切換即時時區">{clocks.map((clock) => <button type="button" key={clock.id} className={activeZone === clock.id ? 'active' : ''} aria-pressed={activeZone === clock.id} onClick={() => setActiveZone(clock.id)}>{clock.label}</button>)}</div></div>
     <div className="stacked-clock-deck" aria-live="polite">{clocks.map((clock) => <div key={clock.id} className={`stacked-clock-card ${activeZone === clock.id ? 'is-active' : 'is-behind'}`} aria-hidden={activeZone !== clock.id}><span>{clock.label}</span><strong>{clock.time}</strong><b>[{clock.zone}]</b></div>)}</div>
     <p>報價每 60 秒更新 · 上次 {lastQuoteLabel}</p>
+  </div>;
+});
+
+const HeaderMarketCalendar = memo(function HeaderMarketCalendar() {
+  const [timestamp, setTimestamp] = useState<number | null>(null);
+  useEffect(() => {
+    const update = () => setTimestamp(Date.now());
+    update();
+    const timer = window.setInterval(update, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const status = timestamp === null ? null : marketCalendarStatus(timestamp);
+  return <div className="brand-calendar" aria-live="polite">
+    <strong>{status?.japaneseDate ?? '日本日期讀取中'}</strong>
+    {status && (status.japanHoliday || status.japanClosedReason || status.usClosedReason) && <span className="market-calendar-tags">
+      {status.japanHoliday && <em className="holiday-tag">日本祝日 · {status.japanHoliday}</em>}
+      {status.japanClosedReason && <em>日股休市 · {status.japanClosedReason}</em>}
+      {status.usClosedReason && <em>美股休市 · {status.usClosedReason}</em>}
+    </span>}
   </div>;
 });
 
@@ -740,6 +911,7 @@ export default function Home() {
   const [failedQuoteTickers, setFailedQuoteTickers] = useState<Set<string>>(new Set());
   const [dividendSettings, setDividendSettings] = useState<DividendSettings>({ enabled: true, usTaxRate: 30, jpTaxRate: 15.315 });
   const [dividendCash, setDividendCash] = useState<DividendCash>({ USD: { gross: 0, tax: 0, net: 0, count: 0 }, JPY: { gross: 0, tax: 0, net: 0, count: 0 } });
+  const [dividendEvents, setDividendEvents] = useState<DividendEvent[]>([]);
   const [dividendLoading, setDividendLoading] = useState(true);
   const [dividendSaving, setDividendSaving] = useState(false);
   const [dividendError, setDividendError] = useState('');
@@ -803,10 +975,11 @@ export default function Home() {
     setDividendLoading(true);
     try {
       const response = await fetch('/api/dividends', { cache: 'no-store' });
-      const payload = await response.json() as { settings?: DividendSettings; cash?: DividendCash; updatedAt?: string; failedTickers?: string[]; error?: string };
+      const payload = await response.json() as { settings?: DividendSettings; cash?: DividendCash; events?: DividendEvent[]; updatedAt?: string; failedTickers?: string[]; error?: string };
       if (!response.ok || !payload.settings || !payload.cash) throw new Error(payload.error ?? '股息現金目前無法更新');
       setDividendSettings(payload.settings);
       setDividendCash(payload.cash);
+      setDividendEvents(Array.isArray(payload.events) ? payload.events : []);
       setDividendUpdatedAt(payload.updatedAt ?? new Date().toISOString());
       setDividendError(payload.failedTickers?.length ? `${payload.failedTickers.join('、')} 的股息資料暫時無法取得` : '');
       if (announce) notify(`股息現金已更新：USD ${money.format(payload.cash.USD.net)} · JPY ${yenMoney.format(payload.cash.JPY.net)}`);
@@ -1543,32 +1716,35 @@ export default function Home() {
 
   const derivedDividendTrades = useMemo<Trade[]>(() => {
     if (!dividendSettings.enabled) return [];
-    return (['USD', 'JPY'] as const).flatMap((currency, index) => {
-      const summary = dividendCash[currency];
-      if (!(summary.net > 0)) return [];
-      return [{
-        id: -900_001 - index,
+    return dividendEvents
+      .filter((event) => event.net > 0)
+      .sort((a, b) => b.date.localeCompare(a.date) || a.ticker.localeCompare(b.ticker))
+      .map((event, index) => ({
+        id: -910_000 - index,
         type: 'CASH',
-        openDate: today(),
+        openDate: event.date,
         expiryDate: null,
         closeDate: null,
-        ticker: currency,
+        ticker: event.currency,
         event: 'DIVIDEND',
         strike: null,
-        quantity: summary.net,
+        quantity: event.net,
         entryPrice: 1,
         currentPrice: 1,
         fees: 0,
-        collateral: summary.net,
-        notes: `自動股息現金 · 稅前 ${currency === 'JPY' ? yenMoney.format(summary.gross) : money.format(summary.gross)} · 預扣 ${currency === 'JPY' ? yenMoney.format(summary.tax) : money.format(summary.tax)}`,
+        collateral: event.net,
+        notes: `${event.ticker} 股息 · 每股 ${nativeMoney(event.ticker, event.amountPerShare)} · ${quantityNumber.format(event.quantity)} 股 · 稅前 ${nativeMoney(event.ticker, event.gross)} · 預扣 ${nativeMoney(event.ticker, event.tax)}`,
         status: 'open',
         quoteMode: 'manual',
-        market: currency === 'JPY' ? 'JP' : 'US',
+        market: event.currency === 'JPY' ? 'JP' : 'US',
         sourceRow: null,
         derived: true,
-      }];
-    });
-  }, [dividendCash, dividendSettings.enabled]);
+        dividendSourceTicker: event.ticker,
+        dividendAmountPerShare: event.amountPerShare,
+        dividendGross: event.gross,
+        dividendTax: event.tax,
+      }));
+  }, [dividendEvents, dividendSettings.enabled]);
   const portfolioTrades = useMemo(() => [...trades, ...derivedDividendTrades], [derivedDividendTrades, trades]);
   const enriched = useMemo(() => portfolioTrades.map((trade) => ({ trade, ...metrics(trade, usdJpyRate) })), [portfolioTrades, usdJpyRate]);
   const openTrades = useMemo(() => enriched.filter((item) => item.trade.status === 'open'), [enriched]);
@@ -1929,12 +2105,15 @@ export default function Home() {
   }
 
   const marketOpen = (() => {
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
+    const timestamp = Date.now();
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(timestamp));
     const day = parts.find((part) => part.type === 'weekday')?.value ?? '';
     const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0);
     const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
     const clock = hour * 60 + minute;
-    return !['Sat', 'Sun'].includes(day) && clock >= 570 && clock < 960;
+    const easternDate = zonedDate(timestamp, 'America/New_York');
+    const holiday = usMarketHolidays(easternDate.year).has(zonedDateKey(easternDate));
+    return !holiday && !['Sat', 'Sun'].includes(day) && clock >= 570 && clock < 960;
   })();
   const contentGridStyle = useMemo(() => ({ '--return-panel-ratio': `${panelRatio}%` }) as CSSProperties, [panelRatio]);
   const imageBackgroundActive = backgroundMode === 'image' && Boolean(backgroundImage);
@@ -1950,11 +2129,14 @@ export default function Home() {
       onClickCapture={(event) => selectZeroNumberInput(event.target)}
     >
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="OptionFlow 首頁">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="brand-logo" src="/optionflow-logo.jpg" alt="" width="52" height="52" />
-          <span>OPTIONFLOW</span>
-        </a>
+        <div className="brand-cluster">
+          <a className="brand" href="#top" aria-label="OptionFlow 首頁">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="brand-logo" src="/optionflow-logo.jpg" alt="" width="52" height="52" />
+            <span>OPTIONFLOW</span>
+          </a>
+          <HeaderMarketCalendar />
+        </div>
         <div className="header-actions">
           <LanguageSwitcher />
           <span className={`market-pill ${marketOpen ? 'is-open' : ''}`}><span />{marketOpen ? '美股交易中' : '非交易時段'}</span>
@@ -2164,9 +2346,11 @@ export default function Home() {
               <tbody>
                 {loading && <tr><td colSpan={11} className="empty-state">正在載入你的交易紀錄…</td></tr>}
                 {!loading && !filteredTrades.length && <tr><td colSpan={11} className="empty-state">沒有符合目前篩選條件的交易。</td></tr>}
-                {filteredTrades.map(({ trade, pnl, roc }) => <tr key={trade.id}>
-                  <td>{isCashTrade(trade) ? <span className="symbol-cell"><CompanyLogo ticker={trade.ticker || 'USD'} compact /><strong>{trade.ticker || 'USD'}</strong></span> : <button type="button" className="symbol-cell symbol-cell-button" onClick={() => trade.ticker && openTickerDetails(trade.ticker)}><CompanyLogo ticker={trade.ticker || 'OTHER'} compact /><strong>{trade.ticker || '—'}</strong></button>}</td>
-                  <td><strong className="strategy-name">{trade.event}</strong><span className="subtle">{trade.derived ? '自動股息現金' : trade.type === 'CASH' ? 'Cash' : trade.type === 'SDI' ? 'Stock' : trade.type}</span></td>
+                {filteredTrades.map(({ trade, pnl, roc }) => {
+                  const dividendSource = trade.event === 'DIVIDEND' ? trade.dividendSourceTicker : null;
+                  return <tr key={trade.id}>
+                  <td>{dividendSource ? <span className="symbol-cell dividend-source-cell"><CompanyLogo ticker={dividendSource} compact /><span><strong>{dividendSource}</strong><small>{companyNames[dividendSource] ?? (isJapaneseTicker(dividendSource) ? '日本股票' : '股息發放公司')}</small></span></span> : isCashTrade(trade) ? <span className="symbol-cell"><CompanyLogo ticker={trade.ticker || 'USD'} compact /><strong>{trade.ticker || 'USD'}</strong></span> : <button type="button" className="symbol-cell symbol-cell-button" onClick={() => trade.ticker && openTickerDetails(trade.ticker)}><CompanyLogo ticker={trade.ticker || 'OTHER'} compact /><strong>{trade.ticker || '—'}</strong></button>}</td>
+                  <td><strong className="strategy-name">{trade.event}</strong><span className="subtle">{dividendSource ? `${dividendSource} 發放 · 稅後入帳 ${trade.ticker}` : trade.derived ? '自動股息現金' : trade.type === 'CASH' ? 'Cash' : trade.type === 'SDI' ? 'Stock' : trade.type}</span></td>
                   <td><strong>{dateLabel(trade.openDate)}</strong><span className="subtle">Exp {dateLabel(trade.expiryDate)}</span></td>
                   <td>{trade.strike || '—'}</td><td>{isCashTrade(trade) ? nativeMoney(trade.ticker, trade.quantity) : trade.quantity}</td><td>{isCashTrade(trade) ? '—' : nativeMoney(trade.ticker, trade.entryPrice)}</td>
                   <td>{isCashTrade(trade) ? <span className="cash-table-status"><i />不需報價</span> : priceEditId === trade.id ? <div className="inline-price"><span>{isJapaneseTicker(trade.ticker) ? '¥' : '$'}</span><input autoFocus inputMode="decimal" value={priceInput} onChange={(event) => setPriceInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveInlinePrice(trade); if (event.key === 'Escape') setPriceEditId(null); }} /><button onClick={() => saveInlinePrice(trade)}>✓</button></div> : <button className="price-button" onClick={() => { setPriceEditId(trade.id); setPriceInput(String(trade.currentPrice ?? '')); }}><span className={trade.quoteMode === 'auto' ? 'live-dot' : 'manual-dot'} />{trade.currentPrice === null ? '設定' : nativeMoney(trade.ticker, trade.currentPrice)} <i>✎</i></button>}</td>
@@ -2174,7 +2358,7 @@ export default function Home() {
                   <td className={roc >= 0 ? 'positive' : 'negative'}>{percent.format(roc)}</td>
                   <td><span className={`status ${trade.status}`}><i />{trade.status === 'open' ? '未平倉' : '已平倉'}</span></td>
                   <td>{trade.derived ? <span className="derived-row-note">設定中管理</span> : <span className="row-actions"><button className="row-action-button" onClick={() => setEditor({ ...trade })} aria-label={`編輯 ${trade.ticker ?? '交易'}`}>編輯</button><button className="row-action-button delete" onClick={() => setDeleteCandidate(trade)} aria-label={`刪除 ${trade.ticker ?? '交易'}`}>刪除</button></span>}</td>
-                </tr>)}
+                </tr>})}
               </tbody>
             </table>
           </div>}

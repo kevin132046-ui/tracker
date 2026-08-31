@@ -30,6 +30,9 @@ type Trade = {
   dividendAmountPerShare?: number;
   dividendGross?: number;
   dividendTax?: number;
+  dividendEventKey?: string;
+  dividendCalculatedNet?: number;
+  dividendAdjustment?: number;
 };
 
 type RangeMode = 'day' | 'week' | 'month' | 'year';
@@ -103,10 +106,11 @@ type MacroCacheEntry = { markets: BenchmarkMarket[]; updatedAt: string; fetchedA
 type BackgroundMode = 'default' | 'image';
 type DividendSettings = { enabled: boolean; usTaxRate: number; jpTaxRate: number };
 type DividendCash = {
-  USD: { gross: number; tax: number; net: number; count: number };
-  JPY: { gross: number; tax: number; net: number; count: number };
+  USD: { gross: number; tax: number; adjustment: number; net: number; count: number };
+  JPY: { gross: number; tax: number; adjustment: number; net: number; count: number };
 };
 type DividendEvent = {
+  eventKey: string;
   ticker: string;
   currency: 'USD' | 'JPY';
   date: string;
@@ -114,6 +118,8 @@ type DividendEvent = {
   quantity: number;
   gross: number;
   tax: number;
+  calculatedNet: number;
+  adjustment: number;
   net: number;
 };
 
@@ -903,6 +909,9 @@ export default function Home() {
   const [editor, setEditor] = useState<Trade | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<Trade | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [dividendAdjustmentCandidate, setDividendAdjustmentCandidate] = useState<Trade | null>(null);
+  const [dividendNetInput, setDividendNetInput] = useState('');
+  const [dividendAdjusting, setDividendAdjusting] = useState(false);
   const [priceEditId, setPriceEditId] = useState<number | null>(null);
   const [priceInput, setPriceInput] = useState('');
   const [toast, setToast] = useState('');
@@ -910,8 +919,9 @@ export default function Home() {
   const [marketSnapshots, setMarketSnapshots] = useState<Record<string, LiveQuote>>({});
   const [failedQuoteTickers, setFailedQuoteTickers] = useState<Set<string>>(new Set());
   const [dividendSettings, setDividendSettings] = useState<DividendSettings>({ enabled: true, usTaxRate: 30, jpTaxRate: 15.315 });
-  const [dividendCash, setDividendCash] = useState<DividendCash>({ USD: { gross: 0, tax: 0, net: 0, count: 0 }, JPY: { gross: 0, tax: 0, net: 0, count: 0 } });
+  const [dividendCash, setDividendCash] = useState<DividendCash>({ USD: { gross: 0, tax: 0, adjustment: 0, net: 0, count: 0 }, JPY: { gross: 0, tax: 0, adjustment: 0, net: 0, count: 0 } });
   const [dividendEvents, setDividendEvents] = useState<DividendEvent[]>([]);
+  const [dividendAdjustmentCount, setDividendAdjustmentCount] = useState(0);
   const [dividendLoading, setDividendLoading] = useState(true);
   const [dividendSaving, setDividendSaving] = useState(false);
   const [dividendError, setDividendError] = useState('');
@@ -975,11 +985,12 @@ export default function Home() {
     setDividendLoading(true);
     try {
       const response = await fetch('/api/dividends', { cache: 'no-store' });
-      const payload = await response.json() as { settings?: DividendSettings; cash?: DividendCash; events?: DividendEvent[]; updatedAt?: string; failedTickers?: string[]; error?: string };
+      const payload = await response.json() as { settings?: DividendSettings; cash?: DividendCash; events?: DividendEvent[]; adjustmentCount?: number; updatedAt?: string; failedTickers?: string[]; error?: string };
       if (!response.ok || !payload.settings || !payload.cash) throw new Error(payload.error ?? '股息現金目前無法更新');
       setDividendSettings(payload.settings);
       setDividendCash(payload.cash);
       setDividendEvents(Array.isArray(payload.events) ? payload.events : []);
+      setDividendAdjustmentCount(Math.max(0, Number(payload.adjustmentCount) || 0));
       setDividendUpdatedAt(payload.updatedAt ?? new Date().toISOString());
       setDividendError(payload.failedTickers?.length ? `${payload.failedTickers.join('、')} 的股息資料暫時無法取得` : '');
       if (announce) notify(`股息現金已更新：USD ${money.format(payload.cash.USD.net)} · JPY ${yenMoney.format(payload.cash.JPY.net)}`);
@@ -1008,6 +1019,26 @@ export default function Home() {
       setDividendSaving(false);
     }
   }, [dividendSaving, notify, refreshDividendCash]);
+
+  const resetDividendAdjustments = useCallback(async () => {
+    if (dividendSaving || dividendAdjustmentCount < 1) return;
+    setDividendSaving(true);
+    try {
+      const response = await fetch('/api/dividends', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset-adjustments' }),
+      });
+      const payload = await response.json() as { adjusted?: boolean; error?: string };
+      if (!response.ok || !payload.adjusted) throw new Error(payload.error ?? '股息調整無法還原');
+      await refreshDividendCash(false);
+      notify('全部股息調整與刪除紀錄已還原');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '股息調整無法還原');
+    } finally {
+      setDividendSaving(false);
+    }
+  }, [dividendAdjustmentCount, dividendSaving, notify, refreshDividendCash]);
 
   const showMacroMarketGroup = useCallback((group: MacroMarketGroup, direction: 'up' | 'down') => {
     setMacroDeckDirection(direction);
@@ -1743,6 +1774,9 @@ export default function Home() {
         dividendAmountPerShare: event.amountPerShare,
         dividendGross: event.gross,
         dividendTax: event.tax,
+        dividendEventKey: event.eventKey,
+        dividendCalculatedNet: event.calculatedNet,
+        dividendAdjustment: event.adjustment,
       }));
   }, [dividendEvents, dividendSettings.enabled]);
   const portfolioTrades = useMemo(() => [...trades, ...derivedDividendTrades], [derivedDividendTrades, trades]);
@@ -1982,10 +2016,62 @@ export default function Home() {
     }
   }
 
+  function openDividendAdjustment(trade: Trade) {
+    if (!trade.derived || !trade.dividendEventKey) return;
+    const decimals = trade.ticker === 'JPY' ? 0 : 2;
+    setDividendAdjustmentCandidate(trade);
+    setDividendNetInput(trade.quantity.toFixed(decimals));
+  }
+
+  async function saveDividendAdjustment(event: FormEvent) {
+    event.preventDefault();
+    if (!dividendAdjustmentCandidate?.dividendEventKey) return;
+    const requestedNet = Number(dividendNetInput);
+    const calculatedNet = dividendAdjustmentCandidate.dividendCalculatedNet ?? dividendAdjustmentCandidate.quantity;
+    const currencyDecimals = dividendAdjustmentCandidate.ticker === 'JPY' ? 0 : 2;
+    const roundingTolerance = 0.5 / (10 ** currencyDecimals);
+    if (!Number.isFinite(requestedNet) || requestedNet < 0) return notify('請輸入有效的股息入帳金額');
+    if (requestedNet > calculatedNet + roundingTolerance) return notify(`調整後金額不可高於原始稅後股息 ${nativeMoney(dividendAdjustmentCandidate.ticker, calculatedNet)}`);
+    const adjustedNet = Math.min(requestedNet, calculatedNet);
+    const action = calculatedNet - adjustedNet <= roundingTolerance ? 'clear' : 'adjust';
+    setDividendAdjusting(true);
+    try {
+      const response = await fetch('/api/dividends', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, eventKey: dividendAdjustmentCandidate.dividendEventKey, net: adjustedNet }),
+      });
+      const payload = await response.json() as { adjusted?: boolean; error?: string };
+      if (!response.ok || !payload.adjusted) throw new Error(payload.error ?? '股息入帳金額無法保存');
+      const sourceTicker = dividendAdjustmentCandidate.dividendSourceTicker ?? '股息';
+      setDividendAdjustmentCandidate(null);
+      await refreshDividendCash(false);
+      notify(`${sourceTicker} 股息已調整為 ${nativeMoney(dividendAdjustmentCandidate.ticker, adjustedNet)}`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '股息入帳金額無法保存');
+    } finally {
+      setDividendAdjusting(false);
+    }
+  }
+
   async function deleteTrade() {
     if (!deleteCandidate) return;
     setDeleting(true);
     try {
+      if (deleteCandidate.derived && deleteCandidate.dividendEventKey) {
+        const response = await fetch('/api/dividends', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'exclude', eventKey: deleteCandidate.dividendEventKey }),
+        });
+        const payload = await response.json() as { adjusted?: boolean; error?: string };
+        if (!response.ok || !payload.adjusted) throw new Error(payload.error ?? '股息紀錄無法刪除');
+        const sourceTicker = deleteCandidate.dividendSourceTicker ?? '股息';
+        setDeleteCandidate(null);
+        await refreshDividendCash(false);
+        notify(`${sourceTicker} 的這筆股息已從現金與交易紀錄刪除`);
+        return;
+      }
       const response = await fetch('/api/trades', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -2357,7 +2443,7 @@ export default function Home() {
                   <td className={pnl >= 0 ? 'positive' : 'negative'}><strong>{money.format(pnl)}</strong></td>
                   <td className={roc >= 0 ? 'positive' : 'negative'}>{percent.format(roc)}</td>
                   <td><span className={`status ${trade.status}`}><i />{trade.status === 'open' ? '未平倉' : '已平倉'}</span></td>
-                  <td>{trade.derived ? <span className="derived-row-note">設定中管理</span> : <span className="row-actions"><button className="row-action-button" onClick={() => setEditor({ ...trade })} aria-label={`編輯 ${trade.ticker ?? '交易'}`}>編輯</button><button className="row-action-button delete" onClick={() => setDeleteCandidate(trade)} aria-label={`刪除 ${trade.ticker ?? '交易'}`}>刪除</button></span>}</td>
+                  <td>{trade.derived ? <span className="row-actions"><button className="row-action-button" onClick={() => openDividendAdjustment(trade)} aria-label={`調減 ${trade.dividendSourceTicker ?? '股息'}`}>調減</button><button className="row-action-button delete" onClick={() => setDeleteCandidate(trade)} aria-label={`刪除 ${trade.dividendSourceTicker ?? '股息'}`}>刪除</button></span> : <span className="row-actions"><button className="row-action-button" onClick={() => setEditor({ ...trade })} aria-label={`編輯 ${trade.ticker ?? '交易'}`}>編輯</button><button className="row-action-button delete" onClick={() => setDeleteCandidate(trade)} aria-label={`刪除 ${trade.ticker ?? '交易'}`}>刪除</button></span>}</td>
                 </tr>})}
               </tbody>
             </table>
@@ -2387,9 +2473,9 @@ export default function Home() {
                 <label><span>美股外國人股息預扣稅率</span><div><input type="number" min="0" max="100" step="0.001" value={dividendSettings.usTaxRate} onChange={(event) => setDividendSettings((current) => ({ ...current, usTaxRate: Math.min(100, Math.max(0, Number(event.target.value))) }))} /><i>%</i></div><small>暫定 30%，可依適用協定修改</small></label>
                 <label><span>日股外國人股息預扣稅率</span><div><input type="number" min="0" max="100" step="0.001" value={dividendSettings.jpTaxRate} onChange={(event) => setDividendSettings((current) => ({ ...current, jpTaxRate: Math.min(100, Math.max(0, Number(event.target.value))) }))} /><i>%</i></div><small>上市股票預設 15.315%，可自行修改</small></label>
               </div>
-              <div className="dividend-cash-preview"><div><span>USD 稅後股息現金</span><strong>{money.format(dividendCash.USD.net)}</strong><small>{dividendCash.USD.count} 筆事件 · 預扣 {money.format(dividendCash.USD.tax)}</small></div><div><span>JPY 稅後股息現金</span><strong>{yenMoney.format(dividendCash.JPY.net)}</strong><small>{dividendCash.JPY.count} 筆事件 · 預扣 {yenMoney.format(dividendCash.JPY.tax)}</small></div></div>
+              <div className="dividend-cash-preview"><div><span>USD 稅後股息現金</span><strong>{money.format(dividendCash.USD.net)}</strong><small>{dividendCash.USD.count} 筆事件 · 預扣 {money.format(dividendCash.USD.tax)}{dividendCash.USD.adjustment > 0 ? ` · 手動調減 ${money.format(dividendCash.USD.adjustment)}` : ''}</small></div><div><span>JPY 稅後股息現金</span><strong>{yenMoney.format(dividendCash.JPY.net)}</strong><small>{dividendCash.JPY.count} 筆事件 · 預扣 {yenMoney.format(dividendCash.JPY.tax)}{dividendCash.JPY.adjustment > 0 ? ` · 手動調減 ${yenMoney.format(dividendCash.JPY.adjustment)}` : ''}</small></div></div>
               {dividendError && <p className="dividend-settings-error">{dividendError}</p>}
-              <div className="settings-feature-actions dividend-settings-actions"><span>{dividendUpdatedAt ? `最近計算 ${new Intl.DateTimeFormat('zh-TW', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(dividendUpdatedAt))}` : '開啟後會依現有股票持倉自動試算；僅供追蹤，不是稅務建議。'}</span><div><button type="button" className="dividend-save-button" disabled={dividendSaving} onClick={() => persistDividendSettings(dividendSettings)}>{dividendSaving ? '保存中…' : '保存稅率'}</button><button type="button" className={`settings-toggle ${dividendSettings.enabled ? 'is-on' : ''}`} role="switch" aria-checked={dividendSettings.enabled} disabled={dividendSaving} onClick={() => persistDividendSettings({ ...dividendSettings, enabled: !dividendSettings.enabled })}><i /><b>{dividendSettings.enabled ? '開啟' : '關閉'}</b></button></div></div>
+              <div className="settings-feature-actions dividend-settings-actions"><span>{dividendUpdatedAt ? `最近計算 ${new Intl.DateTimeFormat('zh-TW', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(dividendUpdatedAt))}` : '開啟後會依現有股票持倉自動試算；僅供追蹤，不是稅務建議。'}</span><div>{dividendAdjustmentCount > 0 && <button type="button" className="dividend-save-button restore" disabled={dividendSaving} onClick={resetDividendAdjustments}>還原 {dividendAdjustmentCount} 筆調整</button>}<button type="button" className="dividend-save-button" disabled={dividendSaving} onClick={() => persistDividendSettings(dividendSettings)}>{dividendSaving ? '保存中…' : '保存稅率'}</button><button type="button" className={`settings-toggle ${dividendSettings.enabled ? 'is-on' : ''}`} role="switch" aria-checked={dividendSettings.enabled} disabled={dividendSaving} onClick={() => persistDividendSettings({ ...dividendSettings, enabled: !dividendSettings.enabled })}><i /><b>{dividendSettings.enabled ? '開啟' : '關閉'}</b></button></div></div>
             </section>
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
           </div>
@@ -2504,14 +2590,26 @@ export default function Home() {
           </form>
         </section>
       </div>}
+      {dividendAdjustmentCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!dividendAdjusting && event.target === event.currentTarget) setDividendAdjustmentCandidate(null); }}>
+        <section className="dividend-adjustment-modal" role="dialog" aria-modal="true" aria-labelledby="dividend-adjustment-title">
+          <header><div><p className="eyebrow">Dividend cash</p><h2 id="dividend-adjustment-title">調減股息入帳</h2></div><button type="button" className="close-button" disabled={dividendAdjusting} onClick={() => setDividendAdjustmentCandidate(null)} aria-label="關閉">×</button></header>
+          <form onSubmit={saveDividendAdjustment}>
+            <div className="dividend-adjustment-source"><CompanyLogo ticker={dividendAdjustmentCandidate.dividendSourceTicker ?? 'OTHER'} /><span><small>股息來源</small><strong>{dividendAdjustmentCandidate.dividendSourceTicker ?? '未知股票'}</strong><b>{companyNames[dividendAdjustmentCandidate.dividendSourceTicker ?? ''] ?? (isJapaneseTicker(dividendAdjustmentCandidate.dividendSourceTicker) ? '日本股票' : '股息發放公司')} · {dateLabel(dividendAdjustmentCandidate.openDate)}</b></span></div>
+            <div className="dividend-adjustment-stats"><div><span>原始稅後金額</span><strong>{nativeMoney(dividendAdjustmentCandidate.ticker, dividendAdjustmentCandidate.dividendCalculatedNet ?? dividendAdjustmentCandidate.quantity)}</strong></div><div><span>目前入帳</span><strong>{nativeMoney(dividendAdjustmentCandidate.ticker, dividendAdjustmentCandidate.quantity)}</strong></div></div>
+            <label className="dividend-adjustment-field"><span>調整後入帳金額</span><div><i>{dividendAdjustmentCandidate.ticker === 'JPY' ? '¥' : '$'}</i><input autoFocus inputMode="decimal" type="number" min="0" max={Number((dividendAdjustmentCandidate.dividendCalculatedNet ?? dividendAdjustmentCandidate.quantity).toFixed(dividendAdjustmentCandidate.ticker === 'JPY' ? 0 : 2))} step={dividendAdjustmentCandidate.ticker === 'JPY' ? '1' : '0.01'} value={dividendNetInput} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setDividendNetInput(event.target.value)} /><b>{dividendAdjustmentCandidate.ticker}</b></div><small>只能調低指定股票的這次派息；來源與稅額紀錄會保留。</small></label>
+            <div className="dividend-adjustment-preview"><span>手動調減</span><strong>{nativeMoney(dividendAdjustmentCandidate.ticker, Math.max(0, (dividendAdjustmentCandidate.dividendCalculatedNet ?? dividendAdjustmentCandidate.quantity) - (Number.isFinite(Number(dividendNetInput)) ? Number(dividendNetInput) : 0)))}</strong></div>
+            <footer><button type="button" className="cancel-button" disabled={dividendAdjusting} onClick={() => setDividendAdjustmentCandidate(null)}>取消</button><button type="submit" className="primary-button" disabled={dividendAdjusting}>{dividendAdjusting ? '保存中…' : '保存調整'}</button></footer>
+          </form>
+        </section>
+      </div>}
       {deleteCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!deleting && event.target === event.currentTarget) setDeleteCandidate(null); }}>
         <section className="delete-confirm" role="alertdialog" aria-modal="true" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-copy">
           <span className="delete-confirm-icon" aria-hidden="true">!</span>
-          <p className="eyebrow">Permanent action</p>
-          <h2 id="delete-confirm-title">刪除這筆交易紀錄？</h2>
-          <p id="delete-confirm-copy">刪除後會立即從持倉、損益與收益圖表中移除，這個動作無法復原。</p>
-          <div className="delete-trade-summary"><strong>{deleteCandidate.ticker || '未命名標的'}</strong><span>{deleteCandidate.event} · {dateLabel(deleteCandidate.openDate)} · {nativeMoney(deleteCandidate.ticker, deleteCandidate.entryPrice)}</span></div>
-          <footer><button type="button" className="cancel-button" disabled={deleting} onClick={() => setDeleteCandidate(null)}>保留紀錄</button><button type="button" className="confirm-delete-button" disabled={deleting} onClick={deleteTrade}>{deleting ? '刪除中…' : '永久刪除'}</button></footer>
+          <p className="eyebrow">{deleteCandidate.derived ? 'Dividend cash' : 'Permanent action'}</p>
+          <h2 id="delete-confirm-title">{deleteCandidate.derived ? '刪除這筆股息紀錄？' : '刪除這筆交易紀錄？'}</h2>
+          <p id="delete-confirm-copy">{deleteCandidate.derived ? '刪除後，這次派息會從現金與交易紀錄中排除，刷新後也不會重新產生；可在設定中還原。' : '刪除後會立即從持倉、損益與收益圖表中移除，這個動作無法復原。'}</p>
+          <div className="delete-trade-summary"><strong>{deleteCandidate.dividendSourceTicker || deleteCandidate.ticker || '未命名標的'}</strong><span>{deleteCandidate.event} · {dateLabel(deleteCandidate.openDate)} · {deleteCandidate.derived ? `稅後入帳 ${nativeMoney(deleteCandidate.ticker, deleteCandidate.quantity)} ${deleteCandidate.ticker}` : nativeMoney(deleteCandidate.ticker, deleteCandidate.entryPrice)}</span></div>
+          <footer><button type="button" className="cancel-button" disabled={deleting} onClick={() => setDeleteCandidate(null)}>保留紀錄</button><button type="button" className="confirm-delete-button" disabled={deleting} onClick={deleteTrade}>{deleting ? '刪除中…' : deleteCandidate.derived ? '刪除股息' : '永久刪除'}</button></footer>
         </section>
       </div>}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}

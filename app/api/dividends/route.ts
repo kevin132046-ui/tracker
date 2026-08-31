@@ -16,6 +16,7 @@ type YahooChart = {
 };
 
 type DividendEvent = {
+  eventKey: string;
   ticker: string;
   currency: 'USD' | 'JPY';
   date: string;
@@ -23,10 +24,16 @@ type DividendEvent = {
   quantity: number;
   gross: number;
   tax: number;
+  calculatedNet: number;
+  adjustment: number;
   net: number;
 };
 
+type DividendAdjustment = { excluded?: boolean; net?: number };
+type DividendAdjustments = Record<string, DividendAdjustment>;
+
 const settingsKey = 'dividend_cash_settings_v1';
+const adjustmentsKey = 'dividend_cash_adjustments_v1';
 const defaultSettings: DividendSettings = { enabled: true, usTaxRate: 30, jpTaxRate: 15.315 };
 const yahooHosts = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'] as const;
 const dividendCache = new Map<string, { expiresAt: number; events: Array<{ date: string; amount: number }> }>();
@@ -58,6 +65,27 @@ async function writeSettings(settings: DividendSettings) {
   await db.prepare(`INSERT INTO app_meta (key, value) VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(settingsKey, JSON.stringify(settings)).run();
 }
+
+async function readAdjustments() {
+  const db = await ensureDatabase();
+  const row = await db.prepare('SELECT value FROM app_meta WHERE key = ?').bind(adjustmentsKey).first<{ value: string }>();
+  if (!row?.value) return {} satisfies DividendAdjustments;
+  try {
+    const stored = JSON.parse(row.value) as DividendAdjustments;
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  } catch {
+    return {} satisfies DividendAdjustments;
+  }
+}
+
+async function writeAdjustments(adjustments: DividendAdjustments) {
+  const db = await ensureDatabase();
+  await db.prepare(`INSERT INTO app_meta (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(adjustmentsKey, JSON.stringify(adjustments)).run();
+}
+
+const dividendEventKey = (ticker: string, date: string, amountPerShare: number) => `${ticker}|${date}|${amountPerShare.toFixed(8)}`;
+const emptyCash = () => ({ gross: 0, tax: 0, adjustment: 0, net: 0, count: 0 });
 
 async function fetchDividendEvents(ticker: string, startDate: string, endDate: string) {
   const cacheKey = `${ticker}:${startDate}:${endDate}`;
@@ -96,8 +124,9 @@ async function fetchDividendEvents(ticker: string, startDate: string, endDate: s
 export async function GET(request: Request) {
   try {
     const settings = await readSettings();
+    const adjustments = await readAdjustments();
     if (new URL(request.url).searchParams.get('settings') === '1' || !settings.enabled) {
-      return NextResponse.json({ settings, cash: { USD: { gross: 0, tax: 0, net: 0, count: 0 }, JPY: { gross: 0, tax: 0, net: 0, count: 0 } }, events: [], failedTickers: [], updatedAt: new Date().toISOString() }, { headers: responseHeaders });
+      return NextResponse.json({ settings, cash: { USD: emptyCash(), JPY: emptyCash() }, events: [], adjustmentCount: Object.keys(adjustments).length, failedTickers: [], updatedAt: new Date().toISOString() }, { headers: responseHeaders });
     }
 
     const db = await ensureDatabase();
@@ -116,7 +145,7 @@ export async function GET(request: Request) {
       return { ticker, lots, dividends: await fetchDividendEvents(ticker, startDate, endDate) };
     }));
 
-    const events: DividendEvent[] = [];
+    const calculatedEvents: DividendEvent[] = [];
     const failedTickers: string[] = [];
     settled.forEach((item, index) => {
       if (item.status === 'rejected') {
@@ -134,15 +163,23 @@ export async function GET(request: Request) {
         if (!(quantity > 0)) return;
         const gross = dividend.amount * quantity;
         const tax = gross * rate;
-        events.push({ ticker, currency, date: dividend.date, amountPerShare: dividend.amount, quantity, gross, tax, net: gross - tax });
+        const calculatedNet = gross - tax;
+        const eventKey = dividendEventKey(ticker, dividend.date, dividend.amount);
+        const adjustment = adjustments[eventKey];
+        if (adjustment?.excluded) return;
+        const adjustedNet = typeof adjustment?.net === 'number' && Number.isFinite(adjustment.net)
+          ? Math.min(calculatedNet, Math.max(0, adjustment.net))
+          : calculatedNet;
+        calculatedEvents.push({ eventKey, ticker, currency, date: dividend.date, amountPerShare: dividend.amount, quantity, gross, tax, calculatedNet, adjustment: calculatedNet - adjustedNet, net: adjustedNet });
       });
     });
 
+    const events = calculatedEvents.filter((event) => event.net > 0);
     const cash = {
-      USD: events.filter((event) => event.currency === 'USD').reduce((sum, event) => ({ gross: sum.gross + event.gross, tax: sum.tax + event.tax, net: sum.net + event.net, count: sum.count + 1 }), { gross: 0, tax: 0, net: 0, count: 0 }),
-      JPY: events.filter((event) => event.currency === 'JPY').reduce((sum, event) => ({ gross: sum.gross + event.gross, tax: sum.tax + event.tax, net: sum.net + event.net, count: sum.count + 1 }), { gross: 0, tax: 0, net: 0, count: 0 }),
+      USD: events.filter((event) => event.currency === 'USD').reduce((sum, event) => ({ gross: sum.gross + event.gross, tax: sum.tax + event.tax, adjustment: sum.adjustment + event.adjustment, net: sum.net + event.net, count: sum.count + 1 }), emptyCash()),
+      JPY: events.filter((event) => event.currency === 'JPY').reduce((sum, event) => ({ gross: sum.gross + event.gross, tax: sum.tax + event.tax, adjustment: sum.adjustment + event.adjustment, net: sum.net + event.net, count: sum.count + 1 }), emptyCash()),
     };
-    return NextResponse.json({ settings, cash, events, failedTickers, updatedAt: new Date().toISOString(), source: 'Yahoo Finance dividend events; credited on the ex-dividend event date' }, { headers: responseHeaders });
+    return NextResponse.json({ settings, cash, events, adjustmentCount: Object.keys(adjustments).length, failedTickers, updatedAt: new Date().toISOString(), source: 'Yahoo Finance dividend events; credited on the ex-dividend event date' }, { headers: responseHeaders });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : '股息現金目前無法計算' }, { status: 502, headers: responseHeaders });
   }
@@ -150,8 +187,27 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const body = await request.json() as Partial<DividendSettings> & { action?: 'adjust' | 'clear' | 'exclude' | 'reset-adjustments'; eventKey?: string; net?: number };
+    if (body.action) {
+      if (!['adjust', 'clear', 'exclude', 'reset-adjustments'].includes(body.action)) throw new Error('不支援的股息調整動作');
+      const adjustments = await readAdjustments();
+      if (body.action === 'reset-adjustments') {
+        await writeAdjustments({});
+        return NextResponse.json({ adjusted: true, adjustmentCount: 0 }, { headers: { ...responseHeaders, 'Cache-Control': 'no-store' } });
+      }
+      const eventKey = String(body.eventKey ?? '').trim();
+      if (!eventKey || eventKey.length > 120 || !/^.+\|\d{4}-\d{2}-\d{2}\|\d+(?:\.\d+)?$/.test(eventKey)) throw new Error('股息來源識別碼無效');
+      if (body.action === 'clear') delete adjustments[eventKey];
+      else if (body.action === 'exclude') adjustments[eventKey] = { excluded: true };
+      else {
+        const net = Number(body.net);
+        if (!Number.isFinite(net) || net < 0) throw new Error('請輸入有效的股息入帳金額');
+        adjustments[eventKey] = { net };
+      }
+      await writeAdjustments(adjustments);
+      return NextResponse.json({ adjusted: true, adjustmentCount: Object.keys(adjustments).length }, { headers: { ...responseHeaders, 'Cache-Control': 'no-store' } });
+    }
     const current = await readSettings();
-    const body = await request.json() as Partial<DividendSettings>;
     const settings: DividendSettings = {
       enabled: typeof body.enabled === 'boolean' ? body.enabled : current.enabled,
       usTaxRate: clampTaxRate(body.usTaxRate, current.usTaxRate),

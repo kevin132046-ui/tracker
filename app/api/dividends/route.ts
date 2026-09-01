@@ -34,6 +34,7 @@ type DividendAdjustments = Record<string, DividendAdjustment>;
 
 const settingsKey = 'dividend_cash_settings_v1';
 const adjustmentsKey = 'dividend_cash_adjustments_v1';
+const existingUsdCashRemovalKey = 'dividend_cash_remove_existing_usd_v1';
 const defaultSettings: DividendSettings = { enabled: true, usTaxRate: 30, jpTaxRate: 15.315 };
 const yahooHosts = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'] as const;
 const dividendCache = new Map<string, { expiresAt: number; events: Array<{ date: string; amount: number }> }>();
@@ -84,6 +85,33 @@ async function writeAdjustments(adjustments: DividendAdjustments) {
     ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(adjustmentsKey, JSON.stringify(adjustments)).run();
 }
 
+async function removeExistingUsdCashOnce(events: DividendEvent[], adjustments: DividendAdjustments, failedTickers: string[]) {
+  const visibleUsdEvents = events.filter((event) => event.currency === 'USD' && event.net > 0);
+  const usDataComplete = failedTickers.every((ticker) => ticker.endsWith('.T'));
+  if (!visibleUsdEvents.length || !usDataComplete) return adjustments;
+
+  const db = await ensureDatabase();
+  const completed = await db.prepare('SELECT value FROM app_meta WHERE key = ?')
+    .bind(existingUsdCashRemovalKey)
+    .first<{ value: string }>();
+  if (completed?.value) return adjustments;
+
+  const nextAdjustments = { ...adjustments };
+  visibleUsdEvents.forEach((event) => {
+    nextAdjustments[event.eventKey] = { excluded: true };
+  });
+  const upsert = `INSERT INTO app_meta (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`;
+  await db.batch([
+    db.prepare(upsert).bind(adjustmentsKey, JSON.stringify(nextAdjustments)),
+    db.prepare(upsert).bind(existingUsdCashRemovalKey, JSON.stringify({
+      completedAt: new Date().toISOString(),
+      removedEventCount: visibleUsdEvents.length,
+    })),
+  ]);
+  return nextAdjustments;
+}
+
 const dividendEventKey = (ticker: string, date: string, amountPerShare: number) => `${ticker}|${date}|${amountPerShare.toFixed(8)}`;
 const emptyCash = () => ({ gross: 0, tax: 0, adjustment: 0, net: 0, count: 0 });
 
@@ -124,7 +152,7 @@ async function fetchDividendEvents(ticker: string, startDate: string, endDate: s
 export async function GET(request: Request) {
   try {
     const settings = await readSettings();
-    const adjustments = await readAdjustments();
+    let adjustments = await readAdjustments();
     if (new URL(request.url).searchParams.get('settings') === '1' || !settings.enabled) {
       return NextResponse.json({ settings, cash: { USD: emptyCash(), JPY: emptyCash() }, events: [], adjustmentCount: Object.keys(adjustments).length, failedTickers: [], updatedAt: new Date().toISOString() }, { headers: responseHeaders });
     }
@@ -174,7 +202,8 @@ export async function GET(request: Request) {
       });
     });
 
-    const events = calculatedEvents.filter((event) => event.net > 0);
+    adjustments = await removeExistingUsdCashOnce(calculatedEvents, adjustments, failedTickers);
+    const events = calculatedEvents.filter((event) => !adjustments[event.eventKey]?.excluded && event.net > 0);
     const cash = {
       USD: events.filter((event) => event.currency === 'USD').reduce((sum, event) => ({ gross: sum.gross + event.gross, tax: sum.tax + event.tax, adjustment: sum.adjustment + event.adjustment, net: sum.net + event.net, count: sum.count + 1 }), emptyCash()),
       JPY: events.filter((event) => event.currency === 'JPY').reduce((sum, event) => ({ gross: sum.gross + event.gross, tax: sum.tax + event.tax, adjustment: sum.adjustment + event.adjustment, net: sum.net + event.net, count: sum.count + 1 }), emptyCash()),

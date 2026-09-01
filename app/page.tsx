@@ -2408,15 +2408,13 @@ export default function Home() {
               const marketChangePercent = extendedSession ? snapshot?.extendedChangePercent ?? null : snapshot?.regularChangePercent ?? null;
               const currentPriceLabel = extendedSession ? '正常收盤' : '目前價格';
               const marketMoveLabel = extendedSession === 'pre' ? '盤前漲跌' : extendedSession === 'post' ? '盤後漲跌' : '標的今日漲跌';
-              const rowAllocation = allocationDate === currentAllocationDate ? allocation.find((item) => item.members.includes(position.ticker)) : null;
-              const allocationLinked = Boolean(rowAllocation && activeAllocationItem?.label === rowAllocation.label);
               const quantityParts = [position.stockQuantity > 0 ? `${quantityNumber.format(position.stockQuantity)} 股` : '', position.optionQuantity > 0 ? `${quantityNumber.format(position.optionQuantity)} 口` : ''].filter(Boolean);
               const positionStatus = cashPosition
                 ? position.items.some((item) => item.trade.derived) ? '股息自動入帳' : '現金餘額'
                 : autoPosition ? snapshot ? `API · ${quoteSessionLabel(snapshot.session)}` : failedQuoteTickers.has(position.ticker) ? 'API 無法取得' : 'API 待更新'
                   : position.items.some((item) => item.trade.type === 'SDI') ? '手動價格' : '權利金手動';
               const positionStatusClass = cashPosition ? 'cash' : autoPosition ? snapshot ? 'live' : failedQuoteTickers.has(position.ticker) ? 'error' : 'pending' : 'manual';
-              return <article className={`visual-position-row ${allocationLinked ? 'is-allocation-linked' : ''}`} key={position.ticker} onMouseEnter={() => rowAllocation && setAllocationHoveredLabel(rowAllocation.label)} onMouseLeave={() => rowAllocation && setAllocationHoveredLabel(null)} onFocus={() => rowAllocation && setAllocationHoveredLabel(rowAllocation.label)} onBlur={() => rowAllocation && setAllocationHoveredLabel(null)}>
+              return <article className="visual-position-row" key={position.ticker}>
                 <span className="position-rank">{String(index + 1).padStart(2, '0')}</span>
                 {cashPosition ? <div className="visual-asset"><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · 持倉數量 {nativeMoney(position.ticker, position.cashQuantity)}</small><em className={`position-data-status ${positionStatusClass}`}><i />{positionStatus}</em></span></div> : <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · 持倉數量 {quantityParts.join(' · ') || '0'} · {position.strategy}</small><em className={`position-data-status ${positionStatusClass}`}><i />{positionStatus}</em></span></button>}
                 <div className="visual-value"><span>持倉市值</span><strong>{money.format(position.marketValue)}</strong></div>

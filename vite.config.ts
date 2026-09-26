@@ -3,8 +3,7 @@ import vinext from 'vinext';
 import { defineConfig } from 'vite';
 import hostingConfig from './.openai/hosting.json';
 
-const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
-  '00000000-0000-4000-8000-000000000000';
+const SITE_CREATOR_DATABASE_ID = 'cd1b13e7-b85b-4023-88a6-8522153c5a82';
 
 const { d1, r2 } = hostingConfig;
 
@@ -19,7 +18,7 @@ const localBindingConfig = {
         {
           binding: d1,
           database_name: 'site-creator-d1',
-          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+          database_id: SITE_CREATOR_DATABASE_ID,
         },
       ]
     : [],

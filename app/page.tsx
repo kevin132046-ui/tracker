@@ -11,8 +11,11 @@ import {
   isYenTicker,
   normalizeTickerForMarket,
   normalizedUsdAmount,
+  priceHistoryRequest,
+  rangeBuckets,
+  timeWeightedReturnSeries,
 } from '@/lib/performance';
-import type { AnnualRocSummary, CapitalBasis } from '@/lib/performance';
+import type { AnnualRocSummary, CapitalBasis, PriceHistorySeries, RangeMode } from '@/lib/performance';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 
@@ -45,7 +48,6 @@ type Trade = {
   dividendAdjustment?: number;
 };
 
-type RangeMode = 'day' | 'week' | 'month' | 'year';
 type MacroMarketGroup = 'rates' | 'commodities';
 type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock' | 'cash';
 type PositionViewMode = 'visual' | 'details';
@@ -110,7 +112,8 @@ type BenchmarkMarket = {
   change: number | null;
   changePercent: number | null;
 };
-type BenchmarkData = { SPY: number[]; BOXX: number[] };
+type BenchmarkData = { SPY: number[]; BOXX: number[]; keys?: string[] };
+type PriceHistoryState = { key: string; series: PriceHistorySeries };
 type MacroMarketData = { mode: RangeMode | null; markets: BenchmarkMarket[]; updatedAt: string | null };
 type MacroCacheEntry = { markets: BenchmarkMarket[]; updatedAt: string; fetchedAt: number };
 type BackgroundMode = 'default' | 'image';
@@ -397,58 +400,6 @@ function metrics(trade: Trade, usdJpyRate = 1) {
   const nativeMarketValue = stock ? current * trade.quantity : Math.max(trade.collateral, current * trade.quantity * 100);
   const marketValue = normalizedUsdAmount(trade, nativeMarketValue, usdJpyRate);
   return { pnl, days, roc, marketValue };
-}
-
-function startOfWeek(date: Date) {
-  const copy = new Date(date);
-  const day = copy.getUTCDay() || 7;
-  copy.setUTCDate(copy.getUTCDate() - day + 1);
-  copy.setUTCHours(0, 0, 0, 0);
-  return copy;
-}
-
-function buildReturnSeries(trades: Trade[], mode: RangeMode, usdJpyRate = 1) {
-  const now = new Date(`${today()}T00:00:00Z`);
-  const buckets: Array<{ key: string; label: string; pnl: number; capital: number }> = [];
-  if (mode === 'day') {
-    for (let offset = 29; offset >= 0; offset -= 1) {
-      const date = new Date(now);
-      date.setUTCDate(now.getUTCDate() - offset);
-      buckets.push({ key: date.toISOString().slice(0, 10), label: `${date.getUTCMonth() + 1}/${date.getUTCDate()}`, pnl: 0, capital: 0 });
-    }
-  } else if (mode === 'week') {
-    const current = startOfWeek(now);
-    for (let offset = 11; offset >= 0; offset -= 1) {
-      const date = new Date(current);
-      date.setUTCDate(current.getUTCDate() - offset * 7);
-      buckets.push({ key: date.toISOString().slice(0, 10), label: `${date.getUTCMonth() + 1}/${date.getUTCDate()}`, pnl: 0, capital: 0 });
-    }
-  } else if (mode === 'month') {
-    for (let offset = 11; offset >= 0; offset -= 1) {
-      const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
-      buckets.push({ key: date.toISOString().slice(0, 7), label: new Intl.DateTimeFormat('zh-TW', { month: 'short' }).format(date), pnl: 0, capital: 0 });
-    }
-  } else {
-    for (let offset = 4; offset >= 0; offset -= 1) {
-      const year = now.getUTCFullYear() - offset;
-      buckets.push({ key: String(year), label: String(year), pnl: 0, capital: 0 });
-    }
-  }
-
-  for (const trade of trades) {
-    if (isCashTrade(trade)) continue;
-    const activityDate = new Date(`${trade.closeDate ?? today()}T00:00:00Z`);
-    const key = mode === 'day'
-      ? activityDate.toISOString().slice(0, 10)
-      : mode === 'week' ? startOfWeek(activityDate).toISOString().slice(0, 10)
-        : mode === 'month' ? activityDate.toISOString().slice(0, 7) : String(activityDate.getUTCFullYear());
-    const bucket = buckets.find((item) => item.key === key);
-    if (bucket) {
-      bucket.pnl += metrics(trade, usdJpyRate).pnl;
-      bucket.capital += trade.collateral ? normalizedUsdAmount(trade, trade.collateral, usdJpyRate) : metrics(trade, usdJpyRate).marketValue;
-    }
-  }
-  return buckets.map((bucket) => ({ ...bucket, value: bucket.capital > 0 ? bucket.pnl / bucket.capital : 0 }));
 }
 
 const CompanyLogo = memo(function CompanyLogo({ ticker, compact = false }: { ticker: string; compact?: boolean }) {
@@ -988,6 +939,7 @@ export default function Home() {
   const [usdJpyUpdatedAt, setUsdJpyUpdatedAt] = useState<string | null>(initialUsdJpyUpdatedAt);
   const [benchmarks, setBenchmarks] = useState<{ mode: RangeMode | null } & BenchmarkData>({ mode: null, SPY: [], BOXX: [] });
   const [benchmarkLoading, setBenchmarkLoading] = useState(false);
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryState | null>(null);
   const [rocBreakdownOpen, setRocBreakdownOpen] = useState(false);
   const [macroMarkets, setMacroMarkets] = useState<MacroMarketData>({ mode: null, markets: [], updatedAt: null });
   const [macroLoading, setMacroLoading] = useState(false);
@@ -1023,6 +975,7 @@ export default function Home() {
   const backgroundGenerationRef = useRef(0);
   const editorQuoteCacheRef = useRef(new Map<string, { quote: LiveQuote; fetchedAt: number }>());
   const benchmarkCacheRef = useRef(new Map<RangeMode, BenchmarkData>());
+  const priceHistoryCacheRef = useRef(new Map<string, PriceHistoryState>());
   const rocTriggerRef = useRef<HTMLButtonElement>(null);
   const macroCacheRef = useRef(new Map<string, MacroCacheEntry>());
   const macroRefreshRequestedRef = useRef(false);
@@ -1388,10 +1341,16 @@ export default function Home() {
     setBenchmarkLoading(true);
     fetch(`/api/benchmarks?mode=${rangeMode}&scope=benchmarks`, { signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json() as { SPY?: number[]; BOXX?: number[]; error?: string };
+        const payload = await response.json() as { SPY?: number[]; BOXX?: number[]; keys?: string[]; warnings?: string[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? '基準資料暫時無法取得');
         if (!controller.signal.aborted) {
-          const next = { SPY: payload.SPY ?? [], BOXX: payload.BOXX ?? [] };
+          // A benchmark the server could not load comes back as zeros; treat it as missing instead.
+          const unavailable = new Set(Array.isArray(payload.warnings) ? payload.warnings : []);
+          const next: BenchmarkData = {
+            SPY: unavailable.has('SPY') ? [] : payload.SPY ?? [],
+            BOXX: unavailable.has('BOXX') ? [] : payload.BOXX ?? [],
+            keys: Array.isArray(payload.keys) ? payload.keys : undefined,
+          };
           benchmarkCacheRef.current.set(rangeMode, next);
           setBenchmarks({ mode: rangeMode, ...next });
         }
@@ -1400,6 +1359,35 @@ export default function Home() {
       .finally(() => { if (!controller.signal.aborted) setBenchmarkLoading(false); });
     return () => controller.abort();
   }, [rangeMode]);
+
+  // Daily closes for the time-weighted return model. The key changes only when the set of stock
+  // tickers, the earliest purchase month or the local date changes, not on every quote refresh.
+  const priceHistoryKey = useMemo(() => {
+    const target = priceHistoryRequest(trades);
+    return target ? `${target.symbols.join(',')}|${target.from}|${today()}` : '';
+  }, [trades]);
+
+  useEffect(() => {
+    if (!priceHistoryKey) return;
+    const cached = priceHistoryCacheRef.current.get(priceHistoryKey);
+    if (cached) {
+      setPriceHistory(cached);
+      return;
+    }
+    const [symbols, from] = priceHistoryKey.split('|');
+    const controller = new AbortController();
+    fetch(`/api/price-history?symbols=${encodeURIComponent(symbols)}&from=${from}`, { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { series?: PriceHistorySeries; error?: string };
+        if (!response.ok || !payload.series || typeof payload.series !== 'object') throw new Error(payload.error ?? '歷史價格暫時無法取得');
+        const next: PriceHistoryState = { key: priceHistoryKey, series: payload.series };
+        priceHistoryCacheRef.current.set(priceHistoryKey, next);
+        if (!controller.signal.aborted) setPriceHistory(next);
+      })
+      // Without history the chart keeps the linear-estimate fallback; nothing blocks the page.
+      .catch(() => { if (!controller.signal.aborted) setPriceHistory({ key: priceHistoryKey, series: {} }); });
+    return () => controller.abort();
+  }, [priceHistoryKey]);
 
   const closeRocBreakdown = useCallback(() => {
     setRocBreakdownOpen(false);
@@ -1866,8 +1854,34 @@ export default function Home() {
   const currentRocYear = Number(today().slice(0, 4));
   const annualRocSummary = useMemo(() => buildAnnualRocSummary(closedTrades, currentRocYear, usdJpyRate), [closedTrades, currentRocYear, usdJpyRate]);
 
-  const returnSeries = useMemo(() => buildReturnSeries(trades, rangeMode, usdJpyRate), [trades, rangeMode, usdJpyRate]);
-  const activeBenchmarks = benchmarks.mode === rangeMode ? benchmarks : { mode: rangeMode, SPY: [], BOXX: [] };
+  const activePriceHistory = priceHistory && priceHistory.key === priceHistoryKey ? priceHistory : null;
+  const priceHistoryPending = Boolean(priceHistoryKey) && !activePriceHistory;
+  const returnAnalytics = useMemo(() => timeWeightedReturnSeries(trades, rangeMode, {
+    todayKey: today(),
+    usdJpyRate,
+    prices: activePriceHistory?.series ?? null,
+  }), [activePriceHistory, rangeMode, trades, usdJpyRate]);
+  const returnSeries = returnAnalytics.series;
+  // Benchmarks are matched to chart buckets by key, so a server/browser date difference cannot shift them.
+  const activeBenchmarks = useMemo(() => {
+    const source = benchmarks.mode === rangeMode ? benchmarks : null;
+    const align = (values: number[]) => {
+      if (!source || !values.length) return [];
+      if (source.keys?.length === values.length) {
+        const byKey = new Map(source.keys.map((key, index) => [key, values[index]]));
+        return returnSeries.map((item) => byKey.get(item.key) ?? 0);
+      }
+      return returnSeries.map((_, index) => values[index] ?? 0);
+    };
+    return { SPY: align(source?.SPY ?? []), BOXX: align(source?.BOXX ?? []) };
+  }, [benchmarks, rangeMode, returnSeries]);
+  const spyCumulative = activeBenchmarks.SPY.length ? activeBenchmarks.SPY.reduce((growth, value) => growth * (1 + value), 1) - 1 : null;
+  const estimatedReturnTickers = returnAnalytics.estimatedTickers;
+  const returnEstimateNote = priceHistoryPending
+    ? '（股價資料讀取中，暫以線性估算）'
+    : estimatedReturnTickers.length
+      ? `（估算：${estimatedReturnTickers.slice(0, 6).join('、')}${estimatedReturnTickers.length > 6 ? ` 等 ${estimatedReturnTickers.length} 檔` : ''}）`
+      : '';
   const chartStep = .05;
   const chartValues = [...returnSeries.map((item) => item.value), ...activeBenchmarks.SPY, ...activeBenchmarks.BOXX].filter(Number.isFinite);
   const chartStepCount = Math.max(1, Math.ceil(Math.max(0, ...chartValues.map(Math.abs)) / chartStep));
@@ -1884,7 +1898,7 @@ export default function Home() {
   const boxxPoints = pointsFor(activeBenchmarks.BOXX);
   const rangeModeLabel = rangeMode === 'day' ? '日' : rangeMode === 'week' ? '週' : rangeMode === 'month' ? '月' : '年';
   const macroRangeModeLabel = macroRangeMode === 'day' ? '日' : macroRangeMode === 'week' ? '週' : macroRangeMode === 'month' ? '月' : '年';
-  const macroTimeline = useMemo(() => buildReturnSeries([], macroRangeMode), [macroRangeMode]);
+  const macroTimeline = useMemo(() => rangeBuckets(macroRangeMode, today()), [macroRangeMode]);
   const activeMacroIds: BenchmarkMarket['id'][] = macroMarketGroup === 'rates' ? ['USDJPY', 'US10Y', 'US30Y'] : ['GOLD', 'OIL'];
   const activeMacroMarkets = macroMarkets.mode === macroRangeMode ? activeMacroIds.flatMap((id) => {
     const market = macroMarkets.markets.find((candidate) => candidate.id === id);
@@ -2342,7 +2356,7 @@ export default function Home() {
                 {([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={rangeMode === mode ? 'selected' : ''} aria-pressed={rangeMode === mode} onClick={() => setRangeMode(mode)}>{label}</button>)}
               </div>
             </div>
-            <div className="return-summary"><strong>{percent.format(returnSeries.at(-1)?.value ?? 0)}</strong><span>最近一期報酬率</span><div className="benchmark-legend"><span><i className="portfolio-key" />我的組合</span><span><i className="spy-key" />SPY</span><span><i className="boxx-key" />BOXX</span></div></div>
+            <div className="return-summary"><strong>{percent.format(returnSeries.at(-1)?.value ?? 0)}</strong><span>最近一期報酬率</span><span className="return-cumulative">區間累積 <b className={returnAnalytics.cumulative >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(returnAnalytics.cumulative)}</b>（SPY {spyCumulative === null ? '—' : signedPrecisePercent(spyCumulative)}）</span><div className="benchmark-legend"><span><i className="portfolio-key" />我的組合</span><span><i className="spy-key" />SPY</span><span><i className="boxx-key" />BOXX</span></div></div>
             <div className="chart-shell">
               {chartTicks.map((tick) => <span key={`label-${tick.toFixed(4)}`} className="axis-label" style={{ top: `${chartY(tick)}%` }}>{tick > 0 ? '+' : ''}{Math.round(tick * 100)}%</span>)}
               <svg className="return-chart" viewBox="0 0 100 100" role="img" aria-label="日週月年收益率折線圖" preserveAspectRatio="none">
@@ -2374,6 +2388,7 @@ export default function Home() {
               })}</div>
             </div>
             <div className="chart-dates">{returnSeries.map((item, index) => <span key={item.key} className={index !== 0 && index !== returnSeries.length - 1 && index % chartDateStep !== 0 ? 'hide-small-label' : ''}>{item.label}</span>)}</div>
+            <p className="return-method-note">時間加權報酬：每日損益 ÷ 當日占用資本；股票用 Yahoo 含息調整收盤，選擇權以進出場價線性估算{returnEstimateNote}</p>
             <section className="macro-market-section" aria-labelledby="macro-market-title">
               <div className="macro-market-heading"><div><p className="eyebrow">Macro price monitor</p><h3 id="macro-market-title">{macroMarketGroup === 'rates' ? '匯率與美債殖利率' : '黃金與原油期貨'}</h3></div><div className="macro-market-actions"><button type="button" className="macro-deck-toggle" onClick={() => showMacroMarketGroup(macroMarketGroup === 'rates' ? 'commodities' : 'rates', macroMarketGroup === 'rates' ? 'up' : 'down')} aria-label={macroMarketGroup === 'rates' ? '向上切換至黃金與原油期貨' : '向下切換至匯率與美債殖利率'}><span aria-hidden="true">{macroMarketGroup === 'rates' ? '↑' : '↓'}</span><b>{macroMarketGroup === 'rates' ? '黃金／原油' : '美元／美債'}</b><i aria-hidden="true"><em className={macroMarketGroup === 'rates' ? 'active' : ''} /><em className={macroMarketGroup === 'commodities' ? 'active' : ''} /></i></button><div className="segmented macro-range-switch" role="group" aria-label="宏觀歷史期間">{([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={macroRangeMode === mode ? 'selected' : ''} aria-pressed={macroRangeMode === mode} onClick={() => setMacroRangeMode(mode)}>{label}</button>)}</div><button type="button" className="macro-refresh-button" disabled={macroLoading} onClick={() => { macroRefreshRequestedRef.current = true; setMacroRefreshKey((current) => current + 1); }}>↻ 更新</button><span>美東 {macroUpdatedLabel} · 每 60 秒</span></div></div>
               {macroError && <p className="macro-market-error" role="status">{macroError}</p>}

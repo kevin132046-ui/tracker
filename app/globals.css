@@ -542,7 +542,7 @@ button, a { touch-action: manipulation; }.shell.has-custom-background:before { t
   .language-switcher { order: -1; }.language-switcher button { padding: 0 7px; font-size: 9.5px; }
 }
 
-/* Clickable annual ROC card and its calculation breakdown. */
+/* Clickable annual ROC card, its calculation breakdown and time-weighted return notes. */
 .metric-card-interactive { transition: border-color .18s ease, box-shadow .18s ease; }
 .metric-card-interactive:hover, .metric-card-interactive:focus-within, .metric-card-interactive.is-open { border-color: #bfd3f3; box-shadow: 0 14px 36px rgba(47,115,237,.1); }
 .metric-card-interactive:hover:before, .metric-card-interactive:focus-within:before, .metric-card-interactive.is-open:before { background: var(--blue); }
@@ -550,6 +550,9 @@ button, a { touch-action: manipulation; }.shell.has-custom-background:before { t
 .metric-card-action > span { padding: 5px 9px; background: #eef4fd; border: 1px solid #d9e6f8; border-radius: 999px; font-size: 10.5px; font-weight: 850; letter-spacing: .02em; transition: color .15s ease, background .15s ease, border-color .15s ease; }
 .metric-card-action:hover > span, .metric-card-action:focus-visible > span { color: white; background: var(--blue); border-color: var(--blue); }
 .metric-card-action:focus-visible { outline: 3px solid rgba(47,115,237,.26); outline-offset: -3px; }
+.return-summary > .return-cumulative { color: #5f718d; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.return-summary > .return-cumulative b { font-weight: 900; }
+.return-method-note { margin: 12px 0 0; color: #71819a; font-size: 12px; font-weight: 700; line-height: 1.6; }
 .roc-breakdown-modal { width: min(1040px,100%); max-height: calc(100dvh - 36px); display: flex; flex-direction: column; overflow: hidden; color: #1b2b46; background: #fff; border: 1px solid rgba(255,255,255,.9); border-radius: 22px; box-shadow: 0 30px 100px rgba(6,21,45,.38); }
 .roc-breakdown-modal > header { flex: 0 0 auto; min-height: 92px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 26px; border-bottom: 1px solid #e5eaf2; }.roc-breakdown-modal h2 { margin: 4px 0 0; font-size: 25px; letter-spacing: -.03em; }
 .roc-breakdown-body { min-height: 0; display: grid; grid-auto-rows: max-content; gap: 16px; padding: 22px 26px 26px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }

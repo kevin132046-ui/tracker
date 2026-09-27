@@ -541,3 +541,31 @@ button, a { touch-action: manipulation; }.shell.has-custom-background:before { t
   .technical-price-tooltip.is-ohlc { min-width: 164px; }
   .language-switcher { order: -1; }.language-switcher button { padding: 0 7px; font-size: 9.5px; }
 }
+
+/* Clickable annual ROC card and its calculation breakdown. */
+.metric-card-interactive { transition: border-color .18s ease, box-shadow .18s ease; }
+.metric-card-interactive:hover, .metric-card-interactive:focus-within, .metric-card-interactive.is-open { border-color: #bfd3f3; box-shadow: 0 14px 36px rgba(47,115,237,.1); }
+.metric-card-interactive:hover:before, .metric-card-interactive:focus-within:before, .metric-card-interactive.is-open:before { background: var(--blue); }
+.metric-card-action { position: absolute; inset: 0; z-index: 1; display: flex; align-items: flex-start; justify-content: flex-end; padding: 19px 17px; color: #4c6fae; background: transparent; border: 0; border-radius: inherit; cursor: pointer; }
+.metric-card-action > span { padding: 5px 9px; background: #eef4fd; border: 1px solid #d9e6f8; border-radius: 999px; font-size: 10.5px; font-weight: 850; letter-spacing: .02em; transition: color .15s ease, background .15s ease, border-color .15s ease; }
+.metric-card-action:hover > span, .metric-card-action:focus-visible > span { color: white; background: var(--blue); border-color: var(--blue); }
+.metric-card-action:focus-visible { outline: 3px solid rgba(47,115,237,.26); outline-offset: -3px; }
+.roc-breakdown-modal { width: min(1040px,100%); max-height: calc(100dvh - 36px); display: flex; flex-direction: column; overflow: hidden; color: #1b2b46; background: #fff; border: 1px solid rgba(255,255,255,.9); border-radius: 22px; box-shadow: 0 30px 100px rgba(6,21,45,.38); }
+.roc-breakdown-modal > header { flex: 0 0 auto; min-height: 92px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 26px; border-bottom: 1px solid #e5eaf2; }.roc-breakdown-modal h2 { margin: 4px 0 0; font-size: 25px; letter-spacing: -.03em; }
+.roc-breakdown-body { min-height: 0; display: grid; grid-auto-rows: max-content; gap: 16px; padding: 22px 26px 26px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+.roc-breakdown-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; }.roc-breakdown-stats > div { min-width: 0; padding: 13px 14px; background: #f7f9fc; border: 1px solid #e1e7f0; border-radius: 12px; }.roc-breakdown-stats span,.roc-breakdown-stats strong { display: block; }.roc-breakdown-stats span { color: #7d8ba0; font-size: 11px; font-weight: 800; }.roc-breakdown-stats strong { margin-top: 5px; color: #1b3152; font-size: 20px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.roc-breakdown-formula { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; padding: 13px 15px; color: #4e607a; background: #f5f8fd; border: 1px solid #dfe8f5; border-radius: 11px; font-size: 13px; font-weight: 800; line-height: 1.55; font-variant-numeric: tabular-nums; }.roc-breakdown-formula > span:first-child { color: #315a99; }.roc-breakdown-formula strong { color: #205fc9; font-size: 15px; font-weight: 900; }
+.roc-breakdown-table-wrap { overflow-x: auto; border: 1px solid #e5eaf2; border-radius: 13px; overscroll-behavior-x: contain; scrollbar-color: #b5c0cf #f3f5f8; }
+.roc-breakdown-modal table.roc-breakdown-table { width: 100%; min-width: 900px; border-collapse: collapse; }
+.roc-breakdown-table th { padding: 11px 12px; font-size: 11px; letter-spacing: .04em; }.roc-breakdown-table td { padding: 12px; color: #33455f; font-size: 13px; font-variant-numeric: tabular-nums; vertical-align: top; }.roc-breakdown-table td strong { color: #17243d; font-size: 14px; }.roc-breakdown-table td .subtle { margin-top: 3px; font-size: 11.5px; }
+.roc-breakdown-table .numeric { text-align: right; }.roc-breakdown-dates { color: #5d6e88; }.roc-breakdown-table tfoot td { color: #17243d; background: #f8faff; border-top: 1px solid #dbe3ee; font-weight: 850; }.roc-breakdown-table .roc-breakdown-empty { color: #8a98ae; text-align: center; }
+.roc-basis-tag { display: block; width: max-content; margin: 4px 0 0 auto; padding: 2px 7px; color: #8a5b14; background: #fff4de; border: 1px solid #f3dfb8; border-radius: 999px; font-size: 10px; font-weight: 850; }.roc-basis-tag.is-weighted { color: #315a99; background: #eef4fd; border-color: #d9e6f8; }
+.roc-breakdown-notes { display: grid; gap: 4px; margin: 0; padding: 0 0 0 18px; color: #71809a; font-size: 12px; font-weight: 650; line-height: 1.6; }
+
+@media (max-width: 720px) {
+  .roc-breakdown-modal > header { min-height: 82px; padding: 18px 19px; }.roc-breakdown-modal h2 { font-size: 21px; }
+  .roc-breakdown-body { padding: 18px 19px 22px; }.roc-breakdown-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }.roc-breakdown-stats strong { font-size: 17px; }
+}
+@media (max-width: 460px) {
+  .confirm-backdrop:has(.roc-breakdown-modal) { padding: 12px; }.roc-breakdown-modal { max-height: calc(100dvh - 24px); }
+}

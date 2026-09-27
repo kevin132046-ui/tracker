@@ -3,6 +3,16 @@
 import type { ChangeEvent, CSSProperties } from 'react';
 import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BrokerWorkspace } from '@/lib/broker-workspace';
+import {
+  buildAnnualRocSummary,
+  investedCapitalUsd,
+  isCashTrade,
+  isJapaneseTicker,
+  isYenTicker,
+  normalizeTickerForMarket,
+  normalizedUsdAmount,
+} from '@/lib/performance';
+import type { AnnualRocSummary, CapitalBasis } from '@/lib/performance';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 
@@ -347,26 +357,12 @@ function marketCalendarStatus(timestamp: number): MarketCalendarStatus {
     usClosedReason: usWeekend ? '週末' : usHoliday,
   };
 }
-const isJapaneseTicker = (ticker: string | null | undefined) => Boolean(ticker?.toUpperCase().endsWith('.T'));
-const isCashTrade = (trade: Pick<Trade, 'type' | 'event'>) => trade.type === 'CASH' || trade.event === 'CASH' || trade.event === 'DIVIDEND';
-const isYenTicker = (ticker: string | null | undefined) => ticker?.toUpperCase() === 'JPY' || isJapaneseTicker(ticker);
 const nativeMoney = (ticker: string | null | undefined, value: number) => isYenTicker(ticker) ? yenMoney.format(value) : money.format(value);
 const quoteSessionLabel = (session: QuoteSession) => session === 'pre' ? '盤前' : session === 'post' ? '盤後' : session === 'regular' ? '正常交易時段' : '最近收盤';
-const normalizeTickerForMarket = (ticker: string | null | undefined, market: 'US' | 'JP') => {
-  const normalized = String(ticker ?? '').trim().toUpperCase();
-  return market === 'JP' && /^\d{4}$/.test(normalized) ? `${normalized}.T` : normalized;
-};
-const normalizedUsdAmount = (trade: Trade, value: number, usdJpyRate: number) => (trade.market === 'JP' || isYenTicker(trade.ticker)) && usdJpyRate > 0 ? value / usdJpyRate : value;
-
-function investedCapitalUsd(trade: Trade, usdJpyRate: number) {
-  if (isCashTrade(trade)) return normalizedUsdAmount(trade, Math.abs(trade.quantity), usdJpyRate);
-  const stock = trade.type === 'SDI' || trade.event === 'STOCK';
-  const multiplier = stock ? 1 : 100;
-  const entryCost = Math.abs(trade.entryPrice * trade.quantity * multiplier) + Math.max(0, trade.fees);
-  const shortOption = !stock && trade.type.toLowerCase() === 'sell';
-  const nativeCapital = shortOption && trade.collateral > 0 ? trade.collateral : entryCost;
-  return normalizedUsdAmount(trade, nativeCapital, usdJpyRate);
-}
+const signedMoney = (value: number) => `${value > 0 ? '+' : value < 0 ? '−' : ''}${money.format(Math.abs(value))}`;
+// Annualized figures explode for very short holds; cap the display instead of printing huge numbers.
+const cappedAnnualized = (value: number | null) => value === null || Number.isNaN(value) ? '—' : value > 9.99 ? '> 999%' : value < -9.99 ? '< −999%' : signedPrecisePercent(value);
+const capitalBasisLabels: Record<CapitalBasis, string> = { collateral: '擔保金', strike: '履約價名目', cost: '買入成本', premium: '權利金' };
 
 function selectZeroNumberInput(target: EventTarget | null) {
   if (!(target instanceof HTMLInputElement) || (target.type !== 'number' && target.inputMode !== 'decimal') || target.readOnly || target.disabled) return;
@@ -396,8 +392,8 @@ function metrics(trade: Trade, usdJpyRate = 1) {
   const end = new Date(`${trade.closeDate ?? today()}T00:00:00Z`).getTime();
   const start = new Date(`${trade.openDate}T00:00:00Z`).getTime();
   const days = Math.max(1, Math.round((end - start) / 86_400_000));
-  const collateralUsd = normalizedUsdAmount(trade, trade.collateral, usdJpyRate);
-  const roc = collateralUsd > 0 ? pnl / collateralUsd : 0;
+  const capital = investedCapitalUsd(trade, usdJpyRate);
+  const roc = capital > 0 ? pnl / capital : 0;
   const nativeMarketValue = stock ? current * trade.quantity : Math.max(trade.collateral, current * trade.quantity * 100);
   const marketValue = normalizedUsdAmount(trade, nativeMarketValue, usdJpyRate);
   return { pnl, days, roc, marketValue };
@@ -590,6 +586,68 @@ const MacroMarketCard = memo(function MacroMarketCard({ market, startLabel, endL
     </div>
     <footer><span>{startLabel}</span><b>{rangeLabel}走勢</b><span>{endLabel}</span></footer>
   </article>;
+});
+
+const RocBreakdownDialog = memo(function RocBreakdownDialog({ summary, onClose }: { summary: AnnualRocSummary; onClose: () => void }) {
+  const { rows } = summary;
+  const weighted = summary.value === null ? '—' : precisePercent.format(summary.value);
+  const tone = (value: number | null) => value === null ? '' : value >= 0 ? 'positive' : 'negative';
+  return <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="roc-breakdown-modal" role="dialog" aria-modal="true" aria-labelledby="roc-breakdown-title" aria-describedby="roc-breakdown-formula">
+      <header>
+        <div><p className="eyebrow">Annualized ROC · {summary.year}</p><h2 id="roc-breakdown-title">本年度加權年化 ROC 明細</h2></div>
+        <button type="button" className="close-button" onClick={onClose} aria-label="關閉" autoFocus>×</button>
+      </header>
+      <div className="roc-breakdown-body">
+        <div className="roc-breakdown-stats">
+          <div><span>加權年化 ROC</span><strong className={tone(summary.value)}>{weighted}</strong></div>
+          <div><span>已實現損益</span><strong className={tone(summary.realizedPnl)}>{signedMoney(summary.realizedPnl)}</strong></div>
+          <div><span>資本 × 年</span><strong>{money.format(summary.capitalYears)}</strong></div>
+          <div><span>平倉交易</span><strong>{summary.count} 筆</strong></div>
+        </div>
+        <p className="roc-breakdown-formula" id="roc-breakdown-formula">
+          <span>Σ已實現損益 ÷ Σ(投入資本×天數÷365)</span>
+          <span>= {signedMoney(summary.realizedPnl)} ÷ {money.format(summary.capitalYears)} = <strong>{weighted}</strong></span>
+        </p>
+        <div className="roc-breakdown-table-wrap">
+          <table className="roc-breakdown-table">
+            <thead><tr><th scope="col">標的／策略</th><th scope="col">開倉 → 平倉</th><th scope="col" className="numeric">天數</th><th scope="col" className="numeric">投入資本</th><th scope="col" className="numeric">損益</th><th scope="col" className="numeric">ROC</th><th scope="col" className="numeric">單利年化</th><th scope="col" className="numeric">複利年化</th><th scope="col" className="numeric">資本×年</th></tr></thead>
+            <tbody>
+              {!rows.length && <tr><td colSpan={9} className="roc-breakdown-empty">{summary.year} 年尚無已平倉交易。</td></tr>}
+              {rows.map((row) => <tr key={row.id}>
+                <td><strong>{row.ticker}</strong><span className="subtle">{row.strategy}</span></td>
+                <td className="roc-breakdown-dates">{row.openDate} → {row.closeDate}</td>
+                <td className="numeric">{row.days}</td>
+                <td className="numeric" title={`資本基礎：${capitalBasisLabels[row.basis]}`}>{money.format(row.capital)}{row.basis === 'strike' && <small className="roc-basis-tag" title="未填擔保金，以履約價 × 100 × 口數估算">履約價名目</small>}</td>
+                <td className={`numeric ${tone(row.pnl)}`}>{signedMoney(row.pnl)}</td>
+                <td className={`numeric ${tone(row.roc)}`}>{row.roc === null ? '—' : signedPrecisePercent(row.roc)}</td>
+                <td className="numeric">{cappedAnnualized(row.simpleAnnualized)}</td>
+                <td className="numeric">{cappedAnnualized(row.compoundAnnualized)}</td>
+                <td className="numeric">{money.format(row.capitalYears)}</td>
+              </tr>)}
+            </tbody>
+            {rows.length > 0 && <tfoot><tr>
+              <td>合計 {summary.count} 筆</td>
+              <td>—</td>
+              <td className="numeric">—</td>
+              <td className="numeric">{money.format(summary.totalCapital)}</td>
+              <td className={`numeric ${tone(summary.realizedPnl)}`}>{signedMoney(summary.realizedPnl)}</td>
+              <td className="numeric">{summary.totalCapital > 0 ? signedPrecisePercent(summary.realizedPnl / summary.totalCapital) : '—'}</td>
+              <td className={`numeric ${tone(summary.value)}`}>{summary.value === null ? '—' : cappedAnnualized(summary.value)}<small className="roc-basis-tag is-weighted">加權</small></td>
+              <td className="numeric">—</td>
+              <td className="numeric">{money.format(summary.capitalYears)}</td>
+            </tr></tfoot>}
+          </table>
+        </div>
+        <ul className="roc-breakdown-notes">
+          <li>持有未滿 30 天的年化數字會被放大，僅供參考。</li>
+          <li>已實現損益已扣除手續費；日股金額以目前 USD／JPY 匯率換算。</li>
+          <li>投入資本：賣方選擇權採擔保金，未填擔保金時以履約價名目（履約價 × 100 × 口數）估算；股票採買入成本＋手續費；買方選擇權採權利金＋手續費。</li>
+          <li>合計列：ROC ＝ Σ損益 ÷ Σ投入資本；單利年化欄即加權年化 ROC（各筆投入資本依持有天數加權）。</li>
+        </ul>
+      </div>
+    </section>
+  </div>;
 });
 
 const LiveMarketClocks = memo(function LiveMarketClocks({ lastQuoteAt }: { lastQuoteAt: string | null }) {
@@ -930,6 +988,7 @@ export default function Home() {
   const [usdJpyUpdatedAt, setUsdJpyUpdatedAt] = useState<string | null>(initialUsdJpyUpdatedAt);
   const [benchmarks, setBenchmarks] = useState<{ mode: RangeMode | null } & BenchmarkData>({ mode: null, SPY: [], BOXX: [] });
   const [benchmarkLoading, setBenchmarkLoading] = useState(false);
+  const [rocBreakdownOpen, setRocBreakdownOpen] = useState(false);
   const [macroMarkets, setMacroMarkets] = useState<MacroMarketData>({ mode: null, markets: [], updatedAt: null });
   const [macroLoading, setMacroLoading] = useState(false);
   const [macroError, setMacroError] = useState('');
@@ -964,6 +1023,7 @@ export default function Home() {
   const backgroundGenerationRef = useRef(0);
   const editorQuoteCacheRef = useRef(new Map<string, { quote: LiveQuote; fetchedAt: number }>());
   const benchmarkCacheRef = useRef(new Map<RangeMode, BenchmarkData>());
+  const rocTriggerRef = useRef<HTMLButtonElement>(null);
   const macroCacheRef = useRef(new Map<string, MacroCacheEntry>());
   const macroRefreshRequestedRef = useRef(false);
   const macroDeckSwipeStartRef = useRef<number | null>(null);
@@ -1340,6 +1400,22 @@ export default function Home() {
       .finally(() => { if (!controller.signal.aborted) setBenchmarkLoading(false); });
     return () => controller.abort();
   }, [rangeMode]);
+
+  const closeRocBreakdown = useCallback(() => {
+    setRocBreakdownOpen(false);
+    window.requestAnimationFrame(() => rocTriggerRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    if (!rocBreakdownOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeRocBreakdown();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [closeRocBreakdown, rocBreakdownOpen]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1788,21 +1864,7 @@ export default function Home() {
   const capitalAtRisk = openTrades.reduce((sum, item) => sum + investedCapitalUsd(item.trade, usdJpyRate), 0);
   const openReturnOnCapital = capitalAtRisk > 0 ? openPnl / capitalAtRisk : null;
   const currentRocYear = Number(today().slice(0, 4));
-  const annualRocSummary = useMemo(() => {
-    const completed = closedTrades.filter((item) => item.trade.closeDate?.startsWith(`${currentRocYear}-`)
-      && item.trade.collateral > 0
-      && Number.isFinite(item.pnl)
-      && item.days > 0);
-    const realizedPnl = completed.reduce((sum, item) => sum + item.pnl, 0);
-    const capitalYears = completed.reduce((sum, item) => {
-      const collateralUsd = normalizedUsdAmount(item.trade, item.trade.collateral, usdJpyRate);
-      return sum + collateralUsd * (item.days / 365);
-    }, 0);
-    return {
-      count: completed.length,
-      value: capitalYears > 0 ? realizedPnl / capitalYears : null,
-    };
-  }, [closedTrades, currentRocYear, usdJpyRate]);
+  const annualRocSummary = useMemo(() => buildAnnualRocSummary(closedTrades, currentRocYear, usdJpyRate), [closedTrades, currentRocYear, usdJpyRate]);
 
   const returnSeries = useMemo(() => buildReturnSeries(trades, rangeMode, usdJpyRate), [trades, rangeMode, usdJpyRate]);
   const activeBenchmarks = benchmarks.mode === rangeMode ? benchmarks : { mode: rangeMode, SPY: [], BOXX: [] };
@@ -1916,11 +1978,10 @@ export default function Home() {
       const units = Math.max(.0001, Math.abs(item.trade.quantity));
       const cash = isCashTrade(item.trade);
       const stock = item.trade.type === 'SDI' || item.trade.event === 'STOCK';
-      const multiplier = stock || cash ? 1 : 100;
       group.items.push(item);
       group.marketValue += item.marketValue;
       group.pnl += item.pnl;
-      group.capital += normalizedUsdAmount(item.trade, item.trade.collateral || Math.abs(item.trade.entryPrice * item.trade.quantity * multiplier), usdJpyRate);
+      group.capital += investedCapitalUsd(item.trade, usdJpyRate);
       group.entryWeighted += item.trade.entryPrice * units;
       group.currentWeighted += (item.trade.currentPrice ?? item.trade.entryPrice) * units;
       group.priceWeight += units;
@@ -2251,8 +2312,22 @@ export default function Home() {
         <section className="metric-grid" aria-label="投資組合摘要">
           <article className="metric-card featured"><p>追蹤市值</p><strong>{loading ? '—' : money.format(trackedValue)}</strong><span>{openTrades.length} 筆未平倉持倉</span></article>
           <article className="metric-card"><p>未實現損益</p><strong className={openPnl >= 0 ? 'positive' : 'negative'}>{loading ? '—' : money.format(openPnl)}</strong><span className={`metric-return ${openReturnOnCapital === null ? '' : openReturnOnCapital >= 0 ? 'positive' : 'negative'}`}>{loading ? '計算中…' : openReturnOnCapital === null ? 'ROIC —' : `ROIC ${openReturnOnCapital >= 0 ? '+' : ''}${percent.format(openReturnOnCapital)}`}</span></article>
-          <article className="metric-card"><p>擔保／投入資本</p><strong>{loading ? '—' : money.format(capitalAtRisk)}</strong><span>股票採買入成本；賣方選擇權採擔保金</span></article>
-          <article className="metric-card" title="本年度已實現損益 ÷ 資金占用年數（投入資本 × 持有天數 ÷ 365）"><p>本年度加權年化 ROC</p><strong className={annualRocSummary.value === null ? '' : annualRocSummary.value >= 0 ? 'positive' : 'negative'}>{loading || annualRocSummary.value === null ? '—' : percent.format(annualRocSummary.value)}</strong><span>{currentRocYear} · {annualRocSummary.count} 筆有效平倉交易</span></article>
+          <article className="metric-card"><p>擔保／投入資本</p><strong>{loading ? '—' : money.format(capitalAtRisk)}</strong><span>股票採買入成本；賣方選擇權採擔保金或履約價名目</span></article>
+          <article className={`metric-card metric-card-interactive ${rocBreakdownOpen ? 'is-open' : ''}`}>
+            <p>本年度加權年化 ROC</p>
+            <strong className={annualRocSummary.value === null ? '' : annualRocSummary.value >= 0 ? 'positive' : 'negative'}>{loading || annualRocSummary.value === null ? '—' : precisePercent.format(annualRocSummary.value)}</strong>
+            <span>{currentRocYear} · {annualRocSummary.count} 筆有效平倉交易</span>
+            <button
+              ref={rocTriggerRef}
+              type="button"
+              className="metric-card-action"
+              aria-haspopup="dialog"
+              aria-expanded={rocBreakdownOpen}
+              aria-label={`查看本年度加權年化 ROC 計算明細（${currentRocYear}，${annualRocSummary.count} 筆平倉交易）`}
+              title="本年度已實現損益 ÷ 資金占用年數（投入資本 × 持有天數 ÷ 365）"
+              onClick={() => setRocBreakdownOpen(true)}
+            ><span>查看明細</span></button>
+          </article>
         </section>
 
         {brokerHubEnabled && <Suspense fallback={<section className="broker-hub-loader" id="broker-hub" aria-busy="true"><span /><strong>正在開啟跨券商資產中樞…</strong></section>}>
@@ -2588,6 +2663,7 @@ export default function Home() {
           </form>
         </section>
       </div>}
+      {rocBreakdownOpen && <RocBreakdownDialog summary={annualRocSummary} onClose={closeRocBreakdown} />}
       {dividendAdjustmentCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!dividendAdjusting && event.target === event.currentTarget) setDividendAdjustmentCandidate(null); }}>
         <section className="dividend-adjustment-modal" role="dialog" aria-modal="true" aria-labelledby="dividend-adjustment-title">
           <header><div><p className="eyebrow">Dividend cash</p><h2 id="dividend-adjustment-title">調減股息入帳</h2></div><button type="button" className="close-button" disabled={dividendAdjusting} onClick={() => setDividendAdjustmentCandidate(null)} aria-label="關閉">×</button></header>

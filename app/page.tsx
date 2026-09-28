@@ -21,7 +21,7 @@ import {
 } from '@/lib/performance';
 import type { AnnualRocSummary, CapitalBasis, PriceHistorySeries, RangeMode } from '@/lib/performance';
 import { dateKey, japaneseHolidays, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
-import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, summarizeOptionRisk } from '@/lib/options';
+import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
 import type { TradeColumnId } from '@/lib/trade-columns';
@@ -860,6 +860,7 @@ export default function Home() {
   const [marketSnapshots, setMarketSnapshots] = useState<Record<string, LiveQuote>>({});
   const [failedQuoteTickers, setFailedQuoteTickers] = useState<Set<string>>(new Set());
   const [underlyingQuotes, setUnderlyingQuotes] = useState<Record<string, UnderlyingQuote>>({});
+  const [underlyingFailures, setUnderlyingFailures] = useState<Set<string>>(new Set());
   const [tradeColumnSet, setTradeColumnSet] = useState<TradeColumnId[]>(readStoredTradeColumns);
   const [dividendSettings, setDividendSettings] = useState<DividendSettings>({ enabled: true, usTaxRate: 30, jpTaxRate: 15.315 });
   const [dividendCash, setDividendCash] = useState<DividendCash>({ USD: { gross: 0, tax: 0, adjustment: 0, net: 0, count: 0 }, JPY: { gross: 0, tax: 0, adjustment: 0, net: 0, count: 0 } });
@@ -1271,9 +1272,16 @@ export default function Home() {
       const quote = payload.quote;
       if (!response.ok || !quote || !Number.isFinite(quote.price) || quote.price <= 0) throw new Error(payload.error ?? '暫時無法取得標的報價');
       setUnderlyingQuotes((current) => ({ ...current, [symbol]: { price: quote.price, session: quote.session, marketTime: quote.marketTime, fetchedAt: Date.now() } }));
+      setUnderlyingFailures((current) => {
+        if (!current.has(symbol)) return current;
+        const next = new Set(current);
+        next.delete(symbol);
+        return next;
+      });
     } catch (error) {
       // An aborted request may retry right away; other failures wait a minute and show "—".
       if (error instanceof DOMException && error.name === 'AbortError') underlyingFetchedAtRef.current.delete(symbol);
+      else setUnderlyingFailures((current) => current.has(symbol) ? current : new Set(current).add(symbol));
     }
   }, []);
 
@@ -1648,6 +1656,7 @@ export default function Home() {
     };
   }, [resizingPanels, updatePanelRatio]);
 
+  const todayKey = today();
   const editorMarket: 'US' | 'JP' = editor?.market ?? (editor?.ticker === 'JPY' || isJapaneseTicker(editor?.ticker) ? 'JP' : 'US');
   const editorCurrencySymbol = editorMarket === 'JP' ? '¥' : '$';
   const tickerQuery = editor?.ticker?.trim() ?? '';
@@ -1658,6 +1667,43 @@ export default function Home() {
   const editorPriceMoney = (value: number) => editorMarket === 'JP' ? yenMoney.format(value) : money.format(value);
   const editorPreviewTrade = editor ? { ...editor, ticker: editorDisplayTicker, market: editorMarket } : null;
   const editorPreviewMetrics = editorPreviewTrade ? metrics(editorPreviewTrade, usdJpyRate) : null;
+  // Option helpers in the editor: the underlying's latest quote (shared with the table's cache),
+  // strike shortcuts around it, the short-put collateral and a live option summary.
+  const editorOptionRight = editor && editorMarket === 'US' ? optionRightOf({ ...editor, market: editorMarket }) : null;
+  const editorUnderlyingSymbol = editorOptionRight ? underlyingSymbolOf(editor?.ticker) : '';
+  const editorUnderlyingQuote = editorUnderlyingSymbol ? underlyingQuotes[editorUnderlyingSymbol] ?? null : null;
+  const editorOption = (() => {
+    if (!editor || !editorOptionRight) return null;
+    const quantity = Math.abs(editor.quantity) || 0;
+    const strike = parseStrike(editor.strike);
+    const direction: 1 | -1 = isShortTrade(editor) ? -1 : 1;
+    // Premium per share net of fees: less credit for a seller, more cost for a buyer.
+    const feesPerShare = quantity > 0 ? editor.fees / (100 * quantity) : 0;
+    const netPremium = direction < 0 ? editor.entryPrice - feesPerShare : editor.entryPrice + feesPerShare;
+    const breakeven = strike === null ? null : editorOptionRight === 'put' ? strike - netPremium : strike + netPremium;
+    const maxProfit = direction < 0
+      ? editor.entryPrice * 100 * quantity - editor.fees
+      : editorOptionRight === 'put' && strike !== null ? (strike - editor.entryPrice) * 100 * quantity - editor.fees : null;
+    const dte = daysToExpiry(editor.expiryDate, todayKey);
+    const daysOpenToExpiry = calendarDaysBetween(editor.openDate, editor.expiryDate);
+    const capital = capitalBase(editor);
+    const annualIfWorthless = direction < 0 && daysOpenToExpiry !== null && daysOpenToExpiry >= 0 && capital.amount > 0
+      ? maxProfit! / capital.amount * 365 / Math.max(1, daysOpenToExpiry)
+      : null;
+    const useCurrentPrice = editor.status === 'open' && editor.currentPrice !== null && editor.currentPrice > 0;
+    const optionPrice = useCurrentPrice ? editor.currentPrice : editor.entryPrice > 0 ? editor.entryPrice : null;
+    const analytics = strike !== null && dte !== null && editorUnderlyingQuote
+      ? analyzeOptionPosition({ right: editorOptionRight, direction, quantity, strike, daysToExpiry: dte, optionPrice, underlyingPrice: editorUnderlyingQuote.price })
+      : null;
+    const autoCollateral = direction < 0 && editorOptionRight === 'put' && strike !== null && quantity > 0 ? Number((strike * 100 * quantity).toFixed(2)) : null;
+    return { right: editorOptionRight, direction, strike, breakeven, maxProfit, dte, daysOpenToExpiry, capital, annualIfWorthless, optionPrice, useCurrentPrice, analytics, autoCollateral };
+  })();
+  useEffect(() => {
+    if (!editorUnderlyingSymbol) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => void loadUnderlyingQuote(editorUnderlyingSymbol, controller.signal), 350);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [editorUnderlyingSymbol, loadUnderlyingQuote]);
   useEffect(() => {
     if (!symbolFocused || !tickerQuery || editor?.type === 'CASH') {
       const clearResults = window.setTimeout(() => {
@@ -1820,7 +1866,6 @@ export default function Home() {
   const trackedValue = openTrades.reduce((sum, item) => sum + item.marketValue, 0);
   const capitalAtRisk = openTrades.reduce((sum, item) => sum + investedCapitalUsd(item.trade, usdJpyRate), 0);
   const openReturnOnCapital = capitalAtRisk > 0 ? openPnl / capitalAtRisk : null;
-  const todayKey = today();
   // Moneyness, implied volatility and position greeks of every open US option with a known underlying price.
   const optionRows = useMemo(() => {
     const rows = new Map<number, OptionRowAnalytics>();
@@ -2637,6 +2682,10 @@ export default function Home() {
                       ['CASH', '現金', 'USD／JPY 餘額'],
                     ] as const).map(([type, label, description]) => <button key={type} type="button" disabled={editorMarket === 'JP' && type !== 'SDI' && type !== 'CASH'} className={editor.type === type ? 'active' : ''} onClick={() => setEditor({ ...editor, type, ticker: type === 'CASH' ? (editorMarket === 'JP' ? 'JPY' : 'USD') : editor.ticker === 'USD' || editor.ticker === 'JPY' ? '' : editor.ticker, event: type === 'CASH' ? 'CASH' : type === 'SDI' ? 'STOCK' : editor.event === 'CASH' ? 'PUT' : editor.event, entryPrice: type === 'CASH' ? 1 : editor.entryPrice, currentPrice: type === 'CASH' ? 1 : editor.currentPrice, fees: type === 'CASH' ? 0 : editor.fees, quoteMode: type === 'SDI' ? 'auto' : 'manual' })}><i>{type === 'Sell' ? '↓' : type === 'Buy' ? '↑' : type === 'Ass' ? '↳' : type === 'CASH' ? '$' : '◇'}</i><span><strong>{label}</strong><small>{description}</small></span></button>)}
                   </div></fieldset>
+                  {editorMarket === 'US' && <div className="strategy-shortcuts" role="group" aria-label="選擇權快速策略"><span>快速策略</span>{([['Sell', 'PUT', '賣 PUT'], ['Sell', 'CALL', '賣 CALL'], ['Buy', 'PUT', '買 PUT'], ['Buy', 'CALL', '買 CALL']] as const).map(([type, event, text]) => {
+                    const selected = editor.type === type && editor.event === event;
+                    return <button type="button" key={text} className={`${type === 'Sell' ? 'is-sell' : 'is-buy'} ${selected ? 'active' : ''}`} aria-pressed={selected} onClick={() => setEditor((current) => current ? { ...current, type, event, ticker: current.ticker === 'USD' || current.ticker === 'JPY' ? '' : current.ticker, quoteMode: 'manual' } : current)}>{text}</button>;
+                  })}</div>}
                   <div className="form-grid">
                     <label className="ticker-search-field">{editor.type === 'CASH' ? '幣別' : 'Ticker'}
                       <span className="ticker-input-shell">
@@ -2680,6 +2729,14 @@ export default function Home() {
                     <label>策略／事件<input required readOnly={editor.type === 'CASH'} value={editor.type === 'CASH' ? 'CASH' : editor.event} onChange={(event) => setEditor({ ...editor, event: event.target.value.toUpperCase() })} placeholder="PUT / CALL / STOCK" /></label>
                     <label>履約價／組合<input readOnly={editor.type === 'CASH'} value={editor.type === 'CASH' ? '不適用' : editor.strike ?? ''} onChange={(event) => setEditor({ ...editor, strike: event.target.value })} placeholder="70 或 185/180" /></label>
                   </div>
+                  {editorOption && <div className="strike-chip-row">
+                    <span className="strike-chip-label" aria-live="polite">{editorUnderlyingQuote ? <>履約價快選<b>{`${editorUnderlyingSymbol} ${quoteSessionLabel(editorUnderlyingQuote.session)} ${money.format(editorUnderlyingQuote.price)}`}</b></> : editorUnderlyingSymbol ? underlyingFailures.has(editorUnderlyingSymbol) ? `暫時無法取得 ${editorUnderlyingSymbol} 報價，請直接輸入履約價` : `正在讀取 ${editorUnderlyingSymbol} 報價…` : '輸入 Ticker 後會顯示現價附近的履約價'}</span>
+                    {editorUnderlyingQuote && <div className="strike-chips" role="group" aria-label="現價附近的履約價">{strikeChoices(editorUnderlyingQuote.price).map(({ strike, offset }) => {
+                      const selected = editorOption.strike === strike;
+                      const outOfTheMoney = editorOption.right === 'put' ? offset < 0 : offset > 0;
+                      return <button type="button" key={strike} className={`${outOfTheMoney ? 'is-otm' : ''} ${selected ? 'active' : ''}`} aria-pressed={selected} title={`${offset === 0 ? '價平' : `現價 ${signedPercent(offset)}`}${outOfTheMoney ? '（價外）' : ''}`} onClick={() => setEditor((current) => current ? { ...current, strike: String(strike) } : current)}>{quantityNumber.format(strike)}<small>{offset === 0 ? 'ATM' : signedPercent(offset)}</small></button>;
+                    })}</div>}
+                  </div>}
                 </section>
 
                 <section className="editor-section">
@@ -2701,6 +2758,12 @@ export default function Home() {
                     <label>手續費<div className="money-input"><span>{editorCurrencySymbol}</span><input min="0" step="0.01" type="number" value={editor.fees} onChange={(event) => setEditor({ ...editor, fees: Number(event.target.value) })} /></div></label>
                     <label>擔保／投入資本<div className="money-input"><span>{editorCurrencySymbol}</span><input min="0" step="0.01" type="number" value={editor.collateral} onChange={(event) => setEditor({ ...editor, collateral: Number(event.target.value) })} /></div></label>
                   </div>
+                  {editorOption?.autoCollateral != null && <div className="collateral-helper">
+                    <span>{`賣出 PUT 擔保：履約價 ${quantityNumber.format(editorOption.strike ?? 0)} × 100 × ${quantityNumber.format(Math.abs(editor.quantity))} 口 = `}<b>{money.format(editorOption.autoCollateral)}</b></span>
+                    {editor.collateral === editorOption.autoCollateral
+                      ? <em>已套用</em>
+                      : <button type="button" onClick={() => { const collateral = editorOption.autoCollateral!; setEditor((current) => current ? { ...current, collateral } : current); }}>自動填入擔保</button>}
+                  </div>}
                   <div className="editor-choice-row">
                     {editor.type === 'SDI' && <fieldset className="choice-field compact-choice"><legend>報價方式</legend><div><button type="button" disabled={editor.status === 'closed'} className={editor.quoteMode === 'auto' ? 'active' : ''} onClick={() => { setEditor({ ...editor, quoteMode: 'auto' }); setEditorQuoteRetry((current) => current + 1); }}>自動更新</button><button type="button" className={editor.quoteMode === 'manual' ? 'active' : ''} onClick={() => setEditor({ ...editor, quoteMode: 'manual' })}>手動輸入</button></div></fieldset>}
                     <fieldset className="choice-field compact-choice"><legend>持倉狀態</legend><div><button type="button" className={editor.status === 'open' ? 'active' : ''} onClick={() => setEditor({ ...editor, status: 'open', closeDate: null })}>未平倉</button><button type="button" className={editor.status === 'closed' ? 'active' : ''} onClick={() => setEditor({ ...editor, status: 'closed', closeDate: editor.closeDate ?? today(), quoteMode: editor.type === 'SDI' ? 'manual' : editor.quoteMode })}>已平倉</button></div></fieldset>
@@ -2716,6 +2779,22 @@ export default function Home() {
                    <div className="summary-price-pair">{editor.type === 'CASH' ? <><div><span>原幣餘額</span><strong>{editorPriceMoney(editor.quantity)}</strong></div><div><span>組合換算 USD</span><strong>{money.format(editorPreviewMetrics?.marketValue ?? 0)}</strong></div></> : <><div><span>買入／成交價</span><strong>{editorPriceMoney(editor.entryPrice)}</strong></div><div><span>目前價格</span><strong>{editor.currentPrice === null ? '尚未設定' : editorPriceMoney(editor.currentPrice)}</strong></div></>}</div>
                    <div className="summary-result"><span>{editor.type === 'CASH' ? '納入組合價值（USD）' : '即時計算損益（USD）'}</span><strong className={editor.type === 'CASH' ? '' : (editorPreviewMetrics?.pnl ?? 0) >= 0 ? 'positive' : 'negative'}>{money.format(editor.type === 'CASH' ? editorPreviewMetrics?.marketValue ?? 0 : editorPreviewMetrics?.pnl ?? 0)}</strong></div>
                    <dl>{editor.type === 'CASH' ? <><div><dt>幣別</dt><dd>{editorDisplayTicker}</dd></div><div><dt>狀態</dt><dd>可用現金</dd></div><div><dt>報價</dt><dd>不需股票 API</dd></div></> : <><div><dt>ROC</dt><dd className={(editorPreviewMetrics?.roc ?? 0) >= 0 ? 'positive' : 'negative'}>{percent.format(editorPreviewMetrics?.roc ?? 0)}</dd></div><div><dt>持有天數</dt><dd>{editorPreviewMetrics?.days || 0} 天</dd></div><div><dt>狀態</dt><dd>{editor.status === 'open' ? '未平倉' : '已平倉'}</dd></div><div><dt>報價</dt><dd>{editorQuoteLoading ? '讀取中…' : editor.quoteMode === 'auto' && editorQuote?.ticker === editorAutoQuoteTicker ? `${quoteSessionLabel(editorQuote.session)} ${nativeMoney(editorAutoQuoteTicker, editorQuote.price)}` : editor.quoteMode === 'auto' ? '自動更新' : '手動價格'}</dd></div></>}</dl>
+                  {editorOption && <div className="option-summary">
+                    <p className="eyebrow">Option analytics</p>
+                    <dl>
+                      <div><dt>損益兩平</dt><dd title="履約價 ∓ 每股權利金（已計入手續費）">{editorOption.breakeven === null ? '—' : money.format(editorOption.breakeven)}</dd></div>
+                      <div><dt>最大獲利</dt><dd className={editorOption.maxProfit === null ? '' : editorOption.maxProfit >= 0 ? 'positive' : 'negative'} title={editorOption.direction < 0 ? '權利金 × 100 × 口數 − 手續費' : undefined}>{editorOption.maxProfit === null ? editorOption.right === 'call' ? '無上限' : '—' : money.format(editorOption.maxProfit)}</dd></div>
+                      {editorOption.direction < 0 && <div><dt>若到期歸零的年化報酬</dt><dd className={editorOption.annualIfWorthless === null ? '' : editorOption.annualIfWorthless >= 0 ? 'positive' : 'negative'} title={editorOption.daysOpenToExpiry === null ? '需要到期日' : `最大獲利 ÷ ${capitalBasisLabels[editorOption.capital.basis]} ${money.format(editorOption.capital.amount)} × 365 ÷ ${Math.max(1, editorOption.daysOpenToExpiry)} 天（開倉至到期）`}>{cappedAnnualized(editorOption.annualIfWorthless)}</dd></div>}
+                      <div><dt>到期天數（DTE）</dt><dd>{editorOption.dte === null ? '未填到期日' : `${editorOption.dte} 天`}</dd></div>
+                      <div><dt>隱含波動率</dt><dd>{editorOption.analytics?.impliedVol == null ? '—' : percent.format(editorOption.analytics.impliedVol)}</dd></div>
+                      <div><dt>Delta</dt><dd>{editorOption.analytics?.greeks && editorOption.analytics.positionDelta !== null ? `${editorOption.analytics.greeks.delta.toFixed(2).replace('-', '−')} · ${signedDecimal(editorOption.analytics.positionDelta)} 股` : '—'}</dd></div>
+                    </dl>
+                    <p className="option-summary-note">{!editorUnderlyingQuote
+                      ? '取得標的報價後顯示隱含波動率與 Delta。'
+                      : editorOption.strike === null || editorOption.dte === null
+                        ? '填入單一履約價與到期日後計算隱含波動率與 Delta。'
+                        : `依${editorOption.useCurrentPrice ? '目前價格' : '成交價'} ${editorOption.optionPrice === null ? '—' : money.format(editorOption.optionPrice)} 與標的 ${money.format(editorUnderlyingQuote.price)} 以 Black–Scholes（r = 4.3%）反推。`}</p>
+                  </div>}
                   <p className="summary-tip"><i>✓</i> 所有欄位可隨時回來修改，儲存後會同步更新圖表與持倉配置。</p>
                 </div>
               </aside>

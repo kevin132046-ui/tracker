@@ -27,6 +27,7 @@ import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStore
 import type { TradeColumnId } from '@/lib/trade-columns';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
+import DatePicker from '@/components/DatePicker';
 import TradeColumnPicker from '@/components/TradeColumnPicker';
 
 type Trade = {
@@ -2684,9 +2685,9 @@ export default function Home() {
                 <section className="editor-section">
                   <div className="editor-section-heading"><span>02</span><div><h3>{editor.type === 'CASH' ? '現金餘額' : '合約期間'}</h3><p>{editor.type === 'CASH' ? '記錄日期與目前可用現金；之後可隨時編輯或刪除。' : '設定日期與口數；填入平倉日會自動切換狀態。'}</p></div></div>
                   <div className="form-grid date-fields">
-                    <label>開倉日<input required type="date" value={editor.openDate} onChange={(event) => setEditor({ ...editor, openDate: event.target.value })} /></label>
-                    {editor.type !== 'CASH' && <label>到期日<input type="date" value={editor.expiryDate ?? ''} onChange={(event) => setEditor({ ...editor, expiryDate: event.target.value || null })} /></label>}
-                    {editor.type !== 'CASH' && <label>平倉日<input type="date" value={editor.closeDate ?? ''} onChange={(event) => setEditor({ ...editor, closeDate: event.target.value || null, status: event.target.value ? 'closed' : 'open' })} /></label>}
+                    <DatePicker label="開倉日" kind="open" required value={editor.openDate} todayKey={todayKey} market={editorMarket} onChange={(value) => setEditor((current) => current ? { ...current, openDate: value } : current)} />
+                    {editor.type !== 'CASH' && <DatePicker label="到期日" kind="expiry" value={editor.expiryDate ?? ''} todayKey={todayKey} market={editorMarket} referenceDate={editor.openDate} onChange={(value) => setEditor((current) => current ? { ...current, expiryDate: value || null } : current)} />}
+                    {editor.type !== 'CASH' && <DatePicker label="平倉日" kind="close" value={editor.closeDate ?? ''} todayKey={todayKey} market={editorMarket} min={editor.openDate} expiryDate={editor.expiryDate} onChange={(value) => setEditor((current) => current ? { ...current, closeDate: value || null, status: value ? 'closed' : 'open' } : current)} />}
                     <label>{editor.type === 'CASH' ? '現金餘額' : '數量'}<input min="0" step="0.01" type="number" value={editor.quantity} onChange={(event) => setEditor({ ...editor, quantity: Number(event.target.value), collateral: editor.type === 'CASH' ? Number(event.target.value) : editor.collateral })} /></label>
                   </div>
                 </section>

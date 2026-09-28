@@ -626,3 +626,64 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
   .option-risk-strip dl { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .option-risk-strip dd strong { font-size: 17px; }
 }
+
+/* Trader tools: calendar date picker in the trade editor. */
+.form-grid.date-fields { align-items: start; }
+.date-picker { position: relative; min-width: 0; }
+.date-picker-control { position: relative; display: block; }
+.form-grid .date-picker-control input { padding-right: 50px; }
+.date-picker-control input::-webkit-calendar-picker-indicator { display: none; }
+.date-picker-trigger { position: absolute; top: 50%; right: 7px; width: 36px; height: 36px; display: grid; place-items: center; margin-top: -18px; padding: 0; color: #4d6fae; background: #eef4fd; border: 1px solid #d9e6f8; border-radius: 9px; cursor: pointer; }
+.date-picker-trigger:hover, .date-picker.is-open .date-picker-trigger { color: #fff; background: var(--blue); border-color: var(--blue); }
+.date-picker-trigger svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.date-picker-trigger svg circle { fill: currentColor; stroke: none; }
+.field-label-row > small.is-warning { color: #8a5b14; background: #fff4de; }
+.date-picker-popover { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: 318px; max-width: calc(100vw - 28px); display: grid; gap: 10px; padding: 12px; color: #1b2b46; background: #fff; border: 1px solid #d9e3f0; border-radius: 14px; box-shadow: 0 18px 45px rgba(12,35,70,.2); font-size: 13px; font-weight: 700; letter-spacing: 0; }
+.date-picker-popover.align-right { right: 0; left: auto; }
+.date-picker-head { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; gap: 6px; text-align: center; }
+.date-picker-head strong { color: #17243d; font-size: 15px; font-weight: 900; }
+.date-picker-nav { height: 34px; padding: 0; color: #4d6fae; background: #f0f3f7; border: 0; border-radius: 9px; font-size: 20px; line-height: 1; cursor: pointer; }
+.date-picker-nav:hover { color: #fff; background: var(--blue); }
+.date-picker-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.date-picker-chips button { min-height: 32px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; color: #315a99; background: #f5f8fd; border: 1px solid #dbe6f6; border-radius: 999px; font-size: 12px; font-weight: 850; cursor: pointer; }
+.date-picker-chips button small { color: #7d8ba0; font-size: 10px; font-weight: 800; }
+.date-picker-chips button:hover { border-color: #9dbbee; }
+.date-picker-chips button.active { color: #fff; background: var(--blue); border-color: var(--blue); }
+.date-picker-chips button.active small { color: rgba(255,255,255,.85); }
+.date-picker-chips button:disabled { opacity: .45; cursor: not-allowed; }
+.date-picker-grid { display: grid; gap: 2px; }
+.date-picker-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.date-picker-row > span { min-width: 0; display: grid; }
+.date-picker-weekday { padding: 3px 0; color: #7d8ba0; font-size: 11px; font-weight: 850; text-align: center; }
+.date-picker-weekday.is-weekend { color: #aab5c4; }
+.date-picker-day { position: relative; min-height: 38px; padding: 0; color: #1e2f4b; background: transparent; border: 1px solid transparent; border-radius: 9px; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; cursor: pointer; }
+.date-picker-day:hover { background: #eef4fd; }
+.date-picker-day.is-outside { color: #b3bdcb; }
+.date-picker-day.is-weekend { color: #8a97aa; background: #f4f6f9; }
+.date-picker-day.is-us-holiday, .date-picker-day.is-jp-holiday { background: #fdf2ef; }
+.date-picker-day.is-us-holiday::after, .date-picker-day.is-jp-holiday::before { content: ''; position: absolute; bottom: 4px; left: calc(50% - 2.5px); width: 5px; height: 5px; border-radius: 50%; }
+.date-picker-day.is-us-holiday::after { background: #d84f61; }
+.date-picker-day.is-jp-holiday::before { background: #b9781f; }
+.date-picker-day.is-us-holiday.is-jp-holiday::after { left: calc(50% - 6px); }
+.date-picker-day.is-us-holiday.is-jp-holiday::before { left: calc(50% + 1px); }
+.date-picker-day.is-friday { color: #205fc9; }
+.date-picker-day.is-monthly { background: #eef4fd; border-color: #9dbbee; }
+.date-picker-day.is-monthly::after { content: '月'; position: absolute; top: 1px; right: 3px; color: #2f73ed; font-size: 8.5px; font-weight: 900; line-height: 1.2; }
+.date-picker-day.is-today { box-shadow: inset 0 0 0 2px #7aa6f2; }
+.date-picker-day.is-selected { color: #fff; background: var(--blue); border-color: var(--blue); }
+.date-picker-day.is-selected::after { color: #fff; }
+.date-picker-day[aria-disabled='true'] { opacity: .35; cursor: not-allowed; }
+.date-picker-day:focus-visible { z-index: 1; outline: 3px solid rgba(47,115,237,.4); outline-offset: 1px; }
+.date-picker-info { min-height: 18px; margin: 0; color: #5f718d; font-size: 11.5px; font-weight: 750; line-height: 1.5; }
+.date-picker-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #edf0f5; }
+.date-picker-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; color: #8190a6; font-size: 10.5px; font-weight: 750; }
+.date-picker-legend i { width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; }
+.date-picker-legend i:first-child { margin-left: 0; }
+.date-picker-legend i.us { background: #d84f61; }
+.date-picker-legend i.jp { background: #b9781f; }
+.date-picker-legend i.monthly { width: 9px; height: 9px; background: #eef4fd; border: 1px solid #9dbbee; border-radius: 3px; }
+.date-picker-foot button { min-height: 30px; padding: 0 10px; color: #b83b50; background: #fff3f5; border: 1px solid #f6d7dd; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer; }
+@media (max-width: 460px) {
+  .date-picker-popover { width: 100%; max-width: none; }
+  .date-picker-day { min-height: 40px; }
+}

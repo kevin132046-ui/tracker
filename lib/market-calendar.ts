@@ -212,3 +212,40 @@ export function upcomingExpiries(afterKey: string, count = 4): { weekly: ExpiryC
   }
   return { weekly, monthly: { key, monthly: true, holidayAdjusted: key !== thirdFriday(year, month) } };
 }
+
+/* ------------------------------------------------------------------ */
+/* Upcoming closures (holiday notice)                                  */
+/* ------------------------------------------------------------------ */
+
+/** NYSE / Nasdaq 1:00 p.m. ET early close on that day, if any. */
+export function usEarlyCloseName(key: string) {
+  const date = parseDateKey(key);
+  if (!date || isWeekendKey(key) || usHolidayName(key)) return null;
+  const { year, month, day } = date;
+  // July 3 closes early when Independence Day falls Tuesday–Friday (July 3 is Monday–Thursday).
+  if (month === 7 && day === 3 && weekday(date) <= 4) return '美國獨立日前夕';
+  if (month === 11 && day === nthWeekday(year, 11, 4, 4) + 1) return '感恩節翌日';
+  if (month === 12 && day === 24) return '平安夜';
+  return null;
+}
+
+export type UpcomingClosure = { market: CalendarMarket; key: string; name: string; kind: 'closed' | 'early'; daysAway: number };
+
+/**
+ * Exchange closures and US early closes in the `days` calendar days after `fromKey` (the market's
+ * own local date). Weekends are skipped. Today's full-day closure is left out because the header
+ * already shows it, but today's early close is included.
+ */
+export function upcomingClosures(market: CalendarMarket, fromKey: string, days = 7): UpcomingClosure[] {
+  if (!parseDateKey(fromKey)) return [];
+  const closures: UpcomingClosure[] = [];
+  for (let offset = 0; offset <= days; offset += 1) {
+    const key = addDaysToKey(fromKey, offset);
+    if (isWeekendKey(key)) continue;
+    const holiday = offset > 0 ? (market === 'US' ? usHolidayName(key) : japanHolidayName(key)) : null;
+    if (holiday) closures.push({ market, key, name: holiday, kind: 'closed', daysAway: offset });
+    const early = market === 'US' ? usEarlyCloseName(key) : null;
+    if (early) closures.push({ market, key, name: early, kind: 'early', daysAway: offset });
+  }
+  return closures;
+}

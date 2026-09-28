@@ -20,7 +20,8 @@ import {
   timeWeightedReturnSeries,
 } from '@/lib/performance';
 import type { AnnualRocSummary, CapitalBasis, PriceHistorySeries, RangeMode } from '@/lib/performance';
-import { dateKey, japaneseHolidays, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
+import { addDaysToKey, dateKey, japaneseHolidays, parseDateKey, upcomingClosures, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
+import type { UpcomingClosure } from '@/lib/market-calendar';
 import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
@@ -173,6 +174,8 @@ const backgroundModeKey = 'optionflow-background-mode';
 const backgroundPendingKey = 'optionflow-pending-background';
 const backgroundPendingModeKey = 'optionflow-pending-background-mode';
 const usdJpyRateKey = 'optionflow-usdjpy-rate';
+const holidayNoticeKey = 'optionflow-holiday-notice';
+const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
 const usdJpyUpdatedAtKey = 'optionflow-usdjpy-updated-at';
 const macroMarketStorageKey = 'optionflow-macro-markets-v2';
 const localBackgroundPattern = /^data:image\/jpeg;base64,/i;
@@ -579,6 +582,67 @@ const HeaderMarketCalendar = memo(function HeaderMarketCalendar() {
   </div>;
 });
 
+const closureWeekdays = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+const closureId = (closure: UpcomingClosure) => `${closure.market}:${closure.key}:${closure.kind}`;
+const closureLabel = (closure: UpcomingClosure) => closure.kind === 'early' ? '美股提前收盤' : closure.market === 'US' ? '美股休市' : '日股休市';
+const closureWhen = (closure: UpcomingClosure) => {
+  const date = parseDateKey(closure.key)!;
+  const distance = closure.daysAway === 0 ? '今天' : `${closure.daysAway} 天後`;
+  return `${date.month}/${date.day} ${closureWeekdays[weekday(date)]} · ${distance}`;
+};
+
+function readDismissedClosures() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(holidayNoticeDismissedKey) ?? '[]');
+    return Array.isArray(stored) ? stored.filter((value): value is string => typeof value === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+// US and Japanese closures in the coming week, plus US early closes. Hidden when there are none,
+// when every one shown has been dismissed, or when the notice is switched off in settings.
+const HolidayNotice = memo(function HolidayNotice({ enabled }: { enabled: boolean }) {
+  const [timestamp, setTimestamp] = useState<number | null>(null);
+  const [dismissed, setDismissed] = useState<string[] | null>(null);
+  useEffect(() => {
+    const update = () => setTimestamp(Date.now());
+    queueMicrotask(() => {
+      update();
+      setDismissed(readDismissedClosures());
+    });
+    const timer = window.setInterval(update, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const closures = useMemo(() => {
+    if (timestamp === null) return [];
+    return [
+      ...upcomingClosures('US', zonedDateKey(zonedDate(timestamp, 'America/New_York'))),
+      ...upcomingClosures('JP', zonedDateKey(zonedDate(timestamp, 'Asia/Tokyo'))),
+    ].sort((a, b) => a.key.localeCompare(b.key) || a.market.localeCompare(b.market));
+  }, [timestamp]);
+  if (!enabled || dismissed === null || !closures.length || closures.every((closure) => dismissed.includes(closureId(closure)))) return null;
+  const dismiss = () => {
+    const current = closures.map(closureId);
+    // Keep only ids that can still come up, so the stored list stays small.
+    const today = zonedDateKey(zonedDate(Date.now(), 'Asia/Tokyo'));
+    const next = [...new Set([...dismissed.filter((id) => id.split(':')[1] >= addDaysToKey(today, -2)), ...current])];
+    setDismissed(next);
+    try { window.localStorage.setItem(holidayNoticeDismissedKey, JSON.stringify(next)); } catch { /* storage unavailable: hide for this visit only */ }
+  };
+  return <div className="holiday-notice" role="status">
+    <strong>休市預告</strong>
+    <ul>
+      {closures.map((closure) => <li key={closureId(closure)} className={`holiday-notice-item is-${closure.market.toLowerCase()} ${closure.kind === 'early' ? 'is-early' : ''}`}>
+        <b>{closureLabel(closure)}</b>
+        <span>{closure.name}{closure.kind === 'early' ? ' · 13:00 ET' : ''}</span>
+        <small>{closureWhen(closure)}</small>
+      </li>)}
+    </ul>
+    <button type="button" className="holiday-notice-close" onClick={dismiss} aria-label="關閉休市預告">×</button>
+  </div>;
+});
+
 function chartBounds(values: Array<number | null>, includeZero = false, paddingRatio = .1) {
   const valid = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
   if (!valid.length) return { min: 0, max: 1 };
@@ -846,6 +910,7 @@ export default function Home() {
   const [valuationOpen, setValuationOpen] = useState(false);
   const [valuationTicker, setValuationTicker] = useState('MSFT');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [holidayNoticeEnabled, setHolidayNoticeEnabled] = useState(true);
   const [brokerHubEnabled, setBrokerHubEnabled] = useState(false);
   const [brokerHubLoading, setBrokerHubLoading] = useState(true);
   const [brokerHubToggleSaving, setBrokerHubToggleSaving] = useState(false);
@@ -1022,6 +1087,19 @@ export default function Home() {
   const openBrokerHub = useCallback(() => {
     setSettingsOpen(false);
     window.requestAnimationFrame(() => document.getElementById('broker-hub')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(holidayNoticeKey) === 'off') queueMicrotask(() => setHolidayNoticeEnabled(false));
+    } catch { /* storage unavailable: keep the default */ }
+  }, []);
+
+  const toggleHolidayNotice = useCallback(() => {
+    setHolidayNoticeEnabled((current) => {
+      try { window.localStorage.setItem(holidayNoticeKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
   }, []);
 
   const toggleBrokerHub = useCallback(async () => {
@@ -2439,6 +2517,7 @@ export default function Home() {
           <button className="primary-button" type="button" onClick={() => setEditor(blankTrade())}>＋新增交易</button>
         </div>
       </header>
+      <HolidayNotice enabled={holidayNoticeEnabled} />
 
       <div className="page-frame">
         <nav className="side-nav" aria-label="頁面切換">
@@ -2687,6 +2766,14 @@ export default function Home() {
               <div className="dividend-cash-preview"><div><span>USD 稅後股息現金</span><strong>{money.format(dividendCash.USD.net)}</strong><small>{dividendCash.USD.count} 筆事件 · 預扣 {money.format(dividendCash.USD.tax)}{dividendCash.USD.adjustment > 0 ? ` · 手動調減 ${money.format(dividendCash.USD.adjustment)}` : ''}</small></div><div><span>JPY 稅後股息現金</span><strong>{yenMoney.format(dividendCash.JPY.net)}</strong><small>{dividendCash.JPY.count} 筆事件 · 預扣 {yenMoney.format(dividendCash.JPY.tax)}{dividendCash.JPY.adjustment > 0 ? ` · 手動調減 ${yenMoney.format(dividendCash.JPY.adjustment)}` : ''}</small></div></div>
               {dividendError && <p className="dividend-settings-error">{dividendError}</p>}
               <div className="settings-feature-actions dividend-settings-actions"><span>{dividendUpdatedAt ? `最近計算 ${new Intl.DateTimeFormat('zh-TW', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(dividendUpdatedAt))}` : '開啟後會依現有股票持倉自動試算；僅供追蹤，不是稅務建議。'}</span><div>{dividendAdjustmentCount > 0 && <button type="button" className="dividend-save-button restore" disabled={dividendSaving} onClick={resetDividendAdjustments}>還原 {dividendAdjustmentCount} 筆調整</button>}<button type="button" className="dividend-save-button" disabled={dividendSaving} onClick={() => persistDividendSettings(dividendSettings)}>{dividendSaving ? '保存中…' : '保存稅率'}</button><button type="button" className={`settings-toggle ${dividendSettings.enabled ? 'is-on' : ''}`} role="switch" aria-checked={dividendSettings.enabled} disabled={dividendSaving} onClick={() => persistDividendSettings({ ...dividendSettings, enabled: !dividendSettings.enabled })}><i /><b>{dividendSettings.enabled ? '開啟' : '關閉'}</b></button></div></div>
+            </section>
+            <section className={`settings-feature-card holiday-notice-settings-card ${holidayNoticeEnabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon holiday" aria-hidden="true">休</span><div><p>Market calendar</p><h3>美日休市預告</h3></div><span className="settings-feature-status">{holidayNoticeEnabled ? '已開啟' : '已關閉'}</span></div>
+              <p>未來 7 天內有美股或日股休市、或美股提前收盤（13:00 ET）時，在頁首下方顯示一行提示。</p>
+              <div className="settings-feature-actions">
+                <span>按提示右側的 × 只會隱藏目前這幾天；設定保存在這個瀏覽器。</span>
+                <button type="button" className={`settings-toggle ${holidayNoticeEnabled ? 'is-on' : ''}`} role="switch" aria-checked={holidayNoticeEnabled} onClick={toggleHolidayNotice}><i /><b>{holidayNoticeEnabled ? '開啟' : '關閉'}</b></button>
+              </div>
             </section>
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
           </div>

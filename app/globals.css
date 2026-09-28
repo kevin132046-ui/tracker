@@ -785,3 +785,26 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
   .import-status { flex-basis: 100%; }
   .import-footer button { flex: 1; }
 }
+
+/* Holiday notice: one dismissible line under the header, only when a closure is within a week. */
+.holiday-notice { width: min(1760px, calc(100% - 24px)); margin: 12px auto -4px; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 14px; color: #4e4841; background: #f7f3ee; border: 1px solid #e5ddd3; border-radius: 12px; box-shadow: 0 6px 18px rgba(65,57,49,.06); font-size: 12px; }
+.holiday-notice > strong { flex: none; color: #6d6862; font-size: 11px; font-weight: 900; letter-spacing: .04em; }
+.holiday-notice ul { min-width: 0; flex: 1; display: flex; gap: 6px; margin: 0; padding: 0; overflow-x: auto; list-style: none; scrollbar-width: none; }
+.holiday-notice ul::-webkit-scrollbar { display: none; }
+.holiday-notice-item { flex: none; display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 10px; background: white; border: 1px solid #e8e1d8; border-radius: 999px; white-space: nowrap; }
+.holiday-notice-item b { font-size: 11px; font-weight: 850; }
+.holiday-notice-item.is-us b { color: #2d5ea8; }
+.holiday-notice-item.is-jp b { color: #a8412d; }
+.holiday-notice-item.is-early b { color: #8a6414; }
+.holiday-notice-item span { font-weight: 750; }
+.holiday-notice-item small { color: #8b837a; font-size: 10.5px; font-weight: 700; }
+.holiday-notice-close { flex: none; width: 28px; height: 28px; display: grid; place-items: center; color: #8b837a; background: transparent; border: 0; border-radius: 8px; font-size: 17px; line-height: 1; cursor: pointer; }
+.holiday-notice-close:hover { color: #4e4841; background: #ece5dc; }
+.holiday-notice-close:focus-visible { outline: 2px solid #999188; outline-offset: 1px; }
+.settings-feature-icon.holiday { background: linear-gradient(145deg, #b88a5e, #8c6440); box-shadow: 0 8px 18px rgba(110,78,48,.18); font-size: 18px; }
+@media (max-width: 720px) {
+  .holiday-notice { width: min(100% - 20px, 1760px); margin-top: 10px; gap: 8px; padding: 6px 4px 6px 10px; font-size: 11px; }
+  .holiday-notice > strong { font-size: 10px; }
+  .holiday-notice-item { padding: 4px 8px; gap: 5px; }
+  .holiday-notice-item small { font-size: 9.5px; }
+}

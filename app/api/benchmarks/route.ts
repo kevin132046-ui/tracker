@@ -76,10 +76,11 @@ function bucketKey(date: Date, mode: Mode) {
   return String(date.getUTCFullYear());
 }
 
+// Each range reaches back past the first bucket so chain-linked returns have a prior close.
 function yahooConfig(mode: Mode) {
-  if (mode === 'day' || mode === 'week') return 'range=3mo&interval=1d';
-  if (mode === 'month') return 'range=1y&interval=1d';
-  return 'range=5y&interval=1mo';
+  if (mode === 'day' || mode === 'week') return 'range=6mo&interval=1d';
+  if (mode === 'month') return 'range=2y&interval=1d';
+  return 'range=10y&interval=1mo';
 }
 
 async function fetchYahooChart(host: string, symbol: string, mode: Mode, sharedSignal: AbortSignal) {
@@ -149,25 +150,19 @@ function chartPoints(result: ChartResult, adjusted: boolean) {
   }).sort((a, b) => a.timestamp - b.timestamp);
 }
 
-async function benchmarkReturns(symbol: string, mode: Mode) {
-  const points = chartPoints(await fetchChart(symbol, mode), true);
-  if (mode === 'day') {
-    const returns = new Map<string, number>();
-    for (let index = 1; index < points.length; index += 1) {
-      const current = points[index];
-      const previous = points[index - 1];
-      returns.set(bucketKey(new Date(current.timestamp * 1000), mode), current.close / previous.close - 1);
+// Chain-linked bucket returns: the last close in a bucket over the last close of any earlier
+// bucket, so consecutive buckets compound to the full-period return (0 when either is missing).
+async function benchmarkReturns(symbol: string, mode: Mode, keys: string[]) {
+  const points = chartPoints(await fetchChart(symbol, mode), true)
+    .map((point) => ({ key: bucketKey(new Date(point.timestamp * 1000), mode), close: point.close }));
+  return keys.map((key) => {
+    let last: number | null = null;
+    let base: number | null = null;
+    for (const point of points) {
+      if (point.key < key) base = point.close;
+      else if (point.key === key) last = point.close;
     }
-    return bucketKeys(mode).map((key) => returns.get(key) ?? 0);
-  }
-  const grouped = new Map<string, number[]>();
-  points.forEach((point) => {
-    const key = bucketKey(new Date(point.timestamp * 1000), mode);
-    grouped.set(key, [...(grouped.get(key) ?? []), point.close]);
-  });
-  return bucketKeys(mode).map((key) => {
-    const prices = grouped.get(key) ?? [];
-    return prices.length > 1 ? prices.at(-1)! / prices[0] - 1 : 0;
+    return last !== null && base !== null ? last / base - 1 : 0;
   });
 }
 
@@ -207,9 +202,10 @@ export async function GET(request: Request) {
     : marketConfigs.filter((config) => config.id === 'USDJPY' || config.id === 'US10Y' || config.id === 'US30Y');
   const force = params.has('refresh');
   const mode: Mode = modeParam === 'day' || modeParam === 'week' || modeParam === 'year' ? modeParam : 'month';
-  const emptyReturns = bucketKeys(mode).map(() => 0);
+  const keys = bucketKeys(mode);
+  const emptyReturns = keys.map(() => 0);
   const [benchmarkResults, marketResults] = await Promise.all([
-    scope === 'markets' ? Promise.resolve([]) : Promise.allSettled([benchmarkReturns('SPY', mode), benchmarkReturns('BOXX', mode)]),
+    scope === 'markets' ? Promise.resolve([]) : Promise.allSettled([benchmarkReturns('SPY', mode, keys), benchmarkReturns('BOXX', mode, keys)]),
     scope === 'benchmarks' ? Promise.resolve([]) : Promise.allSettled(activeMarketConfigs.map((config) => marketHistory(config, mode, force))),
   ]);
   const spy = benchmarkResults[0]?.status === 'fulfilled' ? benchmarkResults[0].value : emptyReturns;
@@ -223,6 +219,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     mode,
     marketGroup,
+    keys,
     SPY: spy,
     BOXX: boxx,
     markets,

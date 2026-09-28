@@ -24,7 +24,7 @@ import type { AnnualRocSummary, CapitalBasis, PriceHistorySeries, RangeMode } fr
 import { addDaysToKey, dateKey, japaneseHolidays, parseDateKey, upcomingClosures, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
 import type { UpcomingClosure } from '@/lib/market-calendar';
 import { earningsReminders, exchangeTodayKey, mergeEarnings, pruneManualEarnings } from '@/lib/earnings';
-import type { EarningsEntry, EarningsEvent, EarningsReminder } from '@/lib/earnings';
+import type { AiEarningsSuggestion, AiProvider, EarningsEntry, EarningsEvent, EarningsReminder } from '@/lib/earnings';
 import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
@@ -181,6 +181,7 @@ const holidayNoticeKey = 'optionflow-holiday-notice';
 const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
 const earningsReminderKey = 'optionflow-earnings-reminder';
 const manualEarningsKey = 'optionflow-earnings-manual';
+const openAiModelKey = 'optionflow-openai-model';
 const usdJpyUpdatedAtKey = 'optionflow-usdjpy-updated-at';
 const macroMarketStorageKey = 'optionflow-macro-markets-v2';
 const localBackgroundPattern = /^data:image\/jpeg;base64,/i;
@@ -934,6 +935,9 @@ export default function Home() {
   const [holidayNoticeEnabled, setHolidayNoticeEnabled] = useState(true);
   const [earningsEnabled, setEarningsEnabled] = useState(true);
   const [manualEarnings, setManualEarnings] = useState<Record<string, string>>({});
+  const [aiStatus, setAiStatus] = useState<{ state: 'ok'; providers: Record<AiProvider, boolean>; openAiModel: string | null } | { state: 'error'; message: string } | null>(null);
+  const [openAiModel, setOpenAiModel] = useState('');
+  const [aiLookups, setAiLookups] = useState<Record<string, { loading: boolean; suggestion?: AiEarningsSuggestion; error?: string }>>({});
   const [yahooEarnings, setYahooEarnings] = useState<{ key: string; events: Record<string, EarningsEvent>; failed: string[] } | null>(null);
   const [brokerHubEnabled, setBrokerHubEnabled] = useState(false);
   const [brokerHubLoading, setBrokerHubLoading] = useState(true);
@@ -1126,9 +1130,11 @@ export default function Home() {
       const manual = stored && typeof stored === 'object' && !Array.isArray(stored)
         ? pruneManualEarnings(Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => typeof entry[1] === 'string')), Date.now())
         : {};
+      const model = window.localStorage.getItem(openAiModelKey) ?? '';
       queueMicrotask(() => {
         if (off) setEarningsEnabled(false);
         setManualEarnings(manual);
+        setOpenAiModel(model);
       });
     } catch { /* storage unavailable: keep the defaults */ }
   }, []);
@@ -1146,6 +1152,52 @@ export default function Home() {
       if (date) next[symbol] = date;
       else delete next[symbol];
       try { window.localStorage.setItem(manualEarningsKey, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
+  }, []);
+
+  const updateOpenAiModel = useCallback((value: string) => {
+    setOpenAiModel(value);
+    try { window.localStorage.setItem(openAiModelKey, value.trim()); } catch { /* storage unavailable */ }
+  }, []);
+
+  // AI lookups sit behind Cloudflare Access; ask once, when the settings panel first opens.
+  useEffect(() => {
+    if (!settingsOpen || !earningsEnabled || aiStatus) return;
+    const controller = new AbortController();
+    fetch('/api/ai', { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { providers?: Record<AiProvider, boolean>; openAiModel?: string | null; error?: string };
+        if (!response.ok || !payload.providers) throw new Error(payload.error ?? 'AI 查詢暫時無法使用。');
+        if (!controller.signal.aborted) setAiStatus({ state: 'ok', providers: payload.providers, openAiModel: payload.openAiModel ?? null });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setAiStatus({ state: 'error', message: error instanceof Error ? error.message : 'AI 查詢暫時無法使用。' });
+      });
+    return () => controller.abort();
+  }, [aiStatus, earningsEnabled, settingsOpen]);
+
+  const lookupEarningsWithAi = useCallback(async (symbol: string, provider: AiProvider) => {
+    const id = `${provider}:${symbol}`;
+    setAiLookups((current) => ({ ...current, [id]: { loading: true } }));
+    try {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: 'earnings-date', symbol, provider, model: provider === 'openai' ? openAiModel.trim() : undefined }),
+      });
+      const payload = await response.json() as { suggestion?: AiEarningsSuggestion; error?: string };
+      if (!response.ok || !payload.suggestion) throw new Error(payload.error ?? '查詢失敗，請稍後再試。');
+      setAiLookups((current) => ({ ...current, [id]: { loading: false, suggestion: payload.suggestion } }));
+    } catch (error) {
+      setAiLookups((current) => ({ ...current, [id]: { loading: false, error: error instanceof Error ? error.message : '查詢失敗，請稍後再試。' } }));
+    }
+  }, [openAiModel]);
+
+  const dismissAiLookup = useCallback((id: string) => {
+    setAiLookups((current) => {
+      const next = { ...current };
+      delete next[id];
       return next;
     });
   }, []);
@@ -2877,8 +2929,36 @@ export default function Home() {
                       <input type="date" min={today} value={manualEarnings[symbol] ?? ''} aria-label={`手動財報日 ${symbol}`} onChange={(event) => setManualEarningsDate(symbol, event.target.value || null)} />
                       {manualEarnings[symbol] && <button type="button" onClick={() => setManualEarningsDate(symbol, null)} aria-label={`清除手動財報日 ${symbol}`}>×</button>}
                     </span>
+                    {aiStatus?.state === 'ok' && (aiStatus.providers.anthropic || aiStatus.providers.openai) && <span role="cell" className="earnings-ai-actions">
+                      {(['anthropic', 'openai'] as const).filter((provider) => aiStatus.providers[provider]).map((provider) => {
+                        const lookup = aiLookups[`${provider}:${symbol}`];
+                        const name = provider === 'anthropic' ? 'Claude' : 'ChatGPT';
+                        return <button type="button" key={provider} disabled={lookup?.loading || (provider === 'openai' && !(openAiModel.trim() || aiStatus.openAiModel))} onClick={() => lookupEarningsWithAi(symbol, provider)} aria-label={`用 ${name} 查 ${symbol} 財報日`}>{lookup?.loading ? `${name} 查詢中…` : `${name} 查`}</button>;
+                      })}
+                    </span>}
+                    {(['anthropic', 'openai'] as const).map((provider) => {
+                      const id = `${provider}:${symbol}`;
+                      const lookup = aiLookups[id];
+                      if (!lookup || lookup.loading) return null;
+                      const name = provider === 'anthropic' ? 'Claude' : 'ChatGPT';
+                      const suggestion = lookup.suggestion;
+                      return <div className="earnings-ai-suggestion" key={id}>
+                        {lookup.error ? <p className="is-error">{name}：{lookup.error}</p> : suggestion && <>
+                          <p><b>{name} 建議</b>{suggestion.date ? `${suggestion.date}${earningsTimingLabel(suggestion.timing) ? ` · ${earningsTimingLabel(suggestion.timing)}` : ''}${suggestion.confirmed ? '（公司已公布）' : '（未經公司確認）'}` : '找不到日期'}{suggestion.note ? ` — ${suggestion.note}` : ''}</p>
+                          {suggestion.sources.length > 0 && <ul>{suggestion.sources.map((source) => <li key={source.url}><a href={source.url} target="_blank" rel="noreferrer noopener">{source.title}</a></li>)}</ul>}
+                        </>}
+                        <div>
+                          {suggestion?.date && suggestion.date >= today && <button type="button" className="apply" onClick={() => { setManualEarningsDate(symbol, suggestion.date); dismissAiLookup(id); }}>套用</button>}
+                          <button type="button" onClick={() => dismissAiLookup(id)}>略過</button>
+                        </div>
+                      </div>;
+                    })}
                   </div>;
                 })}
+              </div>}
+              {earningsEnabled && <div className="earnings-ai-settings">
+                <p>{aiStatus === null ? 'AI 查詢：確認登入狀態中…' : aiStatus.state === 'error' ? `AI 查詢：${aiStatus.message}` : !aiStatus.providers.anthropic && !aiStatus.providers.openai ? 'AI 查詢：伺服器尚未設定 ANTHROPIC_API_KEY 或 OPENAI_API_KEY。' : 'AI 查詢：可用 Claude／ChatGPT 上網查財報日；結果只是建議，按「套用」才會存成手動日期。每次查詢會使用你的 API 額度。'}</p>
+                <label><span>ChatGPT 模型</span><input type="text" value={openAiModel} maxLength={64} spellCheck={false} autoComplete="off" placeholder={aiStatus?.state === 'ok' && aiStatus.openAiModel ? `預設 ${aiStatus.openAiModel}` : '輸入 OpenAI 模型名稱'} onChange={(event) => updateOpenAiModel(event.target.value)} /></label>
               </div>}
               <div className="settings-feature-actions">
                 <span>手動日期優先於 Yahoo，過了那天會自動改回 Yahoo 的日期；手動日期與開關保存在這個瀏覽器。</span>

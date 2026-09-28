@@ -831,3 +831,20 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
   .earnings-manual { grid-column: 1 / -1; }
   .earnings-manual input { flex: 1; width: auto; }
 }
+.earnings-ai-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; margin-top: -2px; }
+.earnings-ai-actions button, .earnings-ai-suggestion button { min-height: 26px; padding: 0 10px; color: #4b3f86; background: #f3f0fb; border: 1px solid #ddd6f3; border-radius: 7px; font-size: 11px; font-weight: 800; cursor: pointer; }
+.earnings-ai-actions button:hover:not(:disabled), .earnings-ai-suggestion button:hover { background: #e9e3f8; }
+.earnings-ai-actions button:disabled { color: #a9a3bd; cursor: default; }
+.earnings-ai-suggestion { grid-column: 1 / -1; display: grid; gap: 6px; padding: 8px 10px; color: #33415a; background: #faf8ff; border: 1px solid #e6e0f6; border-radius: 9px; font-size: 11.5px; line-height: 1.55; }
+.earnings-ai-suggestion p { margin: 0; }
+.earnings-ai-suggestion p b { margin-right: 6px; color: #4b3f86; }
+.earnings-ai-suggestion p.is-error { color: #a83d4f; }
+.earnings-ai-suggestion ul { display: grid; gap: 2px; margin: 0; padding-left: 16px; }
+.earnings-ai-suggestion a { color: #2f5fb8; overflow-wrap: anywhere; }
+.earnings-ai-suggestion > div { display: flex; justify-content: flex-end; gap: 6px; }
+.earnings-ai-suggestion button.apply { color: white; background: #5b4a9a; border-color: #5b4a9a; }
+.earnings-ai-suggestion button.apply:hover { background: #4b3d85; }
+.earnings-ai-settings { display: grid; gap: 8px; margin: -4px 0 16px; }
+.earnings-ai-settings p { margin: 0; color: #667790; font-size: 11.5px; line-height: 1.6; }
+.earnings-ai-settings label { display: flex; align-items: center; gap: 10px; color: #33415a; font-size: 12px; font-weight: 800; }
+.earnings-ai-settings input { flex: 1; min-width: 0; min-height: 32px; padding: 0 9px; color: #33415a; background: white; border: 1px solid #d8e0ec; border-radius: 8px; font: inherit; font-weight: 600; }

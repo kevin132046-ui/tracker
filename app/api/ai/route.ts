@@ -23,7 +23,8 @@ const pending = new Map<string, Promise<{ suggestion: AiEarningsSuggestion; usag
 const analysisForms = new Set(['8-K', '8-K/A', '10-Q', '10-K']);
 
 const accessMessages = {
-  'access-not-configured': '伺服器尚未設定 Cloudflare Access（ACCESS_TEAM_DOMAIN、ACCESS_AUD），AI 查詢已停用。',
+  // A secret added in the dashboard only reaches versions built after it, hence the hint.
+  'access-not-configured': '伺服器尚未設定 Cloudflare Access（ACCESS_TEAM_DOMAIN、ACCESS_AUD），AI 查詢已停用。剛在 Cloudflare 新增 Secret 的話，要等下一次部署或重新建置後才會生效。',
   'access-required': '需要先通過 Cloudflare Access 登入。',
   'access-invalid': 'Cloudflare Access 登入已失效，請重新整理頁面再登入。',
 } as const;

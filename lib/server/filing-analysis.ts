@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { AiProvider } from '@/lib/earnings';
 import type { FilingExchange, QuarterRow } from '@/lib/filings';
-import { anthropicModel } from '@/lib/server/ai-earnings';
 
 /**
  * Writes the Traditional Chinese earnings analysis of an SEC filing and answers follow-up
@@ -75,10 +74,10 @@ function followUpPrompt(history: FilingExchange[], question: string) {
   ].join('\n');
 }
 
-async function claudeText(apiKey: string, document: string, prompt: string) {
+async function claudeText(apiKey: string, model: string, document: string, prompt: string) {
   const client = new Anthropic({ apiKey, timeout: requestTimeoutMs, maxRetries: 1 });
   const response = await client.beta.messages.create({
-    model: anthropicModel,
+    model,
     max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
@@ -131,7 +130,8 @@ async function chatGptText(apiKey: string, model: string, document: string, prom
 export const analysisRequest = (context: FilingContext, questions: string[]) => ({ document: documentBlock(context), prompt: analysisPrompt(context, questions), maxOutput: analysisMaxOutput, system: systemPrompt });
 export const followUpRequest = (context: FilingContext, history: FilingExchange[], question: string) => ({ document: documentBlock(context), prompt: followUpPrompt(history, question), maxOutput: followUpMaxOutput, system: systemPrompt });
 
-export const completeFilingRequest = (provider: AiProvider, apiKey: string, openAiModel: string, request: ReturnType<typeof analysisRequest>) =>
-  provider === 'anthropic' ? claudeText(apiKey, request.document, request.prompt) : chatGptText(apiKey, openAiModel, request.document, request.prompt, request.maxOutput);
+/** model is the ChatGPT model name or the Claude model id, whichever provider answers. */
+export const completeFilingRequest = (provider: AiProvider, apiKey: string, model: string, request: ReturnType<typeof analysisRequest>) =>
+  provider === 'anthropic' ? claudeText(apiKey, model, request.document, request.prompt) : chatGptText(apiKey, model, request.document, request.prompt, request.maxOutput);
 
 export type { FilingContext };

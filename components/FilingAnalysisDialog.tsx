@@ -1,5 +1,6 @@
 'use client';
 
+import { requestModel } from '@/lib/ai-models';
 import { useState } from 'react';
 import type { AiProvider } from '@/lib/earnings';
 import type { AiKeys, CompanyFilings, EarningsFiling, FilingAnalysis, QuarterRow } from '@/lib/filings';
@@ -15,6 +16,7 @@ type Props = {
   keys: AiKeys;
   defaultProvider: AiProvider;
   openAiModel: string;
+  claudeModel: string;
   usageTier: UsageTier;
   questions: string[];
   analyses: Record<string, FilingAnalysis>;
@@ -65,7 +67,7 @@ function FiguresTable({ figures }: { figures: QuarterRow[] }) {
   </div>;
 }
 
-export default function FilingAnalysisDialog({ symbol, company, status, keys, defaultProvider, openAiModel, usageTier, questions, analyses, onSave, onUsed, onClose }: Props) {
+export default function FilingAnalysisDialog({ symbol, company, status, keys, defaultProvider, openAiModel, claudeModel, usageTier, questions, analyses, onSave, onUsed, onClose }: Props) {
   const filings = [company.earningsRelease, company.periodicReport].filter((filing): filing is EarningsFiling => Boolean(filing));
   const [accession, setAccession] = useState(filings[0]?.accession ?? '');
   const [provider, setProvider] = useState<AiProvider>(defaultProvider);
@@ -88,7 +90,7 @@ export default function FilingAnalysisDialog({ symbol, company, status, keys, de
     const response = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...aiKeyHeaders(keys) },
-      body: JSON.stringify({ task, symbol, provider, accession: filing!.accession, model: provider === 'openai' ? openAiModel.trim() : undefined, usageTier, ...extra }),
+      body: JSON.stringify({ task, symbol, provider, accession: filing!.accession, model: requestModel(provider, openAiModel, claudeModel), usageTier, ...extra }),
     }).finally(onUsed);
     const payload = await response.json() as AiResponse;
     if (!response.ok || !payload.text) throw new Error(payload.error ?? '產生失敗，請稍後再試。');

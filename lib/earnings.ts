@@ -57,3 +57,16 @@ export function earningsReminders(entries: Record<string, EarningsEntry | null>,
 export function pruneManualEarnings(manual: Record<string, string>, timestamp: number) {
   return Object.fromEntries(Object.entries(manual).filter(([symbol, date]) => parseDateKey(date) && date >= addDaysToKey(exchangeTodayKey(symbol, timestamp), -1)));
 }
+
+export type AiProvider = 'anthropic' | 'openai';
+/** A date an AI model found by web search. Shown as a suggestion; never saved without the user. */
+export type AiEarningsSuggestion = {
+  symbol: string;
+  provider: AiProvider;
+  model: string;
+  date: string | null;
+  timing: 'pre' | 'post' | null;
+  confirmed: boolean;
+  note: string;
+  sources: Array<{ url: string; title: string }>;
+};

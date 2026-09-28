@@ -143,7 +143,7 @@ type PriceHistoryState = { key: string; series: PriceHistorySeries };
 type MacroMarketData = { mode: RangeMode | null; markets: BenchmarkMarket[]; updatedAt: string | null };
 type MacroCacheEntry = { markets: BenchmarkMarket[]; updatedAt: string; fetchedAt: number };
 type BackgroundMode = 'default' | 'image';
-type DividendSettings = { enabled: boolean; usTaxRate: number; jpTaxRate: number };
+type DividendSettings = { enabled: boolean; usTaxRate: number; jpTaxRate: number; creditOn: 'pay' | 'ex' };
 type DividendCash = {
   USD: { gross: number; tax: number; adjustment: number; net: number; count: number };
   JPY: { gross: number; tax: number; adjustment: number; net: number; count: number };
@@ -160,7 +160,12 @@ type DividendEvent = {
   calculatedNet: number;
   adjustment: number;
   net: number;
+  payDate: string;
+  paySource: 'nasdaq' | 'yahoo' | 'manual' | 'estimate';
+  credited: boolean;
 };
+
+const paySourceLabels: Record<DividendEvent['paySource'], string> = { nasdaq: 'Nasdaq', yahoo: 'Yahoo', manual: '手動', estimate: '預估' };
 
 const loadBrokerHub = () => import('@/components/BrokerHub');
 const loadDcfCalculator = () => import('@/components/DcfCalculator');
@@ -983,9 +988,10 @@ export default function Home() {
   const [underlyingQuotes, setUnderlyingQuotes] = useState<Record<string, UnderlyingQuote>>({});
   const [underlyingFailures, setUnderlyingFailures] = useState<Set<string>>(new Set());
   const [tradeColumnSet, setTradeColumnSet] = useState<TradeColumnId[]>(readStoredTradeColumns);
-  const [dividendSettings, setDividendSettings] = useState<DividendSettings>({ enabled: true, usTaxRate: 30, jpTaxRate: 15.315 });
+  const [dividendSettings, setDividendSettings] = useState<DividendSettings>({ enabled: true, usTaxRate: 30, jpTaxRate: 15.315, creditOn: 'pay' });
   const [dividendCash, setDividendCash] = useState<DividendCash>({ USD: { gross: 0, tax: 0, adjustment: 0, net: 0, count: 0 }, JPY: { gross: 0, tax: 0, adjustment: 0, net: 0, count: 0 } });
   const [dividendEvents, setDividendEvents] = useState<DividendEvent[]>([]);
+  const [dividendPending, setDividendPending] = useState<DividendCash | null>(null);
   const [dividendAdjustmentCount, setDividendAdjustmentCount] = useState(0);
   const [dividendLoading, setDividendLoading] = useState(true);
   const [dividendSaving, setDividendSaving] = useState(false);
@@ -1056,10 +1062,11 @@ export default function Home() {
     setDividendLoading(true);
     try {
       const response = await fetch('/api/dividends', { cache: 'no-store' });
-      const payload = await response.json() as { settings?: DividendSettings; cash?: DividendCash; events?: DividendEvent[]; adjustmentCount?: number; updatedAt?: string; failedTickers?: string[]; error?: string };
+      const payload = await response.json() as { settings?: DividendSettings; cash?: DividendCash; pending?: DividendCash; events?: DividendEvent[]; adjustmentCount?: number; updatedAt?: string; failedTickers?: string[]; error?: string };
       if (!response.ok || !payload.settings || !payload.cash) throw new Error(payload.error ?? '股息現金目前無法更新');
       setDividendSettings(payload.settings);
       setDividendCash(payload.cash);
+      setDividendPending(payload.pending ?? null);
       setDividendEvents(Array.isArray(payload.events) ? payload.events : []);
       setDividendAdjustmentCount(Math.max(0, Number(payload.adjustmentCount) || 0));
       setDividendUpdatedAt(payload.updatedAt ?? new Date().toISOString());
@@ -1086,6 +1093,26 @@ export default function Home() {
       await refreshDividendCash(false);
     } catch (error) {
       notify(error instanceof Error ? error.message : '股息設定無法保存');
+    } finally {
+      setDividendSaving(false);
+    }
+  }, [dividendSaving, notify, refreshDividendCash]);
+
+  const saveDividendPayDate = useCallback(async (eventKey: string, payDate: string) => {
+    if (dividendSaving) return;
+    setDividendSaving(true);
+    try {
+      const response = await fetch('/api/dividends', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pay-date', eventKey, payDate }),
+      });
+      const payload = await response.json() as { adjusted?: boolean; error?: string };
+      if (!response.ok || !payload.adjusted) throw new Error(payload.error ?? '發放日無法保存');
+      await refreshDividendCash(false);
+      notify(payDate ? '發放日已更新' : '發放日已改回自動判斷');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '發放日無法保存');
     } finally {
       setDividendSaving(false);
     }
@@ -2156,15 +2183,24 @@ export default function Home() {
     setSymbolFocused(false);
   }, []);
 
+  // Dividends that may still be unpaid or were paid recently, for checking and editing pay dates.
+  const recentDividendEvents = useMemo(() => {
+    const cutoff = new Date(Date.now() - 120 * 86_400_000).toISOString().slice(0, 10);
+    return dividendEvents.filter((event) => event.net > 0 && (event.credited === false || event.date >= cutoff))
+      .sort((a, b) => b.date.localeCompare(a.date) || a.ticker.localeCompare(b.ticker)).slice(0, 20);
+  }, [dividendEvents]);
+
   const derivedDividendTrades = useMemo<Trade[]>(() => {
     if (!dividendSettings.enabled) return [];
+    // Only paid dividends are cash; each appears on the day it is credited.
+    const creditDate = (event: DividendEvent) => dividendSettings.creditOn === 'ex' || !event.payDate ? event.date : event.payDate;
     return dividendEvents
-      .filter((event) => event.net > 0)
-      .sort((a, b) => b.date.localeCompare(a.date) || a.ticker.localeCompare(b.ticker))
+      .filter((event) => event.net > 0 && event.credited !== false)
+      .sort((a, b) => creditDate(b).localeCompare(creditDate(a)) || a.ticker.localeCompare(b.ticker))
       .map((event, index) => ({
         id: -910_000 - index,
         type: 'CASH',
-        openDate: event.date,
+        openDate: creditDate(event),
         expiryDate: null,
         closeDate: null,
         ticker: event.currency,
@@ -2175,7 +2211,7 @@ export default function Home() {
         currentPrice: 1,
         fees: 0,
         collateral: event.net,
-        notes: `${event.ticker} 股息 · 每股 ${nativeMoney(event.ticker, event.amountPerShare)} · ${quantityNumber.format(event.quantity)} 股 · 稅前 ${nativeMoney(event.ticker, event.gross)} · 預扣 ${nativeMoney(event.ticker, event.tax)}`,
+        notes: `${event.ticker} 股息 · 每股 ${nativeMoney(event.ticker, event.amountPerShare)} · ${quantityNumber.format(event.quantity)} 股 · 稅前 ${nativeMoney(event.ticker, event.gross)} · 預扣 ${nativeMoney(event.ticker, event.tax)}${dividendSettings.creditOn === 'ex' ? '' : ` · 除息 ${event.date} · 發放 ${event.payDate}（${paySourceLabels[event.paySource] ?? '預估'}）`}`,
         status: 'open',
         quoteMode: 'manual',
         market: event.currency === 'JPY' ? 'JP' : 'US',
@@ -2189,7 +2225,7 @@ export default function Home() {
         dividendCalculatedNet: event.calculatedNet,
         dividendAdjustment: event.adjustment,
       }));
-  }, [dividendEvents, dividendSettings.enabled]);
+  }, [dividendEvents, dividendSettings.creditOn, dividendSettings.enabled]);
   const portfolioTrades = useMemo(() => [...trades, ...derivedDividendTrades], [derivedDividendTrades, trades]);
   const enriched = useMemo(() => portfolioTrades.map((trade) => ({ trade, ...metrics(trade, usdJpyRate) })), [portfolioTrades, usdJpyRate]);
   const openTrades = useMemo(() => enriched.filter((item) => item.trade.status === 'open'), [enriched]);
@@ -3001,6 +3037,24 @@ export default function Home() {
                 <label><span>日股外國人股息預扣稅率</span><div><input type="number" min="0" max="100" step="0.001" value={dividendSettings.jpTaxRate} onChange={(event) => setDividendSettings((current) => ({ ...current, jpTaxRate: Math.min(100, Math.max(0, Number(event.target.value))) }))} /><i>%</i></div><small>上市股票預設 15.315%，可自行修改</small></label>
               </div>
               <div className="dividend-cash-preview"><div><span>USD 稅後股息現金</span><strong>{money.format(dividendCash.USD.net)}</strong><small>{dividendCash.USD.count} 筆事件 · 預扣 {money.format(dividendCash.USD.tax)}{dividendCash.USD.adjustment > 0 ? ` · 手動調減 ${money.format(dividendCash.USD.adjustment)}` : ''}</small></div><div><span>JPY 稅後股息現金</span><strong>{yenMoney.format(dividendCash.JPY.net)}</strong><small>{dividendCash.JPY.count} 筆事件 · 預扣 {yenMoney.format(dividendCash.JPY.tax)}{dividendCash.JPY.adjustment > 0 ? ` · 手動調減 ${yenMoney.format(dividendCash.JPY.adjustment)}` : ''}</small></div></div>
+              <div className="dividend-credit-on" role="radiogroup" aria-label="股息入帳日">
+                <span>入帳日</span>
+                {(['pay', 'ex'] as const).map((option) => <button key={option} type="button" role="radio" aria-checked={dividendSettings.creditOn === option} className={dividendSettings.creditOn === option ? 'active' : ''} disabled={dividendSaving} onClick={() => { if (dividendSettings.creditOn !== option) void persistDividendSettings({ ...dividendSettings, creditOn: option }); }}>{option === 'pay' ? '發放日' : '除息日'}</button>)}
+                <small>{dividendSettings.creditOn === 'pay' ? '公司實際付款那天才加入現金；股數以除息日前一天收盤時的持股計算。' : '在除息日就加入現金（舊做法）。'}</small>
+              </div>
+              {dividendSettings.enabled && dividendSettings.creditOn === 'pay' && dividendPending && (dividendPending.USD.count > 0 || dividendPending.JPY.count > 0) && <p className="dividend-pending-total">待入帳：{[dividendPending.USD.count ? `USD ${money.format(dividendPending.USD.net)}（${dividendPending.USD.count} 筆）` : '', dividendPending.JPY.count ? `JPY ${yenMoney.format(dividendPending.JPY.net)}（${dividendPending.JPY.count} 筆）` : ''].filter(Boolean).join(' · ')}</p>}
+              {dividendSettings.enabled && dividendSettings.creditOn === 'pay' && recentDividendEvents.length > 0 && <div className="dividend-pay-list" role="table" aria-label="近期股息發放日">
+                {recentDividendEvents.map((event) => <div className="dividend-pay-row" role="row" key={event.eventKey}>
+                  <strong role="cell">{event.ticker}</strong>
+                  <span role="cell">除息 {event.date}</span>
+                  <span role="cell" className="dividend-pay-date">
+                    <input type="date" min={event.date} value={event.payDate} disabled={dividendSaving} aria-label={`${event.ticker} ${event.date} 發放日`} onChange={(change) => { if (change.target.value && change.target.value !== event.payDate) void saveDividendPayDate(event.eventKey, change.target.value); }} />
+                    <small className={`pay-source is-${event.paySource}`}>{paySourceLabels[event.paySource]}</small>
+                    {event.paySource === 'manual' && <button type="button" disabled={dividendSaving} onClick={() => void saveDividendPayDate(event.eventKey, '')} aria-label={`${event.ticker} ${event.date} 發放日改回自動`}>自動</button>}
+                  </span>
+                  <span role="cell" className={event.credited ? 'is-credited' : 'is-pending'}>{nativeMoney(event.ticker, event.net)} · {event.credited ? '已入帳' : '待入帳'}</span>
+                </div>)}
+              </div>}
               {dividendError && <p className="dividend-settings-error">{dividendError}</p>}
               <div className="settings-feature-actions dividend-settings-actions"><span>{dividendUpdatedAt ? `最近計算 ${new Intl.DateTimeFormat('zh-TW', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(dividendUpdatedAt))}` : '開啟後會依現有股票持倉自動試算；僅供追蹤，不是稅務建議。'}</span><div>{dividendAdjustmentCount > 0 && <button type="button" className="dividend-save-button restore" disabled={dividendSaving} onClick={resetDividendAdjustments}>還原 {dividendAdjustmentCount} 筆調整</button>}<button type="button" className="dividend-save-button" disabled={dividendSaving} onClick={() => persistDividendSettings(dividendSettings)}>{dividendSaving ? '保存中…' : '保存稅率'}</button><button type="button" className={`settings-toggle ${dividendSettings.enabled ? 'is-on' : ''}`} role="switch" aria-checked={dividendSettings.enabled} disabled={dividendSaving} onClick={() => persistDividendSettings({ ...dividendSettings, enabled: !dividendSettings.enabled })}><i /><b>{dividendSettings.enabled ? '開啟' : '關閉'}</b></button></div></div>
             </section>

@@ -937,3 +937,28 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .free-quota-note { margin: 6px 0 0; color: #7b889c; font-size: 10.5px; line-height: 1.55; }
 .free-quota-note a { color: #2f5fb8; font-weight: 700; }
 .free-quota-note b { color: #a83d4f; }
+
+/* Dividend pay dates. */
+.dividend-credit-on { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 14px 0 0; font-size: 12px; }
+.dividend-credit-on > span { color: #33415a; font-weight: 800; }
+.dividend-credit-on button { min-height: 30px; padding: 0 12px; color: #4e607d; background: white; border: 1px solid #d8e0ec; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer; }
+.dividend-credit-on button.active { color: white; background: #736b63; border-color: #736b63; }
+.dividend-credit-on small { flex: 1 1 100%; color: #7b889c; font-size: 10.5px; }
+.dividend-pending-total { margin: 10px 0 0; padding: 8px 10px; color: #6b5a1c; background: #fff8e1; border-radius: 9px; font-size: 11.5px; font-weight: 800; }
+.dividend-pay-list { display: grid; gap: 4px; margin-top: 10px; padding: 6px; background: white; border: 1px solid #e3e8f0; border-radius: 12px; }
+.dividend-pay-row { display: grid; grid-template-columns: minmax(52px, .6fr) minmax(110px, 1fr) minmax(190px, 1.4fr) minmax(110px, 1fr); align-items: center; gap: 8px; min-height: 36px; padding: 4px 8px; border-radius: 8px; font-size: 11.5px; }
+.dividend-pay-row:nth-child(even) { background: #f7f9fc; }
+.dividend-pay-row strong { color: #273449; }
+.dividend-pay-row > span { color: #4e607d; font-variant-numeric: tabular-nums; }
+.dividend-pay-date { display: flex; align-items: center; gap: 6px; }
+.dividend-pay-date input { width: 130px; min-height: 28px; padding: 0 6px; border: 1px solid #d8e0ec; border-radius: 7px; font: inherit; font-size: 11.5px; }
+.dividend-pay-date button { min-height: 24px; padding: 0 8px; color: #4e607d; background: #f1f4f9; border: 1px solid #dbe2ec; border-radius: 6px; font-size: 10.5px; font-weight: 800; cursor: pointer; }
+.pay-source { color: #7b889c; font-size: 10px; font-weight: 800; }
+.pay-source.is-estimate { color: #8a6414; }
+.pay-source.is-manual { color: #5b4a9a; }
+.dividend-pay-row .is-pending { color: #8a6414; font-weight: 800; }
+.dividend-pay-row .is-credited { color: #0c765c; font-weight: 800; }
+@media (max-width: 620px) {
+  .dividend-pay-row { grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 8px; }
+  .dividend-pay-row .dividend-pay-date { grid-column: 1 / -1; }
+}

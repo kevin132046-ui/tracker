@@ -7,6 +7,11 @@ import { verifyAccess } from '@/lib/server/access';
 import type { UsageTier } from '@/lib/openai-free-tier';
 import { estimateTokens } from '@/lib/openai-free-tier';
 import { anthropicModel, dateLookupEstimate, findEarningsDate, openAiModelPattern } from '@/lib/server/ai-earnings';
+import { claudeModels, resolveClaudeModel } from '@/lib/ai-models';
+import type { OpenTradeHint } from '@/lib/ai-trade-entry';
+import { maxEntryLength, maxOpenTradeHints } from '@/lib/ai-trade-entry';
+import { parseEntryImage, parseTrades, tradeParseRequest } from '@/lib/server/trade-parse';
+import { parseDateKey } from '@/lib/market-calendar';
 import { analysisRequest, completeFilingRequest, followUpRequest, type FilingContext } from '@/lib/server/filing-analysis';
 import { checkOpenAiQuota, quotaReport, recordOpenAiUsage } from '@/lib/server/openai-quota';
 import { SecNotConfigured, filingText, findFiling, isAccession, lookupCik, quarterlyFigures } from '@/lib/server/sec';
@@ -54,12 +59,13 @@ export async function GET(request: Request) {
     email: access.email,
     providers: { anthropic: Boolean(env.ANTHROPIC_API_KEY), openai: Boolean(env.OPENAI_API_KEY) },
     anthropicModel,
+    claudeModels: claudeModels.map((model) => model.id),
     openAiModel: env.OPENAI_MODEL && openAiModelPattern.test(env.OPENAI_MODEL) ? env.OPENAI_MODEL : null,
     sec: Boolean(env.SEC_CONTACT),
   }, { headers: noStore });
 }
 
-type Body = { task?: unknown; symbol?: unknown; provider?: unknown; model?: unknown; accession?: unknown; questions?: unknown; history?: unknown; question?: unknown; usageTier?: unknown };
+type Body = { task?: unknown; symbol?: unknown; provider?: unknown; model?: unknown; accession?: unknown; questions?: unknown; history?: unknown; question?: unknown; usageTier?: unknown; text?: unknown; image?: unknown; today?: unknown; openTrades?: unknown };
 
 async function filingContext(symbol: string, accession: string): Promise<FilingContext | string> {
   const company = await lookupCik(symbol);
@@ -82,6 +88,27 @@ function cleanHistory(value: unknown): FilingExchange[] {
   });
 }
 
+/** Open positions from the browser, trimmed to the fields the trade parser uses. */
+function cleanOpenTrades(value: unknown): OpenTradeHint[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, maxOpenTradeHints).flatMap((item) => {
+    const hint = item as Partial<OpenTradeHint>;
+    const id = Number(hint?.id);
+    const ticker = String(hint?.ticker ?? '').trim().toUpperCase();
+    if (!Number.isInteger(id) || id < 1 || !symbolPattern.test(ticker)) return [];
+    return [{
+      id, ticker,
+      kind: hint.kind === 'option' ? 'option' : 'stock',
+      side: hint.side === 'sell' ? 'sell' : 'buy',
+      right: hint.right === 'PUT' || hint.right === 'CALL' ? hint.right : null,
+      strike: hint.strike ? String(hint.strike).slice(0, 30) : null,
+      expiry: typeof hint.expiry === 'string' && parseDateKey(hint.expiry) ? hint.expiry : null,
+      quantity: Math.max(0, Number(hint.quantity) || 0),
+      openDate: typeof hint.openDate === 'string' && parseDateKey(hint.openDate) ? hint.openDate : '',
+    } satisfies OpenTradeHint];
+  });
+}
+
 export async function POST(request: Request) {
   const access = await verifyAccess(request);
   if (!access.ok) return NextResponse.json({ error: accessMessages[access.code], code: access.code }, { status: access.status, headers: noStore });
@@ -93,17 +120,20 @@ export async function POST(request: Request) {
     return fail('請求格式錯誤。', 400);
   }
   const task = body.task;
-  if (task !== 'earnings-date' && task !== 'earnings-analysis' && task !== 'filing-question') return fail('不支援的查詢類型。', 400);
+  if (task !== 'earnings-date' && task !== 'earnings-analysis' && task !== 'filing-question' && task !== 'parse-trades') return fail('不支援的查詢類型。', 400);
   const symbol = String(body.symbol ?? '').trim().toUpperCase();
-  if (!symbolPattern.test(symbol)) return fail('無效的股票代號。', 400);
+  if (task !== 'parse-trades' && !symbolPattern.test(symbol)) return fail('無效的股票代號。', 400);
   const provider: AiProvider | null = body.provider === 'anthropic' || body.provider === 'openai' ? body.provider : null;
   if (!provider) return fail('請選擇 Claude 或 ChatGPT。', 400);
 
   const apiKey = apiKeyFor(request, provider);
   if (apiKey === null) return fail(request.headers.has(provider === 'anthropic' ? 'X-Anthropic-Key' : 'X-OpenAI-Key') ? `設定中的 ${providerName(provider)} 金鑰格式不正確。` : `尚未設定 ${providerName(provider)} 金鑰：請在「AI 設定」輸入，或在伺服器設定 ${provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'}。`, 503);
   const requestedModel = typeof body.model === 'string' ? body.model.trim() : '';
-  const openAiModel = requestedModel || env.OPENAI_MODEL || '';
+  const openAiModel = provider === 'openai' ? requestedModel || env.OPENAI_MODEL || '' : '';
   if (provider === 'openai' && !openAiModelPattern.test(openAiModel)) return fail('請先在設定中填入 ChatGPT 模型名稱。', 400);
+  // Claude runs only the models on the list; anything else falls back to the default.
+  const claudeModel = resolveClaudeModel(requestedModel);
+  const model = provider === 'openai' ? openAiModel : claudeModel;
   const usageTier = tierOf(body.usageTier);
   // Every ChatGPT call must fit in today's free tokens for its model; otherwise it is refused.
   const guardQuota = async (estimate: number) => {
@@ -112,8 +142,29 @@ export async function POST(request: Request) {
     return check.ok ? null : NextResponse.json({ error: check.message, code: 'free-quota', quota: check.report, estimate }, { status: 429, headers: noStore });
   };
 
+  if (task === 'parse-trades') {
+    const entry = typeof body.text === 'string' ? body.text.trim() : '';
+    if (entry.length > maxEntryLength) return fail(`文字請在 ${maxEntryLength} 字以內。`, 400);
+    const image = parseEntryImage(body.image);
+    if (typeof image === 'string') return fail(image, 400);
+    if (!entry && !image) return fail('請輸入交易內容或附上截圖。', 400);
+    // The browser's local date, so 今天／昨天 mean the user's day; a bad value falls back to UTC.
+    const today = typeof body.today === 'string' && parseDateKey(body.today) ? body.today : new Date().toISOString().slice(0, 10);
+    const aiRequest = tradeParseRequest(entry, image, today, cleanOpenTrades(body.openTrades));
+    const blocked = await guardQuota(aiRequest.estimate);
+    if (blocked) return blocked;
+    try {
+      const result = await parseTrades(provider, apiKey, model, aiRequest);
+      if (provider === 'openai') recordOpenAiUsage(result.model, result.usageTokens || aiRequest.estimate);
+      return NextResponse.json({ provider, model: result.model, rows: result.rows, questions: result.questions }, { headers: noStore });
+    } catch (error) {
+      console.warn(`Trade parse failed (${provider} ${model}):`, error instanceof Error ? error.message : error);
+      return fail(error instanceof Error && error.message.startsWith('AI ') ? `${providerName(provider)} 的回覆格式不正確，請再試一次或換個模型。` : `${providerName(provider)} 解析失敗，請稍後再試。`, 502);
+    }
+  }
+
   if (task === 'earnings-date') {
-    const key = `${provider}:${provider === 'openai' ? openAiModel : anthropicModel}:${symbol}`;
+    const key = `${provider}:${model}:${symbol}`;
     const cached = answerCache.get(key);
     if (cached && Date.now() - cached.fetchedAt < answerFreshMs) return NextResponse.json({ suggestion: cached.suggestion, cached: true }, { headers: noStore });
     const blocked = await guardQuota(dateLookupEstimate);
@@ -121,7 +172,7 @@ export async function POST(request: Request) {
     try {
       let lookup = pending.get(key);
       if (!lookup) {
-        lookup = findEarningsDate(provider, symbol, { [provider]: apiKey }, openAiModel).finally(() => pending.delete(key));
+        lookup = findEarningsDate(provider, symbol, { [provider]: apiKey }, openAiModel, claudeModel).finally(() => pending.delete(key));
         pending.set(key, lookup);
         void lookup.then(({ suggestion: found, usageTokens }) => { if (provider === 'openai') recordOpenAiUsage(found.model, usageTokens || dateLookupEstimate); }, () => undefined);
       }
@@ -158,7 +209,7 @@ export async function POST(request: Request) {
   const blocked = await guardQuota(estimate);
   if (blocked) return blocked;
   try {
-    const result = await completeFilingRequest(provider, apiKey, openAiModel, aiRequest);
+    const result = await completeFilingRequest(provider, apiKey, model, aiRequest);
     if (provider === 'openai') recordOpenAiUsage(result.model, result.usageTokens || estimate);
     return NextResponse.json({
       provider,

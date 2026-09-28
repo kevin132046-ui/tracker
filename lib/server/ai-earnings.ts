@@ -2,12 +2,14 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { AiEarningsSuggestion, AiProvider } from '@/lib/earnings';
 import { exchangeTodayKey } from '@/lib/earnings';
 import { addDaysToKey, parseDateKey } from '@/lib/market-calendar';
+import { defaultClaudeModel } from '@/lib/ai-models';
 
 /**
  * Asks Claude or ChatGPT, with web search, for a symbol's next earnings date. The answer is
  * parsed from a JSON object in the reply and checked; anything unusable becomes date: null.
  */
-export const anthropicModel = 'claude-opus-5';
+/** Claude model used when a request does not choose one (the first of lib/ai-models). */
+export const anthropicModel = defaultClaudeModel;
 export const openAiModelPattern = /^[a-z0-9][a-z0-9.:-]{0,63}$/i;
 /** Output cap and the token estimate the free-quota check uses for a date lookup (web search results included). */
 export const dateLookupMaxOutput = 4_000;
@@ -56,14 +58,14 @@ const cleanSources = (sources: Array<{ url?: string; title?: string | null }>) =
   }).slice(0, 5);
 };
 
-async function askClaude(apiKey: string, symbol: string, today: string): Promise<Omit<AiEarningsSuggestion, 'symbol' | 'provider'>> {
+async function askClaude(apiKey: string, model: string, symbol: string, today: string): Promise<Omit<AiEarningsSuggestion, 'symbol' | 'provider'>> {
   const client = new Anthropic({ apiKey, timeout: requestTimeoutMs, maxRetries: 1 });
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: prompt(symbol, today) }];
   let response: Anthropic.Beta.BetaMessage | null = null;
   // Web search runs server-side; a long search can pause and is resumed by sending the turn back.
   for (let attempt = 0; attempt <= maxPauseResumes; attempt += 1) {
     response = await client.beta.messages.create({
-      model: anthropicModel,
+      model,
       max_tokens: 16000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
@@ -113,9 +115,9 @@ async function askChatGpt(apiKey: string, model: string, symbol: string, today: 
 }
 
 /** The suggestion, plus the tokens a ChatGPT call used (for the free-quota record). */
-export async function findEarningsDate(provider: AiProvider, symbol: string, keys: { anthropic?: string; openai?: string }, openAiModel: string): Promise<{ suggestion: AiEarningsSuggestion; usageTokens: number }> {
+export async function findEarningsDate(provider: AiProvider, symbol: string, keys: { anthropic?: string; openai?: string }, openAiModel: string, claudeModel: string = anthropicModel): Promise<{ suggestion: AiEarningsSuggestion; usageTokens: number }> {
   const today = exchangeTodayKey(symbol, Date.now());
-  if (provider === 'anthropic') return { suggestion: { symbol, provider, ...(await askClaude(keys.anthropic!, symbol, today)) }, usageTokens: 0 };
+  if (provider === 'anthropic') return { suggestion: { symbol, provider, ...(await askClaude(keys.anthropic!, claudeModel, symbol, today)) }, usageTokens: 0 };
   const { usageTokens, ...result } = await askChatGpt(keys.openai!, openAiModel, symbol, today);
   return { suggestion: { symbol, provider, ...result }, usageTokens };
 }

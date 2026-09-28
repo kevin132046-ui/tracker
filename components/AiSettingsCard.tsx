@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import type { ClaudeModel } from '@/lib/ai-models';
+import { claudeModels, resolveClaudeModel } from '@/lib/ai-models';
 import type { AiProvider } from '@/lib/earnings';
 import type { AiKeys } from '@/lib/filings';
 import { defaultAnalysisQuestions, maxQuestionLength, maxQuestions } from '@/lib/filings';
@@ -17,6 +19,8 @@ type Props = {
   onDefaultProviderChange: (provider: AiProvider) => void;
   openAiModel: string;
   onOpenAiModelChange: (model: string) => void;
+  claudeModel: ClaudeModel;
+  onClaudeModelChange: (model: ClaudeModel) => void;
   usageTier: UsageTier;
   onUsageTierChange: (tier: UsageTier) => void;
   questions: string[];
@@ -32,7 +36,7 @@ const links = [
 ] as const;
 
 /** Keys, default model and the analysis question list for the AI features. Everything stays in this browser. */
-export default function AiSettingsCard({ status, keys, onKeysChange, defaultProvider, onDefaultProviderChange, openAiModel, onOpenAiModelChange, usageTier, onUsageTierChange, questions, onQuestionsChange }: Props) {
+export default function AiSettingsCard({ status, keys, onKeysChange, defaultProvider, onDefaultProviderChange, openAiModel, onOpenAiModelChange, claudeModel, onClaudeModelChange, usageTier, onUsageTierChange, questions, onQuestionsChange }: Props) {
   const quota = status?.state === 'ok' ? status.quota : null;
   const freeModels = quota?.list.groups ?? [];
   const listed = freeModels.some((group) => group.models.includes(openAiModel.trim()));
@@ -52,7 +56,7 @@ export default function AiSettingsCard({ status, keys, onKeysChange, defaultProv
 
   return <section className="settings-feature-card ai-settings-card is-enabled">
     <div className="settings-feature-heading"><span className="settings-feature-icon ai" aria-hidden="true">AI</span><div><p>AI assistant</p><h3>AI 設定</h3></div><span className="settings-feature-status">{status?.state === 'ok' ? '可使用' : '未啟用'}</span></div>
-    <p>用於查財報日、產生財報解讀和追問。每次使用都會花費你的 API 額度；結果僅供參考，不是投資建議。</p>
+    <p>用於查財報日、產生財報解讀和追問，以及在「匯入」用一句話或截圖記錄交易。每次使用都會花費你的 API 額度；結果僅供參考，不是投資建議。</p>
     <p className="ai-settings-status">{statusLine}</p>
 
     <nav className="earnings-ai-links" aria-label="AI 查詢設定連結">
@@ -74,6 +78,11 @@ export default function AiSettingsCard({ status, keys, onKeysChange, defaultProv
           {freeModels.map((group) => <optgroup key={group.id} label={group.label}>{group.models.map((model) => <option key={model} value={model}>{model}</option>)}</optgroup>)}
         </select>
           : <input type="text" value={openAiModel} maxLength={64} spellCheck={false} autoComplete="off" placeholder={status?.state === 'ok' && status.openAiModel ? `預設 ${status.openAiModel}` : '輸入 OpenAI 模型名稱'} onChange={(event) => onOpenAiModelChange(event.target.value)} />}
+      </label>
+      <label><span>Claude 模型</span>
+        <select value={claudeModel} onChange={(event) => onClaudeModelChange(resolveClaudeModel(event.target.value))}>
+          {claudeModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+        </select>
       </label>
       <label><span>OpenAI 使用層級</span>
         <select value={usageTier} onChange={(event) => onUsageTierChange(event.target.value === 'high' ? 'high' : 'low')}>

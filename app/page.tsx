@@ -28,6 +28,8 @@ import type { AiEarningsSuggestion, AiProvider, EarningsEntry, EarningsEvent, Ea
 import { aiKeyHeaders, loadAiKeys, loadAnalyses, loadDefaultProvider, loadQuestions, releaseNoticeDays, saveAiKeys, saveAnalyses, saveDefaultProvider, saveQuestions } from '@/lib/filings';
 import type { AiKeys, CompanyFilings, FilingAnalysis } from '@/lib/filings';
 import { loadUsageTier, saveUsageTier } from '@/lib/filings';
+import type { ClaudeModel } from '@/lib/ai-models';
+import { defaultClaudeModel, loadClaudeModel, requestModel, saveClaudeModel } from '@/lib/ai-models';
 import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
 import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
@@ -967,6 +969,7 @@ export default function Home() {
   const [secFilings, setSecFilings] = useState<{ key: string; filings: Record<string, CompanyFilings> } | null>(null);
   const [filingDialogSymbol, setFilingDialogSymbol] = useState<string | null>(null);
   const [openAiModel, setOpenAiModel] = useState('');
+  const [claudeModel, setClaudeModel] = useState<ClaudeModel>(defaultClaudeModel);
   const [aiLookups, setAiLookups] = useState<Record<string, { loading: boolean; suggestion?: AiEarningsSuggestion; error?: string }>>({});
   const [yahooEarnings, setYahooEarnings] = useState<{ key: string; events: Record<string, EarningsEvent>; failed: string[] } | null>(null);
   const [brokerHubEnabled, setBrokerHubEnabled] = useState(false);
@@ -1186,6 +1189,7 @@ export default function Home() {
       const keys = loadAiKeys();
       const provider = loadDefaultProvider();
       const tier = loadUsageTier();
+      const claude = loadClaudeModel();
       const questions = loadQuestions();
       // Loading also drops analyses older than half a year.
       const analyses = loadAnalyses();
@@ -1196,6 +1200,7 @@ export default function Home() {
         setAiKeys(keys);
         setDefaultAiProvider(provider);
         setOpenAiTier(tier);
+        setClaudeModel(claude);
         setAnalysisQuestions(questions);
         setFilingAnalyses(analyses);
       });
@@ -1251,7 +1256,7 @@ export default function Home() {
       const response = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...aiKeyHeaders(aiKeys) },
-        body: JSON.stringify({ task: 'earnings-date', symbol, provider, model: provider === 'openai' ? openAiModel.trim() : undefined, usageTier: openAiTier }),
+        body: JSON.stringify({ task: 'earnings-date', symbol, provider, model: requestModel(provider, openAiModel, claudeModel), usageTier: openAiTier }),
       });
       const payload = await response.json() as { suggestion?: AiEarningsSuggestion; error?: string };
       if (!response.ok || !payload.suggestion) throw new Error(payload.error ?? '查詢失敗，請稍後再試。');
@@ -1261,7 +1266,7 @@ export default function Home() {
     } finally {
       refreshQuota();
     }
-  }, [aiKeys, openAiModel, openAiTier, refreshQuota]);
+  }, [aiKeys, claudeModel, openAiModel, openAiTier, refreshQuota]);
 
   const dismissAiLookup = useCallback((id: string) => {
     setAiLookups((current) => {
@@ -1273,6 +1278,9 @@ export default function Home() {
 
   const updateAiKeys = useCallback((keys: AiKeys) => { setAiKeys(keys); saveAiKeys(keys); }, []);
   const updateOpenAiTier = useCallback((tier: UsageTier) => { setOpenAiTier(tier); saveUsageTier(tier); }, []);
+  const updateClaudeModel = useCallback((model: ClaudeModel) => { setClaudeModel(model); saveClaudeModel(model); }, []);
+  // The import dialog's AI entry starts from the AI settings and can pick another model per use.
+  const importAi = useMemo(() => ({ keys: aiKeys, defaultProvider: defaultAiProvider, openAiModel, claudeModel, usageTier: openAiTier, onUsed: refreshQuota }), [aiKeys, claudeModel, defaultAiProvider, openAiModel, openAiTier, refreshQuota]);
   const updateDefaultAiProvider = useCallback((provider: AiProvider) => { setDefaultAiProvider(provider); saveDefaultProvider(provider); }, []);
   const updateAnalysisQuestions = useCallback((questions: string[]) => { setAnalysisQuestions(questions); saveQuestions(questions); }, []);
   const saveFilingAnalysis = useCallback((analysis: FilingAnalysis) => {
@@ -1505,10 +1513,10 @@ export default function Home() {
   }, []);
 
   // After an import the list reloads from the server, as on first load, and dividend cash recalculates once.
-  const handleImported = useCallback((count: number) => {
+  const handleImported = useCallback((count: number, updated = 0) => {
     void fetchTrades().catch((error) => notify(error instanceof Error ? error.message : '無法載入交易資料'));
     window.setTimeout(() => void refreshDividendCash(false), 0);
-    notify(`已匯入 ${count} 筆交易`);
+    notify(updated ? (count ? `已匯入 ${count} 筆、平倉 ${updated} 筆交易` : `已平倉 ${updated} 筆交易`) : `已匯入 ${count} 筆交易`);
   }, [fetchTrades, notify, refreshDividendCash]);
 
   const refreshQuotes = useCallback(async (announce = true) => {
@@ -3009,6 +3017,7 @@ export default function Home() {
         keys={aiKeys}
         defaultProvider={defaultAiProvider}
         openAiModel={openAiModel}
+        claudeModel={claudeModel}
         questions={analysisQuestions}
         analyses={filingAnalyses}
         onSave={saveFilingAnalysis}
@@ -3117,7 +3126,7 @@ export default function Home() {
                 <button type="button" className={`settings-toggle ${earningsEnabled ? 'is-on' : ''}`} role="switch" aria-checked={earningsEnabled} aria-label="持倉財報日曆與提醒" onClick={toggleEarnings}><i /><b>{earningsEnabled ? '開啟' : '關閉'}</b></button>
               </div>
             </section>
-            <AiSettingsCard status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
+            <AiSettingsCard status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
           </div>
         </aside>
@@ -3266,7 +3275,7 @@ export default function Home() {
         </section>
       </div>}
       {rocBreakdownOpen && <RocBreakdownDialog summary={annualRocSummary} onClose={closeRocBreakdown} />}
-      {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} onClose={closeImport} onImported={handleImported} /></Suspense>}
+      {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} onClose={closeImport} onImported={handleImported} ai={importAi} /></Suspense>}
       {dividendAdjustmentCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!dividendAdjusting && event.target === event.currentTarget) setDividendAdjustmentCandidate(null); }}>
         <section className="dividend-adjustment-modal" role="dialog" aria-modal="true" aria-labelledby="dividend-adjustment-title">
           <header><div><p className="eyebrow">Dividend cash</p><h2 id="dividend-adjustment-title">調減股息入帳</h2></div><button type="button" className="close-button" disabled={dividendAdjusting} onClick={() => setDividendAdjustmentCandidate(null)} aria-label="關閉">×</button></header>

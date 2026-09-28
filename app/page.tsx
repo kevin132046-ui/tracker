@@ -2958,6 +2958,14 @@ export default function Home() {
               </div>}
               {earningsEnabled && <div className="earnings-ai-settings">
                 <p>{aiStatus === null ? 'AI 查詢：確認登入狀態中…' : aiStatus.state === 'error' ? `AI 查詢：${aiStatus.message}` : !aiStatus.providers.anthropic && !aiStatus.providers.openai ? 'AI 查詢：伺服器尚未設定 ANTHROPIC_API_KEY 或 OPENAI_API_KEY。' : 'AI 查詢：可用 Claude／ChatGPT 上網查財報日；結果只是建議，按「套用」才會存成手動日期。每次查詢會使用你的 API 額度。'}</p>
+                <nav className="earnings-ai-links" aria-label="AI 查詢設定連結">
+                  <span>設定連結</span>
+                  <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer noopener">Claude API 金鑰</a>
+                  <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer noopener">OpenAI API 金鑰</a>
+                  <a href="https://platform.openai.com/docs/models" target="_blank" rel="noreferrer noopener">OpenAI 模型清單</a>
+                  <a href="https://dash.cloudflare.com/?to=/:account/workers-and-pages" target="_blank" rel="noreferrer noopener">Cloudflare 後台</a>
+                  <a href="https://developers.cloudflare.com/workers/configuration/routing/workers-dev/#manage-access-to-workersdev" target="_blank" rel="noreferrer noopener">Access 設定說明</a>
+                </nav>
                 <label><span>ChatGPT 模型</span><input type="text" value={openAiModel} maxLength={64} spellCheck={false} autoComplete="off" placeholder={aiStatus?.state === 'ok' && aiStatus.openAiModel ? `預設 ${aiStatus.openAiModel}` : '輸入 OpenAI 模型名稱'} onChange={(event) => updateOpenAiModel(event.target.value)} /></label>
               </div>}
               <div className="settings-feature-actions">

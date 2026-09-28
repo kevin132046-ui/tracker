@@ -118,3 +118,97 @@ export function usMarketHolidays(year: number) {
   usHolidayCache.set(year, holidays);
   return holidays;
 }
+
+/* ------------------------------------------------------------------ */
+/* Date-picker helpers                                                 */
+/* ------------------------------------------------------------------ */
+
+export type CalendarMarket = 'US' | 'JP';
+
+/** YYYY-MM-DD → calendar parts; null unless it is a real date. */
+export function parseDateKey(key: string | null | undefined): ZonedDate | null {
+  if (!key || !/^\d{4}-\d{2}-\d{2}$/.test(key)) return null;
+  const [year, month, day] = key.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? { year, month, day } : null;
+}
+
+export const addDaysToKey = (key: string, days: number) => {
+  const date = parseDateKey(key);
+  return date ? zonedDateKey(addUtcDays(date, days)) : key;
+};
+
+export const isWeekendKey = (key: string) => {
+  const date = parseDateKey(key);
+  return date ? weekday(date) === 0 || weekday(date) === 6 : false;
+};
+
+/** NYSE / Nasdaq full-day closure on that day, if any. */
+export const usHolidayName = (key: string) => {
+  const date = parseDateKey(key);
+  return date ? usMarketHolidays(date.year).get(key) ?? null : null;
+};
+
+/** Tokyo Stock Exchange closure: the year-end break (Dec 31 – Jan 3) and national holidays. */
+export const japanHolidayName = (key: string) => {
+  const date = parseDateKey(key);
+  if (!date) return null;
+  if (date.month === 1 && (date.day === 2 || date.day === 3)) return '年始休業';
+  if (date.month === 12 && date.day === 31) return '年末休業';
+  return japaneseHolidays(date.year).get(key) ?? null;
+};
+
+export const isTradingDay = (key: string, market: CalendarMarket) => Boolean(parseDateKey(key))
+  && !isWeekendKey(key)
+  && !(market === 'US' ? usHolidayName(key) : japanHolidayName(key));
+
+/** The last trading day strictly before `key`. */
+export function previousTradingDay(key: string, market: CalendarMarket) {
+  let cursor = addDaysToKey(key, -1);
+  for (let guard = 0; guard < 20 && !isTradingDay(cursor, market); guard += 1) cursor = addDaysToKey(cursor, -1);
+  return cursor;
+}
+
+export const thirdFriday = (year: number, month: number) => dateKey(year, month, nthWeekday(year, month, 5, 3));
+
+/** US equity options expire on Friday, or on the trading day before when that Friday is an exchange holiday. */
+export function optionExpiryForFriday(fridayKey: string) {
+  let cursor = fridayKey;
+  for (let guard = 0; guard < 7 && !isTradingDay(cursor, 'US'); guard += 1) cursor = addDaysToKey(cursor, -1);
+  return cursor;
+}
+
+/** Standard monthly expiry: the third Friday, moved earlier for a holiday. */
+export const monthlyExpiry = (year: number, month: number) => optionExpiryForFriday(thirdFriday(year, month));
+
+export const isMonthlyExpiry = (key: string) => {
+  const date = parseDateKey(key);
+  return Boolean(date) && monthlyExpiry(date!.year, date!.month) === key;
+};
+
+export type ExpiryChoice = { key: string; monthly: boolean; holidayAdjusted: boolean };
+
+/**
+ * The next `count` weekly expiries strictly after `afterKey` (Fridays, holiday-adjusted) and the
+ * first monthly expiry after the last of them.
+ */
+export function upcomingExpiries(afterKey: string, count = 4): { weekly: ExpiryChoice[]; monthly: ExpiryChoice | null } {
+  const start = parseDateKey(afterKey);
+  if (!start) return { weekly: [], monthly: null };
+  let friday = zonedDateKey(addUtcDays(start, ((5 - weekday(start) + 7) % 7) || 7));
+  const weekly: ExpiryChoice[] = [];
+  for (let guard = 0; weekly.length < count && guard < count + 3; guard += 1) {
+    const key = optionExpiryForFriday(friday);
+    if (key > afterKey) weekly.push({ key, monthly: isMonthlyExpiry(key), holidayAdjusted: key !== friday });
+    friday = addDaysToKey(friday, 7);
+  }
+  const last = parseDateKey(weekly.at(-1)?.key ?? afterKey)!;
+  let { year, month } = last;
+  let key = monthlyExpiry(year, month);
+  for (let guard = 0; key <= (weekly.at(-1)?.key ?? afterKey) && guard < 3; guard += 1) {
+    month += 1;
+    if (month > 12) { month = 1; year += 1; }
+    key = monthlyExpiry(year, month);
+  }
+  return { weekly, monthly: { key, monthly: true, holidayAdjusted: key !== thirdFriday(year, month) } };
+}

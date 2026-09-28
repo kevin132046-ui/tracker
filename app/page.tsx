@@ -42,6 +42,12 @@ import EditableHeroTitle from '@/components/EditableHeroTitle';
 import FilingAnalysisDialog from '@/components/FilingAnalysisDialog';
 import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
+import HaloIcon from '@/components/wafu/HaloIcon';
+import NavIcon from '@/components/wafu/NavIcon';
+import type { WafuNavIconName } from '@/components/wafu/NavIcon';
+import WafuThemeCard from '@/components/wafu/WafuThemeCard';
+import type { WafuPreference, WafuTheme } from '@/lib/wafu/theme';
+import { applyWafu, defaultWafuPreference, loadWafuPreference, resolveWafu, saveWafuPreference } from '@/lib/wafu/theme';
 import DatePicker from '@/components/DatePicker';
 import TradeColumnPicker from '@/components/TradeColumnPicker';
 
@@ -970,6 +976,8 @@ export default function Home() {
   const [filingDialogSymbol, setFilingDialogSymbol] = useState<string | null>(null);
   const [openAiModel, setOpenAiModel] = useState('');
   const [claudeModel, setClaudeModel] = useState<ClaudeModel>(defaultClaudeModel);
+  const [wafuPreference, setWafuPreference] = useState<WafuPreference>(defaultWafuPreference);
+  const [wafuTheme, setWafuTheme] = useState<WafuTheme | null>(null);
   const [aiLookups, setAiLookups] = useState<Record<string, { loading: boolean; suggestion?: AiEarningsSuggestion; error?: string }>>({});
   const [yahooEarnings, setYahooEarnings] = useState<{ key: string; events: Record<string, EarningsEvent>; failed: string[] } | null>(null);
   const [brokerHubEnabled, setBrokerHubEnabled] = useState(false);
@@ -1190,6 +1198,8 @@ export default function Home() {
       const provider = loadDefaultProvider();
       const tier = loadUsageTier();
       const claude = loadClaudeModel();
+      const wafu = loadWafuPreference();
+      const wafuShown = resolveWafu(wafu);
       const questions = loadQuestions();
       // Loading also drops analyses older than half a year.
       const analyses = loadAnalyses();
@@ -1201,6 +1211,9 @@ export default function Home() {
         setDefaultAiProvider(provider);
         setOpenAiTier(tier);
         setClaudeModel(claude);
+        setWafuPreference(wafu);
+        setWafuTheme(wafuShown);
+        applyWafu(wafuShown);
         setAnalysisQuestions(questions);
         setFilingAnalyses(analyses);
       });
@@ -1279,6 +1292,13 @@ export default function Home() {
   const updateAiKeys = useCallback((keys: AiKeys) => { setAiKeys(keys); saveAiKeys(keys); }, []);
   const updateOpenAiTier = useCallback((tier: UsageTier) => { setOpenAiTier(tier); saveUsageTier(tier); }, []);
   const updateClaudeModel = useCallback((model: ClaudeModel) => { setClaudeModel(model); saveClaudeModel(model); }, []);
+  const updateWafuPreference = useCallback((preference: WafuPreference) => {
+    const theme = resolveWafu(preference);
+    saveWafuPreference(preference);
+    setWafuPreference(preference);
+    setWafuTheme(theme);
+    applyWafu(theme);
+  }, []);
   // The import dialog's AI entry starts from the AI settings and can pick another model per use.
   const importAi = useMemo(() => ({ keys: aiKeys, defaultProvider: defaultAiProvider, openAiModel, claudeModel, usageTier: openAiTier, onUsed: refreshQuota }), [aiKeys, claudeModel, defaultAiProvider, openAiModel, openAiTier, refreshQuota]);
   const updateDefaultAiProvider = useCallback((provider: AiProvider) => { setDefaultAiProvider(provider); saveDefaultProvider(provider); }, []);
@@ -2759,6 +2779,10 @@ export default function Home() {
   const imageBackgroundActive = backgroundMode === 'image' && Boolean(backgroundImage);
   const shellStyle = useMemo(() => imageBackgroundActive ? { '--custom-background': `url("${backgroundImage}")` } as CSSProperties : undefined, [backgroundImage, imageBackgroundActive]);
   const selectedStockTrades = useMemo(() => drilledTicker ? trades.filter((trade) => trade.ticker === drilledTicker && (trade.type === 'SDI' || trade.event === 'STOCK')) : [], [drilledTicker, trades]);
+  // Side-navigation icon: the original glyph, or in a 和風 theme a line icon with the character's halo over the current item.
+  const navGlyph = (name: WafuNavIconName, glyph: string, current: boolean) => wafuTheme
+    ? <i className="wafu-nav-glyph"><NavIcon name={name} />{current && <span className="wafu-nav-halo" aria-hidden="true"><HaloIcon theme={wafuTheme} size={34} tilt={64} /></span>}</i>
+    : <i>{glyph}</i>;
 
   return (
     <main
@@ -2788,18 +2812,18 @@ export default function Home() {
 
       <div className="page-frame">
         <nav className="side-nav" aria-label="頁面切換">
-          <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}><i>⚙</i><span>設定</span></button>
-          {([['overview', '總覽', '⌂'], ['positions', '持倉', '▦'], ['returns', '收益', '⌁']] as const).map(([section, label, icon]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}><i>{icon}</i><span>{label}</span></a>)}
-          <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}><i>◇</i><span>估值</span></button>
+          <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}>{navGlyph('settings', '⚙', settingsOpen)}<span>設定</span></button>
+          {([['overview', '總覽', '⌂'], ['positions', '持倉', '▦'], ['returns', '收益', '⌁']] as const).map(([section, label, icon]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}>{navGlyph(section, icon, activeSection === section)}<span>{label}</span></a>)}
+          <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}>{navGlyph('valuation', '◇', activeSection === 'valuation')}<span>估值</span></button>
           <div className="background-control">
-            <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}><i>{backgroundSaving ? '◌' : '▧'}</i><span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
+            <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}>{navGlyph(backgroundSaving ? 'saving' : 'background', backgroundSaving ? '◌' : '▧', false)}<span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
             {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" disabled={backgroundSaving} className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" disabled={backgroundSaving} className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
             <input ref={backgroundInputRef} className="visually-hidden" type="file" accept="image/*" disabled={backgroundSaving} onChange={handleBackgroundUpload} />
           </div>
         </nav>
         <div className="dashboard">
         <section className="hero" id="overview">
-          <div><EditableHeroTitle onNotify={notify} /></div>
+          <div><EditableHeroTitle onNotify={notify} vertical={Boolean(wafuTheme)} /></div>
           <LiveMarketClocks lastQuoteAt={lastQuoteAt} />
         </section>
 
@@ -3030,6 +3054,7 @@ export default function Home() {
         <aside className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
           <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title">設定</h2><span>選擇要啟用的擴充工作區。</span></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
           <div className="settings-body">
+            <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} />
             <section className={`settings-feature-card ${brokerHubEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon" aria-hidden="true">◎</span><div><p>Optional module</p><h3>跨券商資產追蹤與再平衡</h3></div><span className="settings-feature-status">{brokerHubLoading ? '讀取中' : brokerHubEnabled ? '已開啟' : '預設關閉'}</span></div>
               <p>把不同券商的手動部位聚合成單一全景，提供 USD／JPY 平抑檢視、偏離診斷、只買不賣試算與跨券商待辦清單。</p>

@@ -139,6 +139,11 @@ const translations: ReadonlyArray<readonly [string, string | null, string | null
   ['Claude 模型', 'Claude モデル', 'Claude model'], ['（預設）', '（既定）', '(default)'], ['（最強）', '（最上位）', '(most capable)'], ['（較快、較省）', '（高速・低コスト）', '(faster, cheaper)'],
   ['伺服器預設', 'サーバー既定', 'Server default'], ['模型', 'モデル', 'Model'], ['只支援 PNG、JPEG、WebP 或 GIF 圖片。', 'PNG・JPEG・WebP・GIF 画像のみ対応しています。', 'Only PNG, JPEG, WebP or GIF images are supported.'], ['圖片超過 4 MB，請裁切或壓縮後再試。', '画像が 4 MB を超えています。切り抜くか圧縮してください。', 'The image is over 4 MB; crop or compress it and try again.'],
   ['沒有讀到交易。請寫明標的、買或賣、數量與價格。', '取引を読み取れませんでした。銘柄・売買・数量・価格を書いてください。', 'No trades found. Say the symbol, buy or sell, quantity and price.'], ['匯入方式', 'インポート方法', 'Import method'],
+  // 和風介面 theme card.
+  ['和風介面', '和風インターフェース', 'Japanese-style theme'], ['原本的淺色介面', '元のライトテーマ', 'The original light page'], ['夜的書齋 · 紺與金', '夜の書斎 · 紺と金', 'Night study · navy and gold'],
+  ['雪夜湯宿 · 青與琥珀', '雪夜の湯宿 · 青と琥珀', 'Snowy hot-spring night · teal and amber'], ['每次開啟時選一個', '開くたびにどちらかを選択', 'Picks one each time you open the page'], ['介面主題', 'テーマ', 'Theme'],
+  ['桔梗與時雨兩個深色主題：明朝字體、角色光環與和紙質感。只改外觀，資料與功能完全相同；選擇保存在這個瀏覽器。', '桔梗と時雨の 2 つのダークテーマ：明朝体、キャラクターの光輪、和紙の質感。見た目だけが変わり、データと機能は同じです。選択はこのブラウザに保存されます。', 'Two dark themes, 桔梗 and 時雨: Mincho type, the characters\' halos and a washi-paper feel. Only the look changes; data and features stay the same. The choice is saved in this browser.'],
+  ['經典', 'クラシック', 'Classic'], ['隨機', 'ランダム', 'Random'],
   // English only: labels and notes the Japanese list never covered.
   ['即時市場時間', null, 'Live market time'], ['美東', null, 'New York'], ['報價每 60 秒更新 · 上次', null, 'Quotes refresh every 60 s · last'],
   ['筆未平倉持倉', null, 'open positions'], ['筆有效平倉交易', null, 'closed trades counted'], ['股票採買入成本；賣方選擇權採擔保金或履約價名目', null, 'Stocks at cost; short options at collateral or strike notional'],

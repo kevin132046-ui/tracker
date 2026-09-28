@@ -25,12 +25,17 @@ import { addDaysToKey, dateKey, japaneseHolidays, parseDateKey, upcomingClosures
 import type { UpcomingClosure } from '@/lib/market-calendar';
 import { earningsReminders, exchangeTodayKey, mergeEarnings, pruneManualEarnings } from '@/lib/earnings';
 import type { AiEarningsSuggestion, AiProvider, EarningsEntry, EarningsEvent, EarningsReminder } from '@/lib/earnings';
+import { aiKeyHeaders, loadAiKeys, loadAnalyses, loadDefaultProvider, loadQuestions, releaseNoticeDays, saveAiKeys, saveAnalyses, saveDefaultProvider, saveQuestions } from '@/lib/filings';
+import type { AiKeys, CompanyFilings, FilingAnalysis } from '@/lib/filings';
 import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
 import type { TradeColumnId } from '@/lib/trade-columns';
 import { tradesToCsv } from '@/lib/trade-csv';
+import AiSettingsCard from '@/components/AiSettingsCard';
+import type { AiStatus } from '@/components/AiSettingsCard';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
+import FilingAnalysisDialog from '@/components/FilingAnalysisDialog';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import DatePicker from '@/components/DatePicker';
 import TradeColumnPicker from '@/components/TradeColumnPicker';
@@ -614,7 +619,7 @@ type NoticeEarnings = { symbols: string[]; yahoo: Record<string, EarningsEvent>;
 // US and Japanese closures in the coming week, US early closes, and earnings of held symbols.
 // Hidden when there is nothing to show, when everything shown has been dismissed, or when both
 // parts are switched off in settings.
-const HolidayNotice = memo(function HolidayNotice({ enabled, earnings }: { enabled: boolean; earnings: NoticeEarnings | null }) {
+const HolidayNotice = memo(function HolidayNotice({ enabled, earnings, releases, onOpenRelease }: { enabled: boolean; earnings: NoticeEarnings | null; releases: Array<{ symbol: string; filed: string }>; onOpenRelease: (symbol: string) => void }) {
   const [timestamp, setTimestamp] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState<string[] | null>(null);
   useEffect(() => {
@@ -637,7 +642,8 @@ const HolidayNotice = memo(function HolidayNotice({ enabled, earnings }: { enabl
     if (timestamp === null || !earnings) return [];
     return earningsReminders(mergeEarnings(earnings.symbols, earnings.yahoo, earnings.manual, timestamp), timestamp);
   }, [earnings, timestamp]);
-  const ids = [...closures.map(closureId), ...reminders.map(earningsReminderId)];
+  const releaseId = (release: { symbol: string; filed: string }) => `FILED:${release.filed}:${release.symbol}`;
+  const ids = [...releases.map(releaseId), ...closures.map(closureId), ...reminders.map(earningsReminderId)];
   if (dismissed === null || !ids.length || ids.every((id) => dismissed.includes(id))) return null;
   const dismiss = () => {
     // Keep only ids that can still come up, so the stored list stays small.
@@ -646,10 +652,15 @@ const HolidayNotice = memo(function HolidayNotice({ enabled, earnings }: { enabl
     setDismissed(next);
     try { window.localStorage.setItem(holidayNoticeDismissedKey, JSON.stringify(next)); } catch { /* storage unavailable: hide for this visit only */ }
   };
-  const title = reminders.length ? '市場提醒' : '休市預告';
+  const title = reminders.length || releases.length ? '市場提醒' : '休市預告';
   return <div className="holiday-notice" role="status">
     <strong>{title}</strong>
     <ul>
+      {releases.map((release) => <li key={releaseId(release)} className="holiday-notice-item is-release">
+        <b>財報已公布</b>
+        <button type="button" onClick={() => onOpenRelease(release.symbol)} aria-label={`查看 ${release.symbol} 財報解讀`}>{release.symbol} · 查看解讀</button>
+        <small>{release.filed.slice(5).replace('-', '/')} 申報</small>
+      </li>)}
       {closures.map((closure) => <li key={closureId(closure)} className={`holiday-notice-item is-${closure.market.toLowerCase()} ${closure.kind === 'early' ? 'is-early' : ''}`}>
         <b>{closureLabel(closure)}</b>
         <span>{closure.name}{closure.kind === 'early' ? ' · 13:00 ET' : ''}</span>
@@ -935,7 +946,13 @@ export default function Home() {
   const [holidayNoticeEnabled, setHolidayNoticeEnabled] = useState(true);
   const [earningsEnabled, setEarningsEnabled] = useState(true);
   const [manualEarnings, setManualEarnings] = useState<Record<string, string>>({});
-  const [aiStatus, setAiStatus] = useState<{ state: 'ok'; providers: Record<AiProvider, boolean>; openAiModel: string | null } | { state: 'error'; message: string } | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus>(null);
+  const [aiKeys, setAiKeys] = useState<AiKeys>({ openai: '', anthropic: '' });
+  const [defaultAiProvider, setDefaultAiProvider] = useState<AiProvider>('openai');
+  const [analysisQuestions, setAnalysisQuestions] = useState<string[]>([]);
+  const [filingAnalyses, setFilingAnalyses] = useState<Record<string, FilingAnalysis>>({});
+  const [secFilings, setSecFilings] = useState<{ key: string; filings: Record<string, CompanyFilings> } | null>(null);
+  const [filingDialogSymbol, setFilingDialogSymbol] = useState<string | null>(null);
   const [openAiModel, setOpenAiModel] = useState('');
   const [aiLookups, setAiLookups] = useState<Record<string, { loading: boolean; suggestion?: AiEarningsSuggestion; error?: string }>>({});
   const [yahooEarnings, setYahooEarnings] = useState<{ key: string; events: Record<string, EarningsEvent>; failed: string[] } | null>(null);
@@ -1131,10 +1148,19 @@ export default function Home() {
         ? pruneManualEarnings(Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => typeof entry[1] === 'string')), Date.now())
         : {};
       const model = window.localStorage.getItem(openAiModelKey) ?? '';
+      const keys = loadAiKeys();
+      const provider = loadDefaultProvider();
+      const questions = loadQuestions();
+      // Loading also drops analyses older than half a year.
+      const analyses = loadAnalyses();
       queueMicrotask(() => {
         if (off) setEarningsEnabled(false);
         setManualEarnings(manual);
         setOpenAiModel(model);
+        setAiKeys(keys);
+        setDefaultAiProvider(provider);
+        setAnalysisQuestions(questions);
+        setFilingAnalyses(analyses);
       });
     } catch { /* storage unavailable: keep the defaults */ }
   }, []);
@@ -1163,19 +1189,19 @@ export default function Home() {
 
   // AI lookups sit behind Cloudflare Access; ask once, when the settings panel first opens.
   useEffect(() => {
-    if (!settingsOpen || !earningsEnabled || aiStatus) return;
+    if ((!settingsOpen && !filingDialogSymbol) || aiStatus) return;
     const controller = new AbortController();
     fetch('/api/ai', { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json() as { providers?: Record<AiProvider, boolean>; openAiModel?: string | null; error?: string };
+        const payload = await response.json() as { providers?: Record<AiProvider, boolean>; openAiModel?: string | null; sec?: boolean; error?: string };
         if (!response.ok || !payload.providers) throw new Error(payload.error ?? 'AI 查詢暫時無法使用。');
-        if (!controller.signal.aborted) setAiStatus({ state: 'ok', providers: payload.providers, openAiModel: payload.openAiModel ?? null });
+        if (!controller.signal.aborted) setAiStatus({ state: 'ok', providers: payload.providers, openAiModel: payload.openAiModel ?? null, sec: Boolean(payload.sec) });
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setAiStatus({ state: 'error', message: error instanceof Error ? error.message : 'AI 查詢暫時無法使用。' });
       });
     return () => controller.abort();
-  }, [aiStatus, earningsEnabled, settingsOpen]);
+  }, [aiStatus, filingDialogSymbol, settingsOpen]);
 
   const lookupEarningsWithAi = useCallback(async (symbol: string, provider: AiProvider) => {
     const id = `${provider}:${symbol}`;
@@ -1183,7 +1209,7 @@ export default function Home() {
     try {
       const response = await fetch('/api/ai', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...aiKeyHeaders(aiKeys) },
         body: JSON.stringify({ task: 'earnings-date', symbol, provider, model: provider === 'openai' ? openAiModel.trim() : undefined }),
       });
       const payload = await response.json() as { suggestion?: AiEarningsSuggestion; error?: string };
@@ -1192,7 +1218,7 @@ export default function Home() {
     } catch (error) {
       setAiLookups((current) => ({ ...current, [id]: { loading: false, error: error instanceof Error ? error.message : '查詢失敗，請稍後再試。' } }));
     }
-  }, [openAiModel]);
+  }, [aiKeys, openAiModel]);
 
   const dismissAiLookup = useCallback((id: string) => {
     setAiLookups((current) => {
@@ -1201,6 +1227,19 @@ export default function Home() {
       return next;
     });
   }, []);
+
+  const updateAiKeys = useCallback((keys: AiKeys) => { setAiKeys(keys); saveAiKeys(keys); }, []);
+  const updateDefaultAiProvider = useCallback((provider: AiProvider) => { setDefaultAiProvider(provider); saveDefaultProvider(provider); }, []);
+  const updateAnalysisQuestions = useCallback((questions: string[]) => { setAnalysisQuestions(questions); saveQuestions(questions); }, []);
+  const saveFilingAnalysis = useCallback((analysis: FilingAnalysis) => {
+    setFilingAnalyses((current) => {
+      const next = { ...current, [analysis.accession]: analysis };
+      saveAnalyses(next);
+      return next;
+    });
+  }, []);
+  // A provider is usable with a key typed into this browser or one set on the server.
+  const aiProviderReady = useCallback((provider: AiProvider) => Boolean(aiKeys[provider].trim()) || (aiStatus?.state === 'ok' && aiStatus.providers[provider]), [aiKeys, aiStatus]);
 
   const toggleHolidayNotice = useCallback(() => {
     setHolidayNoticeEnabled((current) => {
@@ -1499,6 +1538,35 @@ export default function Home() {
   const noticeEarnings = useMemo(() => earningsEnabled && earningsSymbolKey
     ? { symbols: earningsSymbolKey.split(','), yahoo: yahooEarnings?.events ?? {}, manual: manualEarnings }
     : null, [earningsEnabled, earningsSymbolKey, manualEarnings, yahooEarnings?.events]);
+
+  // SEC filings of the US symbols, for the "results are out" chip and the analysis dialog.
+  const secSymbolKey = useMemo(() => earningsSymbolKey.split(',').filter((symbol) => symbol && !symbol.endsWith('.T')).join(','), [earningsSymbolKey]);
+  useEffect(() => {
+    if (!earningsEnabled || !secSymbolKey || secFilings?.key === secSymbolKey) return;
+    const controller = new AbortController();
+    fetch(`/api/filings?symbols=${encodeURIComponent(secSymbolKey)}`, { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { filings?: Record<string, CompanyFilings> };
+        if (!controller.signal.aborted) setSecFilings({ key: secSymbolKey, filings: response.ok && payload.filings ? payload.filings : {} });
+      })
+      .catch(() => { if (!controller.signal.aborted) setSecFilings({ key: secSymbolKey, filings: {} }); });
+    return () => controller.abort();
+  }, [earningsEnabled, secFilings?.key, secSymbolKey]);
+
+  const filingsFor = useCallback((symbol: string) => {
+    const company = secFilings?.filings[symbol];
+    return company && (company.earningsRelease || company.periodicReport) ? company : null;
+  }, [secFilings]);
+
+  const recentReleases = useMemo(() => {
+    if (!earningsEnabled || !secFilings) return [];
+    const today = zonedDateKey(zonedDate(Date.now(), 'America/New_York'));
+    const earliest = addDaysToKey(today, -releaseNoticeDays);
+    return Object.entries(secFilings.filings).flatMap(([symbol, company]) => {
+      const filed = company.earningsRelease?.filed;
+      return filed && filed >= earliest && filed <= today ? [{ symbol, filed }] : [];
+    }).sort((a, b) => b.filed.localeCompare(a.filed));
+  }, [earningsEnabled, secFilings]);
 
   const earningsRows = useMemo(() => {
     if (!noticeEarnings) return [];
@@ -2655,7 +2723,7 @@ export default function Home() {
           <button className="primary-button" type="button" onClick={() => setEditor(blankTrade())}>＋新增交易</button>
         </div>
       </header>
-      <HolidayNotice enabled={holidayNoticeEnabled} earnings={noticeEarnings} />
+      <HolidayNotice enabled={holidayNoticeEnabled} earnings={noticeEarnings} releases={recentReleases} onOpenRelease={setFilingDialogSymbol} />
 
       <div className="page-frame">
         <nav className="side-nav" aria-label="頁面切換">
@@ -2881,6 +2949,19 @@ export default function Home() {
         </div>
       </div>
 
+      {filingDialogSymbol && secFilings?.filings[filingDialogSymbol] && <FilingAnalysisDialog
+        symbol={filingDialogSymbol}
+        company={secFilings.filings[filingDialogSymbol]}
+        status={aiStatus}
+        keys={aiKeys}
+        defaultProvider={defaultAiProvider}
+        openAiModel={openAiModel}
+        questions={analysisQuestions}
+        analyses={filingAnalyses}
+        onSave={saveFilingAnalysis}
+        onClose={() => setFilingDialogSymbol(null)}
+      />}
+
       {settingsOpen && <div className="settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
         <aside className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
           <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title">設定</h2><span>選擇要啟用的擴充工作區。</span></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
@@ -2929,11 +3010,12 @@ export default function Home() {
                       <input type="date" min={today} value={manualEarnings[symbol] ?? ''} aria-label={`手動財報日 ${symbol}`} onChange={(event) => setManualEarningsDate(symbol, event.target.value || null)} />
                       {manualEarnings[symbol] && <button type="button" onClick={() => setManualEarningsDate(symbol, null)} aria-label={`清除手動財報日 ${symbol}`}>×</button>}
                     </span>
-                    {aiStatus?.state === 'ok' && (aiStatus.providers.anthropic || aiStatus.providers.openai) && <span role="cell" className="earnings-ai-actions">
-                      {(['anthropic', 'openai'] as const).filter((provider) => aiStatus.providers[provider]).map((provider) => {
+                    {(filingsFor(symbol) || (aiStatus?.state === 'ok' && (aiProviderReady('anthropic') || aiProviderReady('openai')))) && <span role="cell" className="earnings-ai-actions">
+                      {filingsFor(symbol) && <button type="button" className="is-filing" onClick={() => setFilingDialogSymbol(symbol)} aria-label={`財報解讀 ${symbol}`}>財報解讀</button>}
+                      {aiStatus?.state === 'ok' && (['openai', 'anthropic'] as const).filter((provider) => aiProviderReady(provider)).map((provider) => {
                         const lookup = aiLookups[`${provider}:${symbol}`];
                         const name = provider === 'anthropic' ? 'Claude' : 'ChatGPT';
-                        return <button type="button" key={provider} disabled={lookup?.loading || (provider === 'openai' && !(openAiModel.trim() || aiStatus.openAiModel))} onClick={() => lookupEarningsWithAi(symbol, provider)} aria-label={`用 ${name} 查 ${symbol} 財報日`}>{lookup?.loading ? `${name} 查詢中…` : `${name} 查`}</button>;
+                        return <button type="button" key={provider} disabled={lookup?.loading || (provider === 'openai' && !(openAiModel.trim() || (aiStatus?.state === 'ok' && aiStatus.openAiModel)))} onClick={() => lookupEarningsWithAi(symbol, provider)} aria-label={`用 ${name} 查 ${symbol} 財報日`}>{lookup?.loading ? `${name} 查詢中…` : `${name} 查`}</button>;
                       })}
                     </span>}
                     {(['anthropic', 'openai'] as const).map((provider) => {
@@ -2956,23 +3038,13 @@ export default function Home() {
                   </div>;
                 })}
               </div>}
-              {earningsEnabled && <div className="earnings-ai-settings">
-                <p>{aiStatus === null ? 'AI 查詢：確認登入狀態中…' : aiStatus.state === 'error' ? `AI 查詢：${aiStatus.message}` : !aiStatus.providers.anthropic && !aiStatus.providers.openai ? 'AI 查詢：伺服器尚未設定 ANTHROPIC_API_KEY 或 OPENAI_API_KEY。' : 'AI 查詢：可用 Claude／ChatGPT 上網查財報日；結果只是建議，按「套用」才會存成手動日期。每次查詢會使用你的 API 額度。'}</p>
-                <nav className="earnings-ai-links" aria-label="AI 查詢設定連結">
-                  <span>設定連結</span>
-                  <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer noopener">Claude API 金鑰</a>
-                  <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer noopener">OpenAI API 金鑰</a>
-                  <a href="https://platform.openai.com/docs/models" target="_blank" rel="noreferrer noopener">OpenAI 模型清單</a>
-                  <a href="https://dash.cloudflare.com/?to=/:account/workers-and-pages" target="_blank" rel="noreferrer noopener">Cloudflare 後台</a>
-                  <a href="https://developers.cloudflare.com/workers/configuration/routing/workers-dev/#manage-access-to-workersdev" target="_blank" rel="noreferrer noopener">Access 設定說明</a>
-                </nav>
-                <label><span>ChatGPT 模型</span><input type="text" value={openAiModel} maxLength={64} spellCheck={false} autoComplete="off" placeholder={aiStatus?.state === 'ok' && aiStatus.openAiModel ? `預設 ${aiStatus.openAiModel}` : '輸入 OpenAI 模型名稱'} onChange={(event) => updateOpenAiModel(event.target.value)} /></label>
-              </div>}
+              {earningsEnabled && <p className="earnings-ai-hint">{aiStatus?.state === 'error' ? `AI 查詢：${aiStatus.message}` : '金鑰、ChatGPT 模型與財報解讀問題在下方「AI 設定」。'}</p>}
               <div className="settings-feature-actions">
                 <span>手動日期優先於 Yahoo，過了那天會自動改回 Yahoo 的日期；手動日期與開關保存在這個瀏覽器。</span>
                 <button type="button" className={`settings-toggle ${earningsEnabled ? 'is-on' : ''}`} role="switch" aria-checked={earningsEnabled} aria-label="持倉財報日曆與提醒" onClick={toggleEarnings}><i /><b>{earningsEnabled ? '開啟' : '關閉'}</b></button>
               </div>
             </section>
+            <AiSettingsCard status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
           </div>
         </aside>

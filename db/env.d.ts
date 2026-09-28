@@ -11,5 +11,7 @@ declare namespace Cloudflare {
     OPENAI_API_KEY?: string;
     // Fallback ChatGPT model when the settings card leaves it blank.
     OPENAI_MODEL?: string;
+    // Contact email for the User-Agent SEC requires on EDGAR requests.
+    SEC_CONTACT?: string;
   }
 }

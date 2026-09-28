@@ -41,7 +41,10 @@ function writeCache(state: HeroTitleState) {
   }
 }
 
-export default function EditableHeroTitle({ onNotify }: { onNotify: (message: string) => void }) {
+/** One box per character, so a vertical 和風 title stacks evenly whatever font the device falls back to. */
+const verticalChars = (text: string) => [...text].map((char, index) => <i key={index} className="wafu-title-ch">{char}</i>);
+
+export default function EditableHeroTitle({ onNotify, vertical = false }: { onNotify: (message: string) => void; vertical?: boolean }) {
   const [title, setTitle] = useState(defaultTitle);
   const [draft, setDraft] = useState(defaultTitle);
   const [revision, setRevision] = useState(0);
@@ -142,7 +145,7 @@ export default function EditableHeroTitle({ onNotify }: { onNotify: (message: st
 
   return <h1 className="editable-hero-title">
     <button type="button" className="hero-title-display" onClick={() => setEditing(true)} title="點擊編輯網頁標題" aria-label={`編輯網頁標題：${title}`}>
-      {parts.base}<span className="hero-title-accent">{parts.accent}</span><span className="hero-title-edit-icon" aria-hidden="true">✎</span>
+      {vertical ? verticalChars(parts.base) : parts.base}<span className="hero-title-accent">{vertical ? verticalChars(parts.accent) : parts.accent}</span><span className="hero-title-edit-icon" aria-hidden="true">✎</span>
     </button>
   </h1>;
 }

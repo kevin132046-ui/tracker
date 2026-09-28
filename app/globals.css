@@ -541,3 +541,247 @@ button, a { touch-action: manipulation; }.shell.has-custom-background:before { t
   .technical-price-tooltip.is-ohlc { min-width: 164px; }
   .language-switcher { order: -1; }.language-switcher button { padding: 0 7px; font-size: 9.5px; }
 }
+
+/* Clickable annual ROC card, its calculation breakdown and time-weighted return notes. */
+.metric-card-interactive { transition: border-color .18s ease, box-shadow .18s ease; }
+.metric-card-interactive:hover, .metric-card-interactive:focus-within, .metric-card-interactive.is-open { border-color: #bfd3f3; box-shadow: 0 14px 36px rgba(47,115,237,.1); }
+.metric-card-interactive:hover:before, .metric-card-interactive:focus-within:before, .metric-card-interactive.is-open:before { background: var(--blue); }
+.metric-card-action { position: absolute; inset: 0; z-index: 1; display: flex; align-items: flex-start; justify-content: flex-end; padding: 19px 17px; color: #4c6fae; background: transparent; border: 0; border-radius: inherit; cursor: pointer; }
+.metric-card-action > span { padding: 5px 9px; background: #eef4fd; border: 1px solid #d9e6f8; border-radius: 999px; font-size: 10.5px; font-weight: 850; letter-spacing: .02em; transition: color .15s ease, background .15s ease, border-color .15s ease; }
+.metric-card-action:hover > span, .metric-card-action:focus-visible > span { color: white; background: var(--blue); border-color: var(--blue); }
+.metric-card-action:focus-visible { outline: 3px solid rgba(47,115,237,.26); outline-offset: -3px; }
+.return-summary > .return-cumulative { color: #5f718d; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.return-summary > .return-cumulative b { font-weight: 900; }
+.return-method-note { margin: 12px 0 0; color: #71819a; font-size: 12px; font-weight: 700; line-height: 1.6; }
+.roc-breakdown-modal { width: min(1040px,100%); max-height: calc(100dvh - 36px); display: flex; flex-direction: column; overflow: hidden; color: #1b2b46; background: #fff; border: 1px solid rgba(255,255,255,.9); border-radius: 22px; box-shadow: 0 30px 100px rgba(6,21,45,.38); }
+.roc-breakdown-modal > header { flex: 0 0 auto; min-height: 92px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 26px; border-bottom: 1px solid #e5eaf2; }.roc-breakdown-modal h2 { margin: 4px 0 0; font-size: 25px; letter-spacing: -.03em; }
+.roc-breakdown-body { min-height: 0; display: grid; grid-auto-rows: max-content; gap: 16px; padding: 22px 26px 26px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+.roc-breakdown-stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; }.roc-breakdown-stats > div { min-width: 0; padding: 13px 14px; background: #f7f9fc; border: 1px solid #e1e7f0; border-radius: 12px; }.roc-breakdown-stats span,.roc-breakdown-stats strong { display: block; }.roc-breakdown-stats span { color: #7d8ba0; font-size: 11px; font-weight: 800; }.roc-breakdown-stats strong { margin-top: 5px; color: #1b3152; font-size: 20px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.roc-breakdown-formula { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; padding: 13px 15px; color: #4e607a; background: #f5f8fd; border: 1px solid #dfe8f5; border-radius: 11px; font-size: 13px; font-weight: 800; line-height: 1.55; font-variant-numeric: tabular-nums; }.roc-breakdown-formula > span:first-child { color: #315a99; }.roc-breakdown-formula strong { color: #205fc9; font-size: 15px; font-weight: 900; }
+.roc-breakdown-table-wrap { overflow-x: auto; border: 1px solid #e5eaf2; border-radius: 13px; overscroll-behavior-x: contain; scrollbar-color: #b5c0cf #f3f5f8; }
+.roc-breakdown-modal table.roc-breakdown-table { width: 100%; min-width: 900px; border-collapse: collapse; }
+.roc-breakdown-table th { padding: 11px 12px; font-size: 11px; letter-spacing: .04em; }.roc-breakdown-table td { padding: 12px; color: #33455f; font-size: 13px; font-variant-numeric: tabular-nums; vertical-align: top; }.roc-breakdown-table td strong { color: #17243d; font-size: 14px; }.roc-breakdown-table td .subtle { margin-top: 3px; font-size: 11.5px; }
+.roc-breakdown-table .numeric { text-align: right; }.roc-breakdown-dates { color: #5d6e88; }.roc-breakdown-table tfoot td { color: #17243d; background: #f8faff; border-top: 1px solid #dbe3ee; font-weight: 850; }.roc-breakdown-table .roc-breakdown-empty { color: #8a98ae; text-align: center; }
+.roc-basis-tag { display: block; width: max-content; margin: 4px 0 0 auto; padding: 2px 7px; color: #8a5b14; background: #fff4de; border: 1px solid #f3dfb8; border-radius: 999px; font-size: 10px; font-weight: 850; }.roc-basis-tag.is-weighted { color: #315a99; background: #eef4fd; border-color: #d9e6f8; }
+.roc-breakdown-notes { display: grid; gap: 4px; margin: 0; padding: 0 0 0 18px; color: #71809a; font-size: 12px; font-weight: 650; line-height: 1.6; }
+
+@media (max-width: 720px) {
+  .roc-breakdown-modal > header { min-height: 82px; padding: 18px 19px; }.roc-breakdown-modal h2 { font-size: 21px; }
+  .roc-breakdown-body { padding: 18px 19px 22px; }.roc-breakdown-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }.roc-breakdown-stats strong { font-size: 17px; }
+}
+@media (max-width: 460px) {
+  .confirm-backdrop:has(.roc-breakdown-modal) { padding: 12px; }.roc-breakdown-modal { max-height: calc(100dvh - 24px); }
+}
+
+/* Trader tools: details-table column picker. */
+.filter-row .column-picker-trigger { position: sticky; right: 0; z-index: 1; flex: 0 0 auto; margin-left: auto; color: #315a99; background: #f8fafc; border: 1px solid #dfe6f0; }
+.filter-row .column-picker-trigger:hover, .filter-row .column-picker-trigger.active { color: #235fc8; background: var(--blue-soft); border-color: #c8dbf8; }
+.filter-row .column-picker-trigger span { color: #5874a4; background: #e8f0fc; }
+.column-picker-layer { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+.column-picker-layer.is-sheet { display: flex; align-items: flex-end; background: rgba(8,22,45,.42); pointer-events: auto; }
+.column-picker-panel { position: fixed; display: grid; gap: 14px; align-content: start; overflow-y: auto; overscroll-behavior: contain; padding: 18px; color: #1b2b46; background: #fff; border: 1px solid #d9e3f0; border-radius: 16px; box-shadow: 0 22px 60px rgba(12,35,70,.22); pointer-events: auto; }
+.column-picker-layer.is-sheet .column-picker-panel { position: relative; width: 100%; max-height: min(82vh, 640px); padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0; }
+.column-picker-panel > header { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.column-picker-panel > header .eyebrow { margin-bottom: 4px; }
+.column-picker-panel > header strong { color: #14213a; font-size: 18px; }
+.column-picker-close { width: 34px; height: 34px; flex: 0 0 auto; color: #63728a; background: #f0f3f7; border: 0; border-radius: 9px; font-size: 21px; line-height: 1; cursor: pointer; }
+.column-picker-close:hover { background: #e7ebf1; }
+.column-picker-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.column-picker-presets button { min-height: 36px; padding: 0 12px; color: #52647f; background: #f5f7fb; border: 1px solid #e0e6ef; border-radius: 999px; font-size: 13px; font-weight: 800; cursor: pointer; }
+.column-picker-presets button:hover { color: #235fc8; border-color: #b9cae3; }
+.column-picker-presets button.active { color: #fff; background: var(--blue); border-color: var(--blue); }
+.column-picker-group { min-width: 0; margin: 0; padding: 12px 0 0; border: 0; border-top: 1px solid #edf0f5; }
+.column-picker-group legend { padding: 0; color: #6788bf; font-size: 11px; font-weight: 900; letter-spacing: .12em; }
+.column-picker-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; margin-top: 6px; }
+.column-picker-option { min-width: 0; min-height: 36px; display: flex; align-items: center; gap: 8px; padding: 5px 7px; color: #33455f; border-radius: 8px; font-size: 13px; font-weight: 750; line-height: 1.3; cursor: pointer; }
+.column-picker-option:hover { background: #f3f7fe; }
+.column-picker-option input { width: 17px; height: 17px; flex: 0 0 auto; margin: 0; accent-color: var(--blue); }
+.column-picker-note { margin: 0; color: #7d8ba0; font-size: 11.5px; font-weight: 650; line-height: 1.55; }
+table.trade-table-custom { min-width: 0; }
+table.trade-table-custom td.trade-dates-cell > strong, .trade-metric-cell > strong { display: block; color: #263751; }
+table.trade-table-custom td.positive > strong, table.trade-table-custom td.negative > strong { color: inherit; }
+.trade-metric-cell { font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) {
+  .filter-row .column-picker-trigger { margin-left: 6px; }
+}
+
+/* Trader tools: option-seller risk strip above the positions. */
+.option-risk-strip { margin: 0 28px 17px; padding: 14px 16px 16px; background: linear-gradient(165deg, #f7faff, #f2f6fc); border: 1px solid #dfe8f5; border-radius: 14px; }
+.option-risk-strip > header { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 12px; }
+.option-risk-strip > header .eyebrow { margin-bottom: 3px; }
+.option-risk-strip h3 { margin: 0; color: #1a2942; font-size: 17px; letter-spacing: -.01em; }
+.option-risk-strip > header > span { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 10px; color: #6f7f97; font-size: 12px; font-weight: 800; }
+.option-risk-strip > header em { padding: 2px 8px; color: #8a5b14; background: #fff4de; border: 1px solid #f3dfb8; border-radius: 999px; font-size: 11px; font-style: normal; }
+.option-risk-strip dl { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.option-risk-strip dl > div { min-width: 0; padding: 11px 12px; background: #fff; border: 1px solid #e3e9f2; border-radius: 11px; }
+.option-risk-strip dt { overflow: hidden; color: #7d8ba0; font-size: 11.5px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.option-risk-strip dd { min-width: 0; margin: 6px 0 0; }
+.option-risk-strip dd strong { display: block; overflow: hidden; color: #17243d; font-size: 19px; font-weight: 900; letter-spacing: -.02em; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.option-risk-strip dd small { display: block; margin-top: 4px; overflow: hidden; color: #8190a6; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1180px) { .option-risk-strip dl { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 720px) {
+  .option-risk-strip { margin: 0 17px 13px; padding: 12px; }
+  .option-risk-strip > header { align-items: start; flex-direction: column; gap: 5px; }
+  .option-risk-strip > header > span { justify-content: flex-start; }
+  .option-risk-strip dl { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .option-risk-strip dd strong { font-size: 17px; }
+}
+
+/* Trader tools: calendar date picker in the trade editor. */
+.form-grid.date-fields { align-items: start; }
+.date-picker { position: relative; min-width: 0; }
+.date-picker-control { display: block; }
+.form-grid .date-picker-control input { padding-right: 50px; }
+.date-picker-control input::-webkit-calendar-picker-indicator { display: none; }
+.date-picker-trigger { position: absolute; right: 7px; bottom: 7px; width: 36px; height: 36px; display: grid; place-items: center; padding: 0; color: #4d6fae; background: #eef4fd; border: 1px solid #d9e6f8; border-radius: 9px; cursor: pointer; }
+.date-picker-trigger:hover, .date-picker.is-open .date-picker-trigger { color: #fff; background: var(--blue); border-color: var(--blue); }
+.date-picker-trigger svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.date-picker-trigger svg circle { fill: currentColor; stroke: none; }
+.field-label-row > small.is-warning { color: #8a5b14; background: #fff4de; }
+.date-picker-popover { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; width: 318px; max-width: calc(100vw - 28px); display: grid; gap: 10px; padding: 12px; color: #1b2b46; background: #fff; border: 1px solid #d9e3f0; border-radius: 14px; box-shadow: 0 18px 45px rgba(12,35,70,.2); font-size: 13px; font-weight: 700; letter-spacing: 0; }
+.date-picker-popover.align-right { right: 0; left: auto; }
+.date-picker-head { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; gap: 6px; text-align: center; }
+.date-picker-head strong { color: #17243d; font-size: 15px; font-weight: 900; }
+.date-picker-nav { height: 34px; padding: 0; color: #4d6fae; background: #f0f3f7; border: 0; border-radius: 9px; font-size: 20px; line-height: 1; cursor: pointer; }
+.date-picker-nav:hover { color: #fff; background: var(--blue); }
+.date-picker-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.date-picker-chips button { min-height: 32px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; color: #315a99; background: #f5f8fd; border: 1px solid #dbe6f6; border-radius: 999px; font-size: 12px; font-weight: 850; cursor: pointer; }
+.date-picker-chips button small { color: #7d8ba0; font-size: 10px; font-weight: 800; }
+.date-picker-chips button:hover { border-color: #9dbbee; }
+.date-picker-chips button.active { color: #fff; background: var(--blue); border-color: var(--blue); }
+.date-picker-chips button.active small { color: rgba(255,255,255,.85); }
+.date-picker-chips button:disabled { opacity: .45; cursor: not-allowed; }
+.date-picker-grid { display: grid; gap: 2px; }
+.date-picker-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.date-picker-row > span { min-width: 0; display: grid; }
+.date-picker-weekday { padding: 3px 0; color: #7d8ba0; font-size: 11px; font-weight: 850; text-align: center; }
+.date-picker-weekday.is-weekend { color: #aab5c4; }
+.date-picker-day { position: relative; min-height: 38px; padding: 0; color: #1e2f4b; background: transparent; border: 1px solid transparent; border-radius: 9px; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; cursor: pointer; }
+.date-picker-day:hover { background: #eef4fd; }
+.date-picker-day.is-outside { color: #b3bdcb; }
+.date-picker-day.is-weekend { color: #8a97aa; background: #f4f6f9; }
+.date-picker-day.is-us-holiday, .date-picker-day.is-jp-holiday { background: #fdf2ef; }
+.date-picker-day.is-us-holiday::after, .date-picker-day.is-jp-holiday::before { content: ''; position: absolute; bottom: 4px; left: calc(50% - 2.5px); width: 5px; height: 5px; border-radius: 50%; }
+.date-picker-day.is-us-holiday::after { background: #d84f61; }
+.date-picker-day.is-jp-holiday::before { background: #b9781f; }
+.date-picker-day.is-us-holiday.is-jp-holiday::after { left: calc(50% - 6px); }
+.date-picker-day.is-us-holiday.is-jp-holiday::before { left: calc(50% + 1px); }
+.date-picker-day.is-friday { color: #205fc9; }
+.date-picker-day.is-monthly { background: #eef4fd; border-color: #9dbbee; }
+.date-picker-day.is-monthly::after { content: '月'; position: absolute; top: 1px; right: 3px; color: #2f73ed; font-size: 8.5px; font-weight: 900; line-height: 1.2; }
+.date-picker-day.is-today { box-shadow: inset 0 0 0 2px #7aa6f2; }
+.date-picker-day.is-selected { color: #fff; background: var(--blue); border-color: var(--blue); }
+.date-picker-day.is-selected::after { color: #fff; }
+.date-picker-day[aria-disabled='true'] { opacity: .35; cursor: not-allowed; }
+.date-picker-day:focus-visible { z-index: 1; outline: 3px solid rgba(47,115,237,.4); outline-offset: 1px; }
+.date-picker-info { min-height: 18px; margin: 0; color: #5f718d; font-size: 11.5px; font-weight: 750; line-height: 1.5; }
+.date-picker-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #edf0f5; }
+.date-picker-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; color: #8190a6; font-size: 10.5px; font-weight: 750; }
+.date-picker-legend i { width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; }
+.date-picker-legend i:first-child { margin-left: 0; }
+.date-picker-legend i.us { background: #d84f61; }
+.date-picker-legend i.jp { background: #b9781f; }
+.date-picker-legend i.monthly { width: 9px; height: 9px; background: #eef4fd; border: 1px solid #9dbbee; border-radius: 3px; }
+.date-picker-foot button { min-height: 30px; padding: 0 10px; color: #b83b50; background: #fff3f5; border: 1px solid #f6d7dd; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer; }
+@media (max-width: 460px) {
+  .date-picker-popover { width: 100%; max-width: none; }
+  .date-picker-day { min-height: 40px; }
+}
+
+/* Trader tools: option shortcuts, strike chips and live option analytics in the trade editor. */
+.strategy-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 17px; }
+.strategy-shortcuts > span { margin-right: 4px; color: #5d6e88; font-size: 13.5px; font-weight: 800; letter-spacing: .018em; }
+.strategy-shortcuts button { min-height: 36px; padding: 0 13px; color: #52647f; background: #f8fafc; border: 1px solid #e0e6ef; border-radius: 999px; font-size: 13px; font-weight: 850; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.strategy-shortcuts button:hover { background: #f5f8fd; border-color: #b9cae3; }
+.strategy-shortcuts button.active { color: #1d5fcf; background: #eef5ff; border-color: #78a6f2; box-shadow: inset 0 0 0 1px rgba(47,115,237,.12); }
+.strike-chip-row { display: grid; gap: 8px; margin-top: 14px; padding: 12px 13px; background: #f7faff; border: 1px solid #dfe8f5; border-radius: 12px; }
+.strike-chip-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: #5d6e88; font-size: 13px; font-weight: 800; }
+.strike-chip-label b { color: #1d3f75; font-variant-numeric: tabular-nums; }
+.strike-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.strike-chips button { min-height: 38px; display: inline-flex; align-items: center; gap: 6px; padding: 0 11px; color: #33455f; background: #fff; border: 1px solid #dbe3ee; border-radius: 10px; font-size: 14px; font-weight: 850; font-variant-numeric: tabular-nums; cursor: pointer; }
+.strike-chips button small { color: #8190a6; font-size: 10.5px; font-weight: 800; }
+.strike-chips button.is-otm small { color: #2f73ed; }
+.strike-chips button:hover { background: #f7faff; border-color: #98b9ed; }
+.strike-chips button.active { color: #fff; background: var(--blue); border-color: var(--blue); }
+.strike-chips button.active small { color: rgba(255,255,255,.85); }
+.collateral-helper { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 12px; padding: 10px 12px; color: #5d6e88; background: #f7faff; border: 1px solid #dfe8f5; border-radius: 11px; font-size: 13px; font-weight: 750; }
+.collateral-helper b { color: #1d3f75; font-variant-numeric: tabular-nums; }
+.collateral-helper button { min-height: 34px; padding: 0 12px; color: #fff; background: var(--blue); border: 0; border-radius: 9px; font-size: 13px; font-weight: 850; cursor: pointer; }
+.collateral-helper button:hover { background: #245fd0; }
+.collateral-helper em { padding: 4px 9px; color: #167a5c; background: #e9f8f3; border-radius: 999px; font-size: 12px; font-style: normal; font-weight: 850; }
+.option-summary { grid-column: 1 / -1; margin-top: 16px; padding-top: 14px; border-top: 1px solid #dbe4f0; }
+.option-summary .eyebrow { margin-bottom: 0; }
+.editor-summary .option-summary dl { margin-top: 6px; }
+.option-summary-note { margin: 10px 0 0; color: #7e8da3; font-size: 11.5px; font-weight: 650; line-height: 1.55; }
+
+/* Trader tools: CSV export and import. */
+.toolbar-io { display: flex; gap: 6px; }
+.toolbar-io-button { min-height: 43px; padding: 0 13px; color: #315a99; white-space: nowrap; background: #f8fafc; border: 1px solid #dfe6f0; border-radius: 11px; font-size: 13px; font-weight: 800; cursor: pointer; }
+.toolbar-io-button:hover { color: #235fc8; background: var(--blue-soft); border-color: #c8dbf8; }
+.import-modal { width: min(1180px, 100%); max-height: calc(100dvh - 36px); display: flex; flex-direction: column; overflow: hidden; color: #1b2b46; background: #fff; border: 1px solid rgba(255,255,255,.9); border-radius: 22px; box-shadow: 0 30px 100px rgba(6,21,45,.38); }
+.import-modal > header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 26px; border-bottom: 1px solid #e5eaf2; }
+.import-modal h2 { margin: 4px 0 0; font-size: 25px; letter-spacing: -.03em; }
+.import-body { min-height: 0; flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; gap: 16px; padding: 20px 26px; overflow-y: auto; overscroll-behavior: contain; }
+.import-dropzone { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 18px; background: #f7faff; border: 2px dashed #c8d8f0; border-radius: 14px; transition: border-color .15s ease, background .15s ease; }
+.import-dropzone.is-dragging { background: #eaf2ff; border-color: var(--blue); }
+.import-dropzone.has-file { border-style: solid; }
+.import-dropzone-icon { width: 46px; height: 46px; display: grid; place-items: center; color: var(--blue); background: #fff; border: 1px solid #d9e6f8; border-radius: 12px; font-size: 22px; }
+.import-dropzone strong { display: block; color: #17243d; font-size: 16px; overflow-wrap: anywhere; }
+.import-dropzone small { display: block; margin-top: 5px; color: #71809a; font-size: 12.5px; font-weight: 650; line-height: 1.55; }
+.import-pick-button { min-height: 42px; padding: 0 16px; color: #fff; white-space: nowrap; background: var(--blue); border: 0; border-radius: 10px; font-size: 14px; font-weight: 850; cursor: pointer; }
+.import-pick-button:disabled { opacity: .55; cursor: wait; }
+.import-alert { margin: 0; padding: 10px 13px; color: #8a5b14; background: #fff8ea; border: 1px solid #f3dfb8; border-radius: 10px; font-size: 13px; font-weight: 750; line-height: 1.5; }
+.import-alert.is-error { color: #a3263b; background: #fff1f3; border-color: #f6d0d7; }
+.import-section-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 10px; }
+.import-section-heading h3 { margin: 0; color: #1a2942; font-size: 17px; }
+.import-encoding { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; color: #5d6e88; font-size: 13px; font-weight: 800; }
+.import-encoding select, .import-mapping-grid select { min-height: 36px; min-width: 0; padding: 0 8px; color: #1a2942; background: #fbfcfe; border: 1px solid #d9e1ec; border-radius: 9px; font-size: 13px; }
+.import-mapping-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.import-mapping-grid label { min-width: 0; display: grid; gap: 5px; padding: 9px 10px; background: #fbfcfe; border: 1px solid #e5eaf2; border-radius: 11px; }
+.import-column-name { overflow: hidden; color: #17243d; font-size: 13px; font-weight: 850; text-overflow: ellipsis; white-space: nowrap; }
+.import-mapping-grid small { overflow: hidden; color: #8190a6; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.import-counts { display: flex; flex-wrap: wrap; gap: 6px; }
+.import-counts span, .import-state { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 850; white-space: nowrap; }
+.import-counts .ready, .import-state.ready { color: #16795d; background: #e9f8f3; }
+.import-counts .duplicate, .import-state.duplicate { color: #8a5b14; background: #fff4de; }
+.import-counts .error, .import-state.error { color: #b83b50; background: #fff1f3; }
+.import-counts .merged, .import-state.merged { color: #6f7d92; background: #f0f2f5; }
+.import-counts .imported, .import-state.imported { color: #235fc8; background: #eaf2ff; }
+.import-selection-actions { display: flex; gap: 6px; margin-left: auto; }
+.import-selection-actions button { min-height: 32px; padding: 0 10px; color: #315a99; background: #eef5ff; border: 1px solid #d7e5fa; border-radius: 8px; font-size: 12.5px; font-weight: 800; cursor: pointer; }
+.import-preview-wrap { max-height: min(46vh, 520px); overflow: auto; border: 1px solid #e5eaf2; border-radius: 13px; overscroll-behavior: contain; scrollbar-color: #b5c0cf #f3f5f8; }
+.import-modal table.import-preview-table { width: 100%; min-width: 1320px; border-collapse: collapse; }
+.import-preview-table th { position: sticky; top: 0; z-index: 1; padding: 10px; font-size: 11px; letter-spacing: .04em; }
+.import-preview-table td { padding: 9px 10px; color: #33455f; font-size: 13px; font-variant-numeric: tabular-nums; vertical-align: top; }
+.import-preview-table tr.is-error td { background: #fffafa; }
+.import-preview-table tr.is-duplicate td { background: #fffdf6; }
+.import-preview-table tr.is-merged td, .import-preview-table tr.is-imported td { color: #8a97aa; }
+.import-preview-table input[type='checkbox'] { width: 17px; height: 17px; margin: 0; accent-color: var(--blue); }
+.import-preview-table td.import-messages { min-width: 260px; white-space: normal; }
+.import-messages span { display: block; font-size: 12px; font-weight: 750; line-height: 1.45; }
+.import-messages .error { color: #b83b50; }
+.import-messages .warning { color: #8a5b14; }
+.import-messages .merged { color: #6f7d92; }
+.import-messages .ok { color: #16795d; }
+.import-footer { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 14px 22px; background: #fff; border-top: 1px solid #e5eaf2; }
+.import-status { min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: 10px; color: #6f7f97; font-size: 13px; font-weight: 750; line-height: 1.5; }
+.import-status progress { width: 160px; height: 8px; accent-color: var(--blue); }
+.import-status .is-error { color: #b83b50; }
+.import-status .is-success { color: #16795d; }
+.import-footer .primary-button { min-width: 130px; }
+.import-footer .primary-button:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+@media (max-width: 720px) {
+  .toolbar-io { width: 100%; }
+  .toolbar-io-button { flex: 1; }
+  .confirm-backdrop.import-backdrop { padding: 0; place-items: end center; }
+  .import-modal { max-height: 94dvh; border-radius: 20px 20px 0 0; }
+  .import-modal > header { padding: 16px 17px; }
+  .import-modal h2 { font-size: 21px; }
+  .import-body { padding: 16px 17px; }
+  .import-dropzone { grid-template-columns: auto minmax(0, 1fr); }
+  .import-pick-button { grid-column: 1 / -1; }
+  .import-encoding, .import-selection-actions { margin-left: 0; }
+  .import-footer { flex-wrap: wrap; padding: 12px 16px; }
+  .import-status { flex-basis: 100%; }
+  .import-footer button { flex: 1; }
+}

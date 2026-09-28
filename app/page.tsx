@@ -153,9 +153,11 @@ type DividendEvent = {
 const loadBrokerHub = () => import('@/components/BrokerHub');
 const loadDcfCalculator = () => import('@/components/DcfCalculator');
 const loadCompanyFundamentals = () => import('@/components/CompanyFundamentals');
+const loadTradeImportDialog = () => import('@/components/TradeImportDialog');
 const BrokerHub = lazy(loadBrokerHub);
 const DcfCalculator = lazy(loadDcfCalculator);
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
+const TradeImportDialog = lazy(loadTradeImportDialog);
 
 const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
 const companyNames: Record<string, string> = {
@@ -849,6 +851,7 @@ export default function Home() {
   const [brokerHubToggleSaving, setBrokerHubToggleSaving] = useState(false);
   const [brokerWorkspaceSeed, setBrokerWorkspaceSeed] = useState<BrokerWorkspace | null>(null);
   const [editor, setEditor] = useState<Trade | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<Trade | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [dividendAdjustmentCandidate, setDividendAdjustmentCandidate] = useState<Trade | null>(null);
@@ -921,6 +924,7 @@ export default function Home() {
   const quoteRefreshInFlightRef = useRef(false);
   const underlyingFetchedAtRef = useRef(new Map<string, number>());
   const toastTimerRef = useRef<number | null>(null);
+  const importTriggerRef = useRef<HTMLButtonElement>(null);
 
   const notify = useCallback((message: string) => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
@@ -1226,6 +1230,18 @@ export default function Home() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
     notify(`已匯出 ${exportable.length} 筆交易（CSV）`);
   }, [notify, trades]);
+
+  const closeImport = useCallback(() => {
+    setImportOpen(false);
+    window.requestAnimationFrame(() => importTriggerRef.current?.focus());
+  }, []);
+
+  // After an import the list reloads from the server, as on first load, and dividend cash recalculates once.
+  const handleImported = useCallback((count: number) => {
+    void fetchTrades().catch((error) => notify(error instanceof Error ? error.message : '無法載入交易資料'));
+    window.setTimeout(() => void refreshDividendCash(false), 0);
+    notify(`已匯入 ${count} 筆交易`);
+  }, [fetchTrades, notify, refreshDividendCash]);
 
   const refreshQuotes = useCallback(async (announce = true) => {
     if (quoteRefreshInFlightRef.current) {
@@ -2594,7 +2610,7 @@ export default function Home() {
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
             <div><p className="eyebrow">Active book</p><h2>交易與持倉</h2></div>
-            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
+            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" ref={importTriggerRef} className="toolbar-io-button" aria-haspopup="dialog" onClick={() => { void loadTradeImportDialog(); setImportOpen(true); }}>匯入</button><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
           </div>
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
           {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}
@@ -2820,6 +2836,7 @@ export default function Home() {
         </section>
       </div>}
       {rocBreakdownOpen && <RocBreakdownDialog summary={annualRocSummary} onClose={closeRocBreakdown} />}
+      {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} onClose={closeImport} onImported={handleImported} /></Suspense>}
       {dividendAdjustmentCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!dividendAdjusting && event.target === event.currentTarget) setDividendAdjustmentCandidate(null); }}>
         <section className="dividend-adjustment-modal" role="dialog" aria-modal="true" aria-labelledby="dividend-adjustment-title">
           <header><div><p className="eyebrow">Dividend cash</p><h2 id="dividend-adjustment-title">調減股息入帳</h2></div><button type="button" className="close-button" disabled={dividendAdjusting} onClick={() => setDividendAdjustmentCandidate(null)} aria-label="關閉">×</button></header>

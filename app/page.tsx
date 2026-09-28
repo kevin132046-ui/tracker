@@ -475,7 +475,7 @@ const MacroMarketCard = memo(function MacroMarketCard({ market, startLabel, endL
     <div className="macro-history-chart">
       {points ? <svg viewBox="0 0 100 54" preserveAspectRatio="none" role="img" aria-label={`${market.label}${rangeLabel}${market.id === 'USDJPY' ? '匯率' : market.id === 'US10Y' || market.id === 'US30Y' ? '殖利率' : '價格'}走勢`}><defs><linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="currentColor" stopOpacity=".2"/><stop offset="100%" stopColor="currentColor" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="50" y2="50"/><polygon points={`0,50 ${points} 100,50`} fill={`url(#${gradientId})`}/><polyline points={points}/></svg> : <span>暫時沒有歷史資料</span>}
     </div>
-    <footer><span>{startLabel}</span><b>{rangeLabel}走勢</b><span>{endLabel}</span></footer>
+    <footer><span>{startLabel}</span><b>{`${rangeLabel}走勢`}</b><span>{endLabel}</span></footer>
   </article>;
 });
 

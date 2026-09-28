@@ -34,9 +34,20 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .market-calendar-tags em { max-width: 210px; padding: 4px 7px; overflow: hidden; color: #f5eee6; background: rgba(20,16,13,.18); border: 1px solid rgba(255,255,255,.14); border-radius: 999px; font-size: 9px; font-style: normal; font-weight: 850; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
 .market-calendar-tags .holiday-tag { color: #fff6d8; background: rgba(123,87,21,.28); border-color: rgba(255,231,156,.22); }
 .header-actions { display: flex; justify-content: flex-end; align-items: center; gap: 9px; }
-.language-switcher { display: flex; padding: 3px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-radius: 9px; }
-.language-switcher button { min-height: 30px; padding: 0 9px; color: #c9d2df; background: transparent; border: 0; border-radius: 7px; font-size: 10.5px; font-weight: 850; cursor: pointer; }
-.language-switcher button.active { color: #302d29; background: #ded8d1; box-shadow: 0 3px 9px rgba(0,0,0,.14); }
+/* Interface language: a pill that folds open into an iOS-style menu */
+.language-picker { position: relative; z-index: 40; }
+.language-picker-toggle { min-height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px 0 9px; color: #eee8e1; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 999px; font-size: 11.5px; font-weight: 850; cursor: pointer; transition: background .18s ease, border-color .18s ease; }
+.language-picker-toggle:hover, .language-picker.is-open .language-picker-toggle { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.24); }
+.language-picker-toggle:focus-visible, .language-picker-menu button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.language-picker-chevron { opacity: .75; transition: transform .22s cubic-bezier(.2,.9,.3,1); }
+.language-picker.is-open .language-picker-chevron { transform: rotate(180deg); }
+.language-picker-menu { position: absolute; top: calc(100% + 8px); right: 0; min-width: 168px; padding: 5px; overflow: hidden; color: #1f1c19; background: rgba(250,248,245,.9); border: 1px solid rgba(255,255,255,.7); border-radius: 14px; box-shadow: 0 18px 44px rgba(20,14,8,.28), 0 2px 8px rgba(20,14,8,.12); backdrop-filter: blur(22px) saturate(1.6); -webkit-backdrop-filter: blur(22px) saturate(1.6); opacity: 0; visibility: hidden; transform: translateY(-6px) scale(.92); transform-origin: top right; transition: opacity .16s ease, transform .22s cubic-bezier(.2,.9,.3,1.15), visibility 0s linear .22s; }
+.language-picker.is-open .language-picker-menu { opacity: 1; visibility: visible; transform: none; transition: opacity .16s ease, transform .26s cubic-bezier(.2,.9,.3,1.15), visibility 0s; }
+.language-picker-menu button { width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 12px; color: inherit; background: transparent; border: 0; border-radius: 9px; font-size: 14px; font-weight: 700; text-align: left; cursor: pointer; }
+.language-picker-menu button + button { box-shadow: inset 0 1px 0 rgba(31,28,25,.08); }
+.language-picker-menu button:hover, .language-picker-menu button:focus-visible { background: rgba(31,28,25,.07); }
+.language-picker-menu button[aria-checked='true'] { color: #2f6fd5; }
+@media (prefers-reduced-motion: reduce) { .language-picker-menu, .language-picker.is-open .language-picker-menu, .language-picker-chevron { transition: none; } }
 .market-pill { display: inline-flex; align-items: center; gap: 7px; color: #e2ddd6; font-size: 11px; margin-right: 3px; }
 .market-pill > span { width: 7px; height: 7px; border-radius: 50%; background: #7b8aa2; }.market-pill.is-open > span { background: #38d3a2; box-shadow: 0 0 0 4px rgba(56,211,162,.12); }
 .primary-button, .secondary-button, .cancel-button, .close-button, .icon-button, .price-button, .segmented button, .filter-row button { border: 0; cursor: pointer; }
@@ -539,7 +550,7 @@ button, a { touch-action: manipulation; }.shell.has-custom-background:before { t
   .technical-period-stats { width: 100%; justify-content: space-between; }.technical-period-stats p { width: auto; min-width: 0; text-align: left; }
   .technical-chart-controls { align-items: stretch; flex-direction: column; }.technical-chart-mode { width: 100%; }.technical-chart-mode button { flex: 1; }.technical-overlay-switches { justify-content: stretch; }.technical-overlay-switches button { flex: 1 1 22%; justify-content: center; }
   .technical-price-tooltip.is-ohlc { min-width: 164px; }
-  .language-switcher { order: -1; }.language-switcher button { padding: 0 7px; font-size: 9.5px; }
+  .language-picker { order: -1; }.language-picker-toggle { min-height: 32px; padding: 0 8px; font-size: 10.5px; }
 }
 
 /* Clickable annual ROC card, its calculation breakdown and time-weighted return notes. */

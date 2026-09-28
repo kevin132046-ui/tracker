@@ -198,20 +198,19 @@ export default function DatePicker({ label, value, onChange, todayKey, kind, mar
   >
     <label>
       <span className="field-label-row"><span>{label}</span>{badge && <small className={badge.warning ? 'is-warning' : ''}>{badge.text}</small>}</span>
-      <span className="date-picker-control">
-        <input required={required} type="date" value={value} onChange={(event) => onChange(event.target.value)} />
-        <button
-          ref={triggerRef}
-          type="button"
-          className="date-picker-trigger"
-          aria-label={`選擇${label}`}
-          title={`選擇${label}`}
-          aria-haspopup="dialog"
-          aria-expanded={open}
-          onClick={() => (open ? close(false) : openPicker())}
-        ><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4.5" width="14" height="12" rx="2.5" /><path d="M3 8.5h14M7 2.8v3.4M13 2.8v3.4" /><circle cx="10" cy="12.4" r="1.3" /></svg></button>
-      </span>
+      <span className="date-picker-control"><input required={required} type="date" value={value} onChange={(event) => onChange(event.target.value)} /></span>
     </label>
+    {/* Outside the label so its name does not become part of the input's; placed over the input's end. */}
+    <button
+      ref={triggerRef}
+      type="button"
+      className="date-picker-trigger"
+      aria-label={`選擇${label}`}
+      title={`選擇${label}`}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      onClick={() => (open ? close(false) : openPicker())}
+    ><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4.5" width="14" height="12" rx="2.5" /><path d="M3 8.5h14M7 2.8v3.4M13 2.8v3.4" /><circle cx="10" cy="12.4" r="1.3" /></svg></button>
     {open && <div
       ref={popoverRef}
       className={`date-picker-popover ${alignRight ? 'align-right' : ''}`}

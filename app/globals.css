@@ -630,10 +630,10 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 /* Trader tools: calendar date picker in the trade editor. */
 .form-grid.date-fields { align-items: start; }
 .date-picker { position: relative; min-width: 0; }
-.date-picker-control { position: relative; display: block; }
+.date-picker-control { display: block; }
 .form-grid .date-picker-control input { padding-right: 50px; }
 .date-picker-control input::-webkit-calendar-picker-indicator { display: none; }
-.date-picker-trigger { position: absolute; top: 50%; right: 7px; width: 36px; height: 36px; display: grid; place-items: center; margin-top: -18px; padding: 0; color: #4d6fae; background: #eef4fd; border: 1px solid #d9e6f8; border-radius: 9px; cursor: pointer; }
+.date-picker-trigger { position: absolute; right: 7px; bottom: 7px; width: 36px; height: 36px; display: grid; place-items: center; padding: 0; color: #4d6fae; background: #eef4fd; border: 1px solid #d9e6f8; border-radius: 9px; cursor: pointer; }
 .date-picker-trigger:hover, .date-picker.is-open .date-picker-trigger { color: #fff; background: var(--blue); border-color: var(--blue); }
 .date-picker-trigger svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 .date-picker-trigger svg circle { fill: currentColor; stroke: none; }

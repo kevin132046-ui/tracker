@@ -87,7 +87,7 @@ function chipsFor(kind: DatePickerKind, todayKey: string, market: CalendarMarket
   return [...weekly, ...(monthly ? [monthly] : [])].map((choice) => ({
     key: choice.key,
     label: shortDate(choice.key),
-    hint: `${choice.monthly ? '月選' : '週選'} · ${Math.max(0, daysFrom(todayKey, choice.key))}天`,
+    hint: `${choice.monthly ? '月選' : '週選'} · ${Math.max(0, daysFrom(todayKey, choice.key))} 天`,
     title: `${choice.key}（${choice.monthly ? '月選擇權，第三個週五' : '週選擇權'}${choice.holidayAdjusted ? '，週五休市提前一天' : ''}）· ${relativeDays(todayKey, choice.key)}`,
   }));
 }

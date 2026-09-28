@@ -4,8 +4,11 @@ import type { AiEarningsSuggestion, AiProvider } from '@/lib/earnings';
 import type { FilingExchange, QuarterRow } from '@/lib/filings';
 import { cleanQuestions, maxFollowUps, maxQuestionLength } from '@/lib/filings';
 import { verifyAccess } from '@/lib/server/access';
-import { anthropicModel, findEarningsDate, openAiModelPattern } from '@/lib/server/ai-earnings';
-import { analyzeFiling, answerFilingQuestion, type FilingContext } from '@/lib/server/filing-analysis';
+import type { UsageTier } from '@/lib/openai-free-tier';
+import { estimateTokens } from '@/lib/openai-free-tier';
+import { anthropicModel, dateLookupEstimate, findEarningsDate, openAiModelPattern } from '@/lib/server/ai-earnings';
+import { analysisRequest, completeFilingRequest, followUpRequest, type FilingContext } from '@/lib/server/filing-analysis';
+import { checkOpenAiQuota, quotaReport, recordOpenAiUsage } from '@/lib/server/openai-quota';
 import { SecNotConfigured, filingText, findFiling, isAccession, lookupCik, quarterlyFigures } from '@/lib/server/sec';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +19,7 @@ const apiKeyPattern = /^[\x21-\x7e]{20,300}$/;
 // The same question within a few hours returns the earlier answer instead of paying again.
 const answerFreshMs = 6 * 60 * 60_000;
 const answerCache = new Map<string, { suggestion: AiEarningsSuggestion; fetchedAt: number }>();
-const pending = new Map<string, Promise<AiEarningsSuggestion>>();
+const pending = new Map<string, Promise<{ suggestion: AiEarningsSuggestion; usageTokens: number }>>();
 const analysisForms = new Set(['8-K', '8-K/A', '10-Q', '10-K']);
 
 const accessMessages = {
@@ -36,10 +39,17 @@ function apiKeyFor(request: Request, provider: AiProvider) {
   return (provider === 'anthropic' ? env.ANTHROPIC_API_KEY : env.OPENAI_API_KEY) ?? null;
 }
 
+const tierOf = (value: unknown): UsageTier => value === 'high' ? 'high' : 'low';
+
 export async function GET(request: Request) {
   const access = await verifyAccess(request);
   if (!access.ok) return NextResponse.json({ error: accessMessages[access.code], code: access.code }, { status: access.status, headers: noStore });
+  const params = new URL(request.url).searchParams;
+  const model = String(params.get('model') ?? '').trim();
+  // Asked on every open of the AI settings and the analysis dialog, so the page always shows today's allowance.
+  const quota = await quotaReport(openAiModelPattern.test(model) ? model : env.OPENAI_MODEL ?? '', tierOf(params.get('tier')));
   return NextResponse.json({
+    quota,
     email: access.email,
     providers: { anthropic: Boolean(env.ANTHROPIC_API_KEY), openai: Boolean(env.OPENAI_API_KEY) },
     anthropicModel,
@@ -48,7 +58,7 @@ export async function GET(request: Request) {
   }, { headers: noStore });
 }
 
-type Body = { task?: unknown; symbol?: unknown; provider?: unknown; model?: unknown; accession?: unknown; questions?: unknown; history?: unknown; question?: unknown };
+type Body = { task?: unknown; symbol?: unknown; provider?: unknown; model?: unknown; accession?: unknown; questions?: unknown; history?: unknown; question?: unknown; usageTier?: unknown };
 
 async function filingContext(symbol: string, accession: string): Promise<FilingContext | string> {
   const company = await lookupCik(symbol);
@@ -93,18 +103,28 @@ export async function POST(request: Request) {
   const requestedModel = typeof body.model === 'string' ? body.model.trim() : '';
   const openAiModel = requestedModel || env.OPENAI_MODEL || '';
   if (provider === 'openai' && !openAiModelPattern.test(openAiModel)) return fail('請先在設定中填入 ChatGPT 模型名稱。', 400);
+  const usageTier = tierOf(body.usageTier);
+  // Every ChatGPT call must fit in today's free tokens for its model; otherwise it is refused.
+  const guardQuota = async (estimate: number) => {
+    if (provider !== 'openai') return null;
+    const check = await checkOpenAiQuota(openAiModel, usageTier, estimate);
+    return check.ok ? null : NextResponse.json({ error: check.message, code: 'free-quota', quota: check.report, estimate }, { status: 429, headers: noStore });
+  };
 
   if (task === 'earnings-date') {
     const key = `${provider}:${provider === 'openai' ? openAiModel : anthropicModel}:${symbol}`;
     const cached = answerCache.get(key);
     if (cached && Date.now() - cached.fetchedAt < answerFreshMs) return NextResponse.json({ suggestion: cached.suggestion, cached: true }, { headers: noStore });
+    const blocked = await guardQuota(dateLookupEstimate);
+    if (blocked) return blocked;
     try {
       let lookup = pending.get(key);
       if (!lookup) {
         lookup = findEarningsDate(provider, symbol, { [provider]: apiKey }, openAiModel).finally(() => pending.delete(key));
         pending.set(key, lookup);
+        void lookup.then(({ suggestion: found, usageTokens }) => { if (provider === 'openai') recordOpenAiUsage(found.model, usageTokens || dateLookupEstimate); }, () => undefined);
       }
-      const suggestion = await lookup;
+      const { suggestion } = await lookup;
       answerCache.set(key, { suggestion, fetchedAt: Date.now() });
       return NextResponse.json({ suggestion, cached: false }, { headers: noStore });
     } catch (error) {
@@ -132,10 +152,13 @@ export async function POST(request: Request) {
   }
   if (typeof context === 'string') return fail(context, 404);
 
+  const aiRequest = task === 'earnings-analysis' ? analysisRequest(context, cleanQuestions(body.questions)) : followUpRequest(context, history, question);
+  const estimate = estimateTokens(`${aiRequest.system}\n${aiRequest.document}\n${aiRequest.prompt}`) + aiRequest.maxOutput;
+  const blocked = await guardQuota(estimate);
+  if (blocked) return blocked;
   try {
-    const result = task === 'earnings-analysis'
-      ? await analyzeFiling(provider, apiKey, openAiModel, context, cleanQuestions(body.questions))
-      : await answerFilingQuestion(provider, apiKey, openAiModel, context, history, question);
+    const result = await completeFilingRequest(provider, apiKey, openAiModel, aiRequest);
+    if (provider === 'openai') recordOpenAiUsage(result.model, result.usageTokens || estimate);
     return NextResponse.json({
       provider,
       model: result.model,

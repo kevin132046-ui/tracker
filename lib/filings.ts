@@ -28,6 +28,7 @@ export const analysesKey = 'optionflow-filing-analyses';
 export const aiKeysKey = 'optionflow-ai-keys';
 export const aiDefaultProviderKey = 'optionflow-ai-default-provider';
 export const analysisQuestionsKey = 'optionflow-analysis-questions';
+export const usageTierKey = 'optionflow-openai-usage-tier';
 
 /** Analyses older than this are dropped when the page loads; the count cap keeps storage small. */
 export const analysisMaxAgeMs = 183 * 24 * 60 * 60_000;
@@ -86,6 +87,10 @@ export const saveAiKeys = (keys: AiKeys) => keys.openai || keys.anthropic ? writ
 
 export const loadDefaultProvider = (): AiProvider => read<string>(aiDefaultProviderKey, 'openai') === 'anthropic' ? 'anthropic' : 'openai';
 export const saveDefaultProvider = (provider: AiProvider) => write(aiDefaultProviderKey, provider);
+
+/** Unknown tiers use the smaller (tier 1–2) allowance so the free limit is never overshot. */
+export const loadUsageTier = (): 'low' | 'high' => read<string>(usageTierKey, 'low') === 'high' ? 'high' : 'low';
+export const saveUsageTier = (tier: 'low' | 'high') => write(usageTierKey, tier);
 
 export function cleanQuestions(questions: unknown): string[] {
   if (!Array.isArray(questions)) return [];

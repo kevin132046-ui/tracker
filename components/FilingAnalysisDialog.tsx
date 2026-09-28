@@ -5,6 +5,8 @@ import type { AiProvider } from '@/lib/earnings';
 import type { AiKeys, CompanyFilings, EarningsFiling, FilingAnalysis, QuarterRow } from '@/lib/filings';
 import { aiKeyHeaders, maxFollowUps, maxQuestionLength } from '@/lib/filings';
 import type { AiStatus } from '@/components/AiSettingsCard';
+import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
+import type { UsageTier } from '@/lib/openai-free-tier';
 
 type Props = {
   symbol: string;
@@ -13,9 +15,12 @@ type Props = {
   keys: AiKeys;
   defaultProvider: AiProvider;
   openAiModel: string;
+  usageTier: UsageTier;
   questions: string[];
   analyses: Record<string, FilingAnalysis>;
   onSave: (analysis: FilingAnalysis) => void;
+  /** Called after every AI request so today's free tokens are read again. */
+  onUsed: () => void;
   onClose: () => void;
 };
 
@@ -60,7 +65,7 @@ function FiguresTable({ figures }: { figures: QuarterRow[] }) {
   </div>;
 }
 
-export default function FilingAnalysisDialog({ symbol, company, status, keys, defaultProvider, openAiModel, questions, analyses, onSave, onClose }: Props) {
+export default function FilingAnalysisDialog({ symbol, company, status, keys, defaultProvider, openAiModel, usageTier, questions, analyses, onSave, onUsed, onClose }: Props) {
   const filings = [company.earningsRelease, company.periodicReport].filter((filing): filing is EarningsFiling => Boolean(filing));
   const [accession, setAccession] = useState(filings[0]?.accession ?? '');
   const [provider, setProvider] = useState<AiProvider>(defaultProvider);
@@ -75,14 +80,16 @@ export default function FilingAnalysisDialog({ symbol, company, status, keys, de
     : !status.sec ? '伺服器尚未設定 SEC_CONTACT，財報解讀停用。'
     : !hasKey(provider) ? `尚未設定 ${providerName(provider)} 金鑰，請到「設定 → AI 設定」輸入。`
     : provider === 'openai' && !(openAiModel.trim() || status.openAiModel) ? '請先在「AI 設定」填入 ChatGPT 模型名稱。'
+    : provider === 'openai' && status.quota && !freeQuotaOpen(status.quota) ? freeQuotaLine(status.quota)
     : '';
+  const quotaInfo = provider === 'openai' && status?.state === 'ok' ? freeQuotaLine(status.quota) : '';
 
   const call = async (task: 'earnings-analysis' | 'filing-question', extra: Record<string, unknown>) => {
     const response = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...aiKeyHeaders(keys) },
-      body: JSON.stringify({ task, symbol, provider, accession: filing!.accession, model: provider === 'openai' ? openAiModel.trim() : undefined, ...extra }),
-    });
+      body: JSON.stringify({ task, symbol, provider, accession: filing!.accession, model: provider === 'openai' ? openAiModel.trim() : undefined, usageTier, ...extra }),
+    }).finally(onUsed);
     const payload = await response.json() as AiResponse;
     if (!response.ok || !payload.text) throw new Error(payload.error ?? '產生失敗，請稍後再試。');
     return payload;
@@ -146,6 +153,7 @@ export default function FilingAnalysisDialog({ symbol, company, status, keys, de
             </label>
             <button type="button" className="primary-button" disabled={Boolean(blocker) || Boolean(busy)} onClick={generate}>{busy === 'analysis' ? '產生中…（約 30–90 秒）' : analysis ? '重新產生分析' : '產生分析'}</button>
           </div>
+          {quotaInfo && !blocker && <p className="free-quota-line">{quotaInfo}。每次請求前伺服器會再檢查一次，預估超出就擋下。</p>}
           {blocker && <p className="filing-blocker">{blocker}</p>}
           {error && <p className="filing-error" role="alert">{error}</p>}
           {analysis && <article className="filing-analysis">

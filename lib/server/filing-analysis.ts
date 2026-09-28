@@ -92,12 +92,16 @@ async function claudeText(apiKey: string, document: string, prompt: string) {
   if (response.stop_reason === 'refusal') throw new Error('Claude 拒絕了這次請求。');
   const text = response.content.flatMap((block) => block.type === 'text' ? [block.text] : []).join('\n').trim();
   if (!text) throw new Error('Claude 沒有回傳文字。');
-  return { text: response.stop_reason === 'max_tokens' ? `${text}\n\n（回覆過長被截斷）` : text, model: response.model };
+  return { text: response.stop_reason === 'max_tokens' ? `${text}\n\n（回覆過長被截斷）` : text, model: response.model, usageTokens: 0 };
 }
 
-type OpenAiResponse = { model?: string; status?: string; output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>; error?: { message?: string } | null };
+type OpenAiResponse = { model?: string; status?: string; output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>; usage?: { total_tokens?: number } | null; error?: { message?: string } | null };
 
-async function chatGptText(apiKey: string, model: string, document: string, prompt: string) {
+/** Output caps; the free-quota check adds them to the input estimate. */
+export const analysisMaxOutput = 12_000;
+export const followUpMaxOutput = 4_000;
+
+async function chatGptText(apiKey: string, model: string, document: string, prompt: string, maxOutput: number) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   try {
@@ -108,6 +112,7 @@ async function chatGptText(apiKey: string, model: string, document: string, prom
         model,
         instructions: systemPrompt,
         input: [{ role: 'user', content: [{ type: 'input_text', text: document }, { type: 'input_text', text: prompt }] }],
+        max_output_tokens: maxOutput,
       }),
       signal: controller.signal,
     });
@@ -116,19 +121,17 @@ async function chatGptText(apiKey: string, model: string, document: string, prom
     const text = (payload.output ?? []).flatMap((item) => item.type === 'message' ? item.content ?? [] : [])
       .flatMap((part) => part.type === 'output_text' && part.text ? [part.text] : []).join('\n').trim();
     if (!text) throw new Error('ChatGPT 沒有回傳文字。');
-    return { text: payload.status === 'incomplete' ? `${text}\n\n（回覆過長被截斷）` : text, model: payload.model ?? model };
+    return { text: payload.status === 'incomplete' ? `${text}\n\n（回覆過長被截斷）` : text, model: payload.model ?? model, usageTokens: payload.usage?.total_tokens ?? 0 };
   } finally {
     clearTimeout(timeout);
   }
 }
 
-const complete = (provider: AiProvider, apiKey: string, openAiModel: string, document: string, prompt: string) =>
-  provider === 'anthropic' ? claudeText(apiKey, document, prompt) : chatGptText(apiKey, openAiModel, document, prompt);
+/** The exact text a request sends, so the free-quota check can estimate it before calling. */
+export const analysisRequest = (context: FilingContext, questions: string[]) => ({ document: documentBlock(context), prompt: analysisPrompt(context, questions), maxOutput: analysisMaxOutput, system: systemPrompt });
+export const followUpRequest = (context: FilingContext, history: FilingExchange[], question: string) => ({ document: documentBlock(context), prompt: followUpPrompt(history, question), maxOutput: followUpMaxOutput, system: systemPrompt });
 
-export const analyzeFiling = (provider: AiProvider, apiKey: string, openAiModel: string, context: FilingContext, questions: string[]) =>
-  complete(provider, apiKey, openAiModel, documentBlock(context), analysisPrompt(context, questions));
-
-export const answerFilingQuestion = (provider: AiProvider, apiKey: string, openAiModel: string, context: FilingContext, history: FilingExchange[], question: string) =>
-  complete(provider, apiKey, openAiModel, documentBlock(context), followUpPrompt(history, question));
+export const completeFilingRequest = (provider: AiProvider, apiKey: string, openAiModel: string, request: ReturnType<typeof analysisRequest>) =>
+  provider === 'anthropic' ? claudeText(apiKey, request.document, request.prompt) : chatGptText(apiKey, openAiModel, request.document, request.prompt, request.maxOutput);
 
 export type { FilingContext };

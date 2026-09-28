@@ -27,6 +27,8 @@ import { earningsReminders, exchangeTodayKey, mergeEarnings, pruneManualEarnings
 import type { AiEarningsSuggestion, AiProvider, EarningsEntry, EarningsEvent, EarningsReminder } from '@/lib/earnings';
 import { aiKeyHeaders, loadAiKeys, loadAnalyses, loadDefaultProvider, loadQuestions, releaseNoticeDays, saveAiKeys, saveAnalyses, saveDefaultProvider, saveQuestions } from '@/lib/filings';
 import type { AiKeys, CompanyFilings, FilingAnalysis } from '@/lib/filings';
+import { loadUsageTier, saveUsageTier } from '@/lib/filings';
+import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
 import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
@@ -36,6 +38,7 @@ import AiSettingsCard from '@/components/AiSettingsCard';
 import type { AiStatus } from '@/components/AiSettingsCard';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
 import FilingAnalysisDialog from '@/components/FilingAnalysisDialog';
+import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import DatePicker from '@/components/DatePicker';
 import TradeColumnPicker from '@/components/TradeColumnPicker';
@@ -947,6 +950,10 @@ export default function Home() {
   const [earningsEnabled, setEarningsEnabled] = useState(true);
   const [manualEarnings, setManualEarnings] = useState<Record<string, string>>({});
   const [aiStatus, setAiStatus] = useState<AiStatus>(null);
+  const [openAiTier, setOpenAiTier] = useState<UsageTier>('low');
+  // Bumped after each AI call so the quota is read again.
+  const [quotaCheck, setQuotaCheck] = useState(0);
+  const refreshQuota = useCallback(() => setQuotaCheck((current) => current + 1), []);
   const [aiKeys, setAiKeys] = useState<AiKeys>({ openai: '', anthropic: '' });
   const [defaultAiProvider, setDefaultAiProvider] = useState<AiProvider>('openai');
   const [analysisQuestions, setAnalysisQuestions] = useState<string[]>([]);
@@ -1150,6 +1157,7 @@ export default function Home() {
       const model = window.localStorage.getItem(openAiModelKey) ?? '';
       const keys = loadAiKeys();
       const provider = loadDefaultProvider();
+      const tier = loadUsageTier();
       const questions = loadQuestions();
       // Loading also drops analyses older than half a year.
       const analyses = loadAnalyses();
@@ -1159,6 +1167,7 @@ export default function Home() {
         setOpenAiModel(model);
         setAiKeys(keys);
         setDefaultAiProvider(provider);
+        setOpenAiTier(tier);
         setAnalysisQuestions(questions);
         setFilingAnalyses(analyses);
       });
@@ -1187,21 +1196,25 @@ export default function Home() {
     try { window.localStorage.setItem(openAiModelKey, value.trim()); } catch { /* storage unavailable */ }
   }, []);
 
-  // AI lookups sit behind Cloudflare Access; ask once, when the settings panel first opens.
+  // AI lookups sit behind Cloudflare Access. The status carries today's free ChatGPT tokens, so it
+  // is asked again every time the settings panel or the analysis dialog opens, after every AI call,
+  // and when the model or usage tier changes.
   useEffect(() => {
-    if ((!settingsOpen && !filingDialogSymbol) || aiStatus) return;
+    if (!settingsOpen && !filingDialogSymbol) return;
     const controller = new AbortController();
-    fetch('/api/ai', { cache: 'no-store', signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json() as { providers?: Record<AiProvider, boolean>; openAiModel?: string | null; sec?: boolean; error?: string };
-        if (!response.ok || !payload.providers) throw new Error(payload.error ?? 'AI 查詢暫時無法使用。');
-        if (!controller.signal.aborted) setAiStatus({ state: 'ok', providers: payload.providers, openAiModel: payload.openAiModel ?? null, sec: Boolean(payload.sec) });
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) setAiStatus({ state: 'error', message: error instanceof Error ? error.message : 'AI 查詢暫時無法使用。' });
-      });
-    return () => controller.abort();
-  }, [aiStatus, filingDialogSymbol, settingsOpen]);
+    const timer = window.setTimeout(() => {
+      fetch(`/api/ai?model=${encodeURIComponent(openAiModel.trim())}&tier=${openAiTier}`, { cache: 'no-store', signal: controller.signal })
+        .then(async (response) => {
+          const payload = await response.json() as { providers?: Record<AiProvider, boolean>; openAiModel?: string | null; sec?: boolean; quota?: QuotaReport; error?: string };
+          if (!response.ok || !payload.providers) throw new Error(payload.error ?? 'AI 查詢暫時無法使用。');
+          if (!controller.signal.aborted) setAiStatus({ state: 'ok', providers: payload.providers, openAiModel: payload.openAiModel ?? null, sec: Boolean(payload.sec), quota: payload.quota ?? null });
+        })
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) setAiStatus({ state: 'error', message: error instanceof Error ? error.message : 'AI 查詢暫時無法使用。' });
+        });
+    }, 300);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [filingDialogSymbol, openAiModel, openAiTier, quotaCheck, settingsOpen]);
 
   const lookupEarningsWithAi = useCallback(async (symbol: string, provider: AiProvider) => {
     const id = `${provider}:${symbol}`;
@@ -1210,15 +1223,17 @@ export default function Home() {
       const response = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...aiKeyHeaders(aiKeys) },
-        body: JSON.stringify({ task: 'earnings-date', symbol, provider, model: provider === 'openai' ? openAiModel.trim() : undefined }),
+        body: JSON.stringify({ task: 'earnings-date', symbol, provider, model: provider === 'openai' ? openAiModel.trim() : undefined, usageTier: openAiTier }),
       });
       const payload = await response.json() as { suggestion?: AiEarningsSuggestion; error?: string };
       if (!response.ok || !payload.suggestion) throw new Error(payload.error ?? '查詢失敗，請稍後再試。');
       setAiLookups((current) => ({ ...current, [id]: { loading: false, suggestion: payload.suggestion } }));
     } catch (error) {
       setAiLookups((current) => ({ ...current, [id]: { loading: false, error: error instanceof Error ? error.message : '查詢失敗，請稍後再試。' } }));
+    } finally {
+      refreshQuota();
     }
-  }, [aiKeys, openAiModel]);
+  }, [aiKeys, openAiModel, openAiTier, refreshQuota]);
 
   const dismissAiLookup = useCallback((id: string) => {
     setAiLookups((current) => {
@@ -1229,6 +1244,7 @@ export default function Home() {
   }, []);
 
   const updateAiKeys = useCallback((keys: AiKeys) => { setAiKeys(keys); saveAiKeys(keys); }, []);
+  const updateOpenAiTier = useCallback((tier: UsageTier) => { setOpenAiTier(tier); saveUsageTier(tier); }, []);
   const updateDefaultAiProvider = useCallback((provider: AiProvider) => { setDefaultAiProvider(provider); saveDefaultProvider(provider); }, []);
   const updateAnalysisQuestions = useCallback((questions: string[]) => { setAnalysisQuestions(questions); saveQuestions(questions); }, []);
   const saveFilingAnalysis = useCallback((analysis: FilingAnalysis) => {
@@ -2959,6 +2975,8 @@ export default function Home() {
         questions={analysisQuestions}
         analyses={filingAnalyses}
         onSave={saveFilingAnalysis}
+        onUsed={refreshQuota}
+        usageTier={openAiTier}
         onClose={() => setFilingDialogSymbol(null)}
       />}
 
@@ -3015,7 +3033,7 @@ export default function Home() {
                       {aiStatus?.state === 'ok' && (['openai', 'anthropic'] as const).filter((provider) => aiProviderReady(provider)).map((provider) => {
                         const lookup = aiLookups[`${provider}:${symbol}`];
                         const name = provider === 'anthropic' ? 'Claude' : 'ChatGPT';
-                        return <button type="button" key={provider} disabled={lookup?.loading || (provider === 'openai' && !(openAiModel.trim() || (aiStatus?.state === 'ok' && aiStatus.openAiModel)))} onClick={() => lookupEarningsWithAi(symbol, provider)} aria-label={`用 ${name} 查 ${symbol} 財報日`}>{lookup?.loading ? `${name} 查詢中…` : `${name} 查`}</button>;
+                        return <button type="button" key={provider} disabled={lookup?.loading || (provider === 'openai' && !(openAiModel.trim() || (aiStatus?.state === 'ok' && aiStatus.openAiModel))) || (provider === 'openai' && aiStatus?.state === 'ok' && Boolean(aiStatus.quota) && !freeQuotaOpen(aiStatus.quota))} title={provider === 'openai' && aiStatus?.state === 'ok' ? freeQuotaLine(aiStatus.quota) : undefined} onClick={() => lookupEarningsWithAi(symbol, provider)} aria-label={`用 ${name} 查 ${symbol} 財報日`}>{lookup?.loading ? `${name} 查詢中…` : `${name} 查`}</button>;
                       })}
                     </span>}
                     {(['anthropic', 'openai'] as const).map((provider) => {
@@ -3044,7 +3062,7 @@ export default function Home() {
                 <button type="button" className={`settings-toggle ${earningsEnabled ? 'is-on' : ''}`} role="switch" aria-checked={earningsEnabled} aria-label="持倉財報日曆與提醒" onClick={toggleEarnings}><i /><b>{earningsEnabled ? '開啟' : '關閉'}</b></button>
               </div>
             </section>
-            <AiSettingsCard status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
+            <AiSettingsCard status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
           </div>
         </aside>

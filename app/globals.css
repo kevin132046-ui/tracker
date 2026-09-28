@@ -923,3 +923,17 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .filing-figures table { min-width: 0; }
 .filing-figures th { padding: 6px 8px; color: #6a7890; background: transparent; font-size: 11px; font-weight: 800; position: static; }
 .filing-figures td { font-size: 12px; }
+
+/* OpenAI free-token allowance. */
+.free-quota-line { margin: 10px 0 0; padding: 8px 10px; color: #0c5a47; background: #eaf7f1; border: 1px solid #cdeadf; border-radius: 9px; font-size: 11.5px; font-weight: 700; line-height: 1.55; }
+.filing-modal .free-quota-line { margin: 0; }
+.free-quota { margin-top: 10px; }
+.free-quota table { width: 100%; min-width: 0; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.free-quota caption { padding-bottom: 6px; color: #4b5870; font-size: 11.5px; font-weight: 800; text-align: left; }
+.free-quota th { position: static; padding: 5px 8px; color: #6a7890; background: #f6f8fb; font-size: 10.5px; font-weight: 800; letter-spacing: 0; text-transform: none; text-align: right; }
+.free-quota td { padding: 5px 8px; color: #33415a; border-top: 1px solid #edf1f6; font-size: 11.5px; font-weight: 700; text-align: right; }
+.free-quota th:first-child, .free-quota td:first-child { text-align: left; }
+.free-quota tr.is-selected td { color: #0c5a47; font-weight: 800; background: #f2fbf7; }
+.free-quota-note { margin: 6px 0 0; color: #7b889c; font-size: 10.5px; line-height: 1.55; }
+.free-quota-note a { color: #2f5fb8; font-weight: 700; }
+.free-quota-note b { color: #a83d4f; }

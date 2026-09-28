@@ -4,8 +4,10 @@ import { useState } from 'react';
 import type { AiProvider } from '@/lib/earnings';
 import type { AiKeys } from '@/lib/filings';
 import { defaultAnalysisQuestions, maxQuestionLength, maxQuestions } from '@/lib/filings';
+import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
+import { FreeQuotaTable, freeQuotaLine } from '@/components/FreeQuota';
 
-export type AiStatus = { state: 'ok'; providers: Record<AiProvider, boolean>; openAiModel: string | null; sec: boolean } | { state: 'error'; message: string } | null;
+export type AiStatus = { state: 'ok'; providers: Record<AiProvider, boolean>; openAiModel: string | null; sec: boolean; quota: QuotaReport | null } | { state: 'error'; message: string } | null;
 
 type Props = {
   status: AiStatus;
@@ -15,6 +17,8 @@ type Props = {
   onDefaultProviderChange: (provider: AiProvider) => void;
   openAiModel: string;
   onOpenAiModelChange: (model: string) => void;
+  usageTier: UsageTier;
+  onUsageTierChange: (tier: UsageTier) => void;
   questions: string[];
   onQuestionsChange: (questions: string[]) => void;
 };
@@ -28,7 +32,10 @@ const links = [
 ] as const;
 
 /** Keys, default model and the analysis question list for the AI features. Everything stays in this browser. */
-export default function AiSettingsCard({ status, keys, onKeysChange, defaultProvider, onDefaultProviderChange, openAiModel, onOpenAiModelChange, questions, onQuestionsChange }: Props) {
+export default function AiSettingsCard({ status, keys, onKeysChange, defaultProvider, onDefaultProviderChange, openAiModel, onOpenAiModelChange, usageTier, onUsageTierChange, questions, onQuestionsChange }: Props) {
+  const quota = status?.state === 'ok' ? status.quota : null;
+  const freeModels = quota?.list.groups ?? [];
+  const listed = freeModels.some((group) => group.models.includes(openAiModel.trim()));
   const [showKeys, setShowKeys] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
   const questionText = draft ?? questions.join('\n');
@@ -60,8 +67,19 @@ export default function AiSettingsCard({ status, keys, onKeysChange, defaultProv
           <option value="anthropic">Claude</option>
         </select>
       </label>
-      <label><span>ChatGPT 模型</span>
-        <input type="text" value={openAiModel} maxLength={64} spellCheck={false} autoComplete="off" placeholder={status?.state === 'ok' && status.openAiModel ? `預設 ${status.openAiModel}` : '輸入 OpenAI 模型名稱'} onChange={(event) => onOpenAiModelChange(event.target.value)} />
+      <label><span>ChatGPT 模型（只列免費額度內的模型）</span>
+        {freeModels.length ? <select value={openAiModel.trim()} onChange={(event) => onOpenAiModelChange(event.target.value)}>
+          <option value="">{status?.state === 'ok' && status.openAiModel ? `伺服器預設（${status.openAiModel}）` : '請選擇模型'}</option>
+          {openAiModel.trim() && !listed && <option value={openAiModel.trim()}>{openAiModel.trim()}（不在免費清單，會被擋下）</option>}
+          {freeModels.map((group) => <optgroup key={group.id} label={group.label}>{group.models.map((model) => <option key={model} value={model}>{model}</option>)}</optgroup>)}
+        </select>
+          : <input type="text" value={openAiModel} maxLength={64} spellCheck={false} autoComplete="off" placeholder={status?.state === 'ok' && status.openAiModel ? `預設 ${status.openAiModel}` : '輸入 OpenAI 模型名稱'} onChange={(event) => onOpenAiModelChange(event.target.value)} />}
+      </label>
+      <label><span>OpenAI 使用層級</span>
+        <select value={usageTier} onChange={(event) => onUsageTierChange(event.target.value === 'high' ? 'high' : 'low')}>
+          <option value="low">Tier 1–2（較小額度，預設）</option>
+          <option value="high">Tier 3 以上</option>
+        </select>
       </label>
       <label><span>OpenAI 金鑰</span>
         <input type={showKeys ? 'text' : 'password'} value={keys.openai} spellCheck={false} autoComplete="off" placeholder="sk-…（留空則用伺服器金鑰）" onChange={(event) => onKeysChange({ ...keys, openai: event.target.value.trim() })} />
@@ -70,6 +88,10 @@ export default function AiSettingsCard({ status, keys, onKeysChange, defaultProv
         <input type={showKeys ? 'text' : 'password'} value={keys.anthropic} spellCheck={false} autoComplete="off" placeholder="sk-ant-…（留空則用伺服器金鑰）" onChange={(event) => onKeysChange({ ...keys, anthropic: event.target.value.trim() })} />
       </label>
     </div>
+    {status?.state === 'ok' && <>
+      <p className="free-quota-line">{freeQuotaLine(quota)}</p>
+      <FreeQuotaTable quota={quota} />
+    </>}
     <div className="ai-settings-key-actions">
       <small>金鑰只存在這個瀏覽器，使用時經 HTTPS 送到本站伺服器轉呼叫，伺服器不保存。任何能在此網頁執行的程式都讀得到它；共用電腦請勿保存。</small>
       <button type="button" onClick={() => setShowKeys((current) => !current)}>{showKeys ? '隱藏金鑰' : '顯示金鑰'}</button>

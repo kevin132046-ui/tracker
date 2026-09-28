@@ -181,6 +181,7 @@ const companyNames: Record<string, string> = {
   AAPL: 'Apple', AMZN: 'Amazon', AXP: 'American Express', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
   CNC: 'Centene', META: 'Meta Platforms', MSFT: 'Microsoft', NVDA: 'NVIDIA', SPGI: 'S&P Global', SPY: 'SPDR S&P 500',
   TRV: 'The Travelers Companies', TSLA: 'Tesla', TTWO: 'Take-Two Interactive', V: 'Visa', VST: 'Vistra',
+  COST: 'Costco', DIS: 'Disney', F: 'Ford Motor', INTC: 'Intel', JNJ: 'Johnson & Johnson', JPM: 'JPMorgan Chase', KHC: 'Kraft Heinz',
   '7203.T': 'Toyota Motor', '6758.T': 'Sony Group', '9984.T': 'SoftBank Group', '6861.T': 'Keyence',
   '8306.T': 'Mitsubishi UFJ Financial Group', '8035.T': 'Tokyo Electron', '9983.T': 'Fast Retailing', '7974.T': 'Nintendo',
 };

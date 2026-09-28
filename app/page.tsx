@@ -25,6 +25,7 @@ import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFr
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
 import type { TradeColumnId } from '@/lib/trade-columns';
+import { tradesToCsv } from '@/lib/trade-csv';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import DatePicker from '@/components/DatePicker';
@@ -1210,6 +1211,21 @@ export default function Home() {
     setTrades(payload.trades ?? []);
     setLoading(false);
   }, []);
+
+  // CSV of the stored trades (derived dividend cash excluded), downloaded through an object URL.
+  const exportTradesCsv = useCallback(() => {
+    const exportable = trades.filter((trade) => !trade.derived);
+    if (!exportable.length) return notify('目前沒有可匯出的交易');
+    const url = URL.createObjectURL(new Blob([tradesToCsv(exportable)], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `optionflow-trades-${today()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    notify(`已匯出 ${exportable.length} 筆交易（CSV）`);
+  }, [notify, trades]);
 
   const refreshQuotes = useCallback(async (announce = true) => {
     if (quoteRefreshInFlightRef.current) {
@@ -2578,7 +2594,7 @@ export default function Home() {
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
             <div><p className="eyebrow">Active book</p><h2>交易與持倉</h2></div>
-            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
+            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
           </div>
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
           {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}

@@ -9,6 +9,9 @@ import { addDaysToKey, parseDateKey } from '@/lib/market-calendar';
  */
 export const anthropicModel = 'claude-opus-5';
 export const openAiModelPattern = /^[a-z0-9][a-z0-9.:-]{0,63}$/i;
+/** Output cap and the token estimate the free-quota check uses for a date lookup (web search results included). */
+export const dateLookupMaxOutput = 4_000;
+export const dateLookupEstimate = 30_000;
 const requestTimeoutMs = 120_000;
 const maxPauseResumes = 3;
 
@@ -86,16 +89,16 @@ async function askClaude(apiKey: string, symbol: string, today: string): Promise
 }
 
 type OpenAiContent = { type?: string; text?: string; annotations?: Array<{ type?: string; url?: string; title?: string }> };
-type OpenAiResponse = { model?: string; status?: string; output?: Array<{ type?: string; content?: OpenAiContent[] }>; error?: { message?: string } | null };
+type OpenAiResponse = { model?: string; status?: string; output?: Array<{ type?: string; content?: OpenAiContent[] }>; usage?: { total_tokens?: number } | null; error?: { message?: string } | null };
 
-async function askChatGpt(apiKey: string, model: string, symbol: string, today: string): Promise<Omit<AiEarningsSuggestion, 'symbol' | 'provider'>> {
+async function askChatGpt(apiKey: string, model: string, symbol: string, today: string): Promise<Omit<AiEarningsSuggestion, 'symbol' | 'provider'> & { usageTokens: number }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   try {
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, input: prompt(symbol, today), tools: [{ type: 'web_search' }] }),
+      body: JSON.stringify({ model, input: prompt(symbol, today), tools: [{ type: 'web_search', search_context_size: 'low' }], max_output_tokens: dateLookupMaxOutput }),
       signal: controller.signal,
     });
     const payload = await response.json() as OpenAiResponse;
@@ -103,16 +106,16 @@ async function askChatGpt(apiKey: string, model: string, symbol: string, today: 
     const parts = (payload.output ?? []).flatMap((item) => item.type === 'message' ? item.content ?? [] : []).filter((part) => part.type === 'output_text');
     const text = parts.map((part) => part.text ?? '').join('\n');
     const sources = parts.flatMap((part) => (part.annotations ?? []).filter((annotation) => annotation.type === 'url_citation').map((annotation) => ({ url: annotation.url, title: annotation.title })));
-    return { model: payload.model ?? model, ...parseAnswer(text, today), sources: cleanSources(sources) };
+    return { model: payload.model ?? model, ...parseAnswer(text, today), sources: cleanSources(sources), usageTokens: payload.usage?.total_tokens ?? 0 };
   } finally {
     clearTimeout(timeout);
   }
 }
 
-export async function findEarningsDate(provider: AiProvider, symbol: string, keys: { anthropic?: string; openai?: string }, openAiModel: string): Promise<AiEarningsSuggestion> {
+/** The suggestion, plus the tokens a ChatGPT call used (for the free-quota record). */
+export async function findEarningsDate(provider: AiProvider, symbol: string, keys: { anthropic?: string; openai?: string }, openAiModel: string): Promise<{ suggestion: AiEarningsSuggestion; usageTokens: number }> {
   const today = exchangeTodayKey(symbol, Date.now());
-  const result = provider === 'anthropic'
-    ? await askClaude(keys.anthropic!, symbol, today)
-    : await askChatGpt(keys.openai!, openAiModel, symbol, today);
-  return { symbol, provider, ...result };
+  if (provider === 'anthropic') return { suggestion: { symbol, provider, ...(await askClaude(keys.anthropic!, symbol, today)) }, usageTokens: 0 };
+  const { usageTokens, ...result } = await askChatGpt(keys.openai!, openAiModel, symbol, today);
+  return { suggestion: { symbol, provider, ...result }, usageTokens };
 }

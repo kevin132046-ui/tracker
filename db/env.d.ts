@@ -13,5 +13,7 @@ declare namespace Cloudflare {
     OPENAI_MODEL?: string;
     // Contact email for the User-Agent SEC requires on EDGAR requests.
     SEC_CONTACT?: string;
+    // OpenAI admin key for the organisation Usage API (free-token checks). Server only.
+    OPENAI_ADMIN_KEY?: string;
   }
 }

@@ -349,3 +349,19 @@ export function summarizeOptionRisk(items: ReadonlyArray<OptionRiskItem>, totalO
     shortCapitalShare: totalOpenCapital > 0 ? shortCapital / totalOpenCapital : null,
   };
 }
+
+/** Listed-strike spacing used for the strike shortcuts: $0.5 below $25, $1 below $200, $5 above. */
+export const strikeIncrementFor = (spot: number) => spot < 25 ? 0.5 : spot < 200 ? 1 : 5;
+
+/** Strikes around spot (−10%, −5%, −2.5%, at the money, +2.5%, +5%, +10%) rounded to listed increments. */
+export function strikeChoices(spot: number): Array<{ strike: number; offset: number }> {
+  if (!(spot > 0) || !Number.isFinite(spot)) return [];
+  const step = strikeIncrementFor(spot);
+  const seen = new Set<number>();
+  return [-0.1, -0.05, -0.025, 0, 0.025, 0.05, 0.1].flatMap((offset) => {
+    const strike = Number((Math.round(spot * (1 + offset) / step) * step).toFixed(2));
+    if (!(strike > 0) || seen.has(strike)) return [];
+    seen.add(strike);
+    return [{ strike, offset }];
+  });
+}

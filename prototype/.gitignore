@@ -1,0 +1,10 @@
+node_modules
+dist
+.parcel-cache
+bundle.html
+out
+*.log
+*.local
+# 私人素材（插畫、剪影、音樂）不進 repo；本機要用時放在這裡，不會被提交
+private/
+public/bgm/

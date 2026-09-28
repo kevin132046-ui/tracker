@@ -16,12 +16,15 @@ import {
   normalizeTickerForMarket,
   normalizedUsdAmount,
   priceHistoryRequest,
+  priceSymbolFor,
   rangeBuckets,
   timeWeightedReturnSeries,
 } from '@/lib/performance';
 import type { AnnualRocSummary, CapitalBasis, PriceHistorySeries, RangeMode } from '@/lib/performance';
 import { addDaysToKey, dateKey, japaneseHolidays, parseDateKey, upcomingClosures, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
 import type { UpcomingClosure } from '@/lib/market-calendar';
+import { earningsReminders, exchangeTodayKey, mergeEarnings, pruneManualEarnings } from '@/lib/earnings';
+import type { EarningsEntry, EarningsEvent, EarningsReminder } from '@/lib/earnings';
 import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
@@ -176,6 +179,8 @@ const backgroundPendingModeKey = 'optionflow-pending-background-mode';
 const usdJpyRateKey = 'optionflow-usdjpy-rate';
 const holidayNoticeKey = 'optionflow-holiday-notice';
 const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
+const earningsReminderKey = 'optionflow-earnings-reminder';
+const manualEarningsKey = 'optionflow-earnings-manual';
 const usdJpyUpdatedAtKey = 'optionflow-usdjpy-updated-at';
 const macroMarketStorageKey = 'optionflow-macro-markets-v2';
 const localBackgroundPattern = /^data:image\/jpeg;base64,/i;
@@ -585,11 +590,14 @@ const HeaderMarketCalendar = memo(function HeaderMarketCalendar() {
 const closureWeekdays = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
 const closureId = (closure: UpcomingClosure) => `${closure.market}:${closure.key}:${closure.kind}`;
 const closureLabel = (closure: UpcomingClosure) => closure.kind === 'early' ? '美股提前收盤' : closure.market === 'US' ? '美股休市' : '日股休市';
-const closureWhen = (closure: UpcomingClosure) => {
-  const date = parseDateKey(closure.key)!;
-  const distance = closure.daysAway === 0 ? '今天' : `${closure.daysAway} 天後`;
+const dayWhen = (key: string, daysAway: number) => {
+  const date = parseDateKey(key)!;
+  const distance = daysAway === 0 ? '今天' : `${daysAway} 天後`;
   return `${date.month}/${date.day} ${closureWeekdays[weekday(date)]} · ${distance}`;
 };
+// Dismissal ids keep the date second so old ones can be pruned by date.
+const earningsReminderId = (reminder: EarningsReminder) => `EARN:${reminder.date}:${reminder.symbol}`;
+const earningsTimingLabel = (timing: EarningsEvent['timing']) => timing === 'pre' ? '盤前' : timing === 'post' ? '盤後' : '';
 
 function readDismissedClosures() {
   try {
@@ -600,9 +608,12 @@ function readDismissedClosures() {
   }
 }
 
-// US and Japanese closures in the coming week, plus US early closes. Hidden when there are none,
-// when every one shown has been dismissed, or when the notice is switched off in settings.
-const HolidayNotice = memo(function HolidayNotice({ enabled }: { enabled: boolean }) {
+type NoticeEarnings = { symbols: string[]; yahoo: Record<string, EarningsEvent>; manual: Record<string, string> };
+
+// US and Japanese closures in the coming week, US early closes, and earnings of held symbols.
+// Hidden when there is nothing to show, when everything shown has been dismissed, or when both
+// parts are switched off in settings.
+const HolidayNotice = memo(function HolidayNotice({ enabled, earnings }: { enabled: boolean; earnings: NoticeEarnings | null }) {
   const [timestamp, setTimestamp] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState<string[] | null>(null);
   useEffect(() => {
@@ -615,31 +626,41 @@ const HolidayNotice = memo(function HolidayNotice({ enabled }: { enabled: boolea
     return () => window.clearInterval(timer);
   }, []);
   const closures = useMemo(() => {
-    if (timestamp === null) return [];
+    if (timestamp === null || !enabled) return [];
     return [
       ...upcomingClosures('US', zonedDateKey(zonedDate(timestamp, 'America/New_York'))),
       ...upcomingClosures('JP', zonedDateKey(zonedDate(timestamp, 'Asia/Tokyo'))),
     ].sort((a, b) => a.key.localeCompare(b.key) || a.market.localeCompare(b.market));
-  }, [timestamp]);
-  if (!enabled || dismissed === null || !closures.length || closures.every((closure) => dismissed.includes(closureId(closure)))) return null;
+  }, [enabled, timestamp]);
+  const reminders = useMemo(() => {
+    if (timestamp === null || !earnings) return [];
+    return earningsReminders(mergeEarnings(earnings.symbols, earnings.yahoo, earnings.manual, timestamp), timestamp);
+  }, [earnings, timestamp]);
+  const ids = [...closures.map(closureId), ...reminders.map(earningsReminderId)];
+  if (dismissed === null || !ids.length || ids.every((id) => dismissed.includes(id))) return null;
   const dismiss = () => {
-    const current = closures.map(closureId);
     // Keep only ids that can still come up, so the stored list stays small.
     const today = zonedDateKey(zonedDate(Date.now(), 'Asia/Tokyo'));
-    const next = [...new Set([...dismissed.filter((id) => id.split(':')[1] >= addDaysToKey(today, -2)), ...current])];
+    const next = [...new Set([...dismissed.filter((id) => id.split(':')[1] >= addDaysToKey(today, -2)), ...ids])];
     setDismissed(next);
     try { window.localStorage.setItem(holidayNoticeDismissedKey, JSON.stringify(next)); } catch { /* storage unavailable: hide for this visit only */ }
   };
+  const title = reminders.length ? '市場提醒' : '休市預告';
   return <div className="holiday-notice" role="status">
-    <strong>休市預告</strong>
+    <strong>{title}</strong>
     <ul>
       {closures.map((closure) => <li key={closureId(closure)} className={`holiday-notice-item is-${closure.market.toLowerCase()} ${closure.kind === 'early' ? 'is-early' : ''}`}>
         <b>{closureLabel(closure)}</b>
         <span>{closure.name}{closure.kind === 'early' ? ' · 13:00 ET' : ''}</span>
-        <small>{closureWhen(closure)}</small>
+        <small>{dayWhen(closure.key, closure.daysAway)}</small>
+      </li>)}
+      {reminders.map((reminder) => <li key={earningsReminderId(reminder)} className="holiday-notice-item is-earnings">
+        <b>財報</b>
+        <span>{reminder.symbol}{earningsTimingLabel(reminder.timing) ? ` · ${earningsTimingLabel(reminder.timing)}` : ''}{reminder.estimate ? '（預估）' : ''}</span>
+        <small>{reminder.endDate ? `${reminder.date.slice(5).replace('-', '/')}～${reminder.endDate.slice(5).replace('-', '/')}` : dayWhen(reminder.date, reminder.daysAway)}</small>
       </li>)}
     </ul>
-    <button type="button" className="holiday-notice-close" onClick={dismiss} aria-label="關閉休市預告">×</button>
+    <button type="button" className="holiday-notice-close" onClick={dismiss} aria-label={`關閉${title}`}>×</button>
   </div>;
 });
 
@@ -911,6 +932,9 @@ export default function Home() {
   const [valuationTicker, setValuationTicker] = useState('MSFT');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [holidayNoticeEnabled, setHolidayNoticeEnabled] = useState(true);
+  const [earningsEnabled, setEarningsEnabled] = useState(true);
+  const [manualEarnings, setManualEarnings] = useState<Record<string, string>>({});
+  const [yahooEarnings, setYahooEarnings] = useState<{ key: string; events: Record<string, EarningsEvent>; failed: string[] } | null>(null);
   const [brokerHubEnabled, setBrokerHubEnabled] = useState(false);
   const [brokerHubLoading, setBrokerHubLoading] = useState(true);
   const [brokerHubToggleSaving, setBrokerHubToggleSaving] = useState(false);
@@ -1093,6 +1117,37 @@ export default function Home() {
     try {
       if (window.localStorage.getItem(holidayNoticeKey) === 'off') queueMicrotask(() => setHolidayNoticeEnabled(false));
     } catch { /* storage unavailable: keep the default */ }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const off = window.localStorage.getItem(earningsReminderKey) === 'off';
+      const stored = JSON.parse(window.localStorage.getItem(manualEarningsKey) ?? '{}') as unknown;
+      const manual = stored && typeof stored === 'object' && !Array.isArray(stored)
+        ? pruneManualEarnings(Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => typeof entry[1] === 'string')), Date.now())
+        : {};
+      queueMicrotask(() => {
+        if (off) setEarningsEnabled(false);
+        setManualEarnings(manual);
+      });
+    } catch { /* storage unavailable: keep the defaults */ }
+  }, []);
+
+  const toggleEarnings = useCallback(() => {
+    setEarningsEnabled((current) => {
+      try { window.localStorage.setItem(earningsReminderKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
+  }, []);
+
+  const setManualEarningsDate = useCallback((symbol: string, date: string | null) => {
+    setManualEarnings((current) => {
+      const next = { ...current };
+      if (date) next[symbol] = date;
+      else delete next[symbol];
+      try { window.localStorage.setItem(manualEarningsKey, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
   }, []);
 
   const toggleHolidayNotice = useCallback(() => {
@@ -1370,6 +1425,37 @@ export default function Home() {
   // Underlying prices for open US option positions (IV, greeks, moneyness): one request per
   // symbol at most once a minute while the page is visible, and nothing without open options.
   const optionUnderlyingKey = useMemo(() => [...new Set(trades.flatMap((trade) => trade.status === 'open' && optionRightOf(trade) ? [underlyingSymbolOf(trade.ticker)] : []))].filter(Boolean).sort().join(','), [trades]);
+
+  // Symbols of open stock and option positions, for the earnings calendar.
+  const earningsSymbolKey = useMemo(() => [...new Set(trades.flatMap((trade) => trade.status === 'open' && !isCashTrade(trade) ? [priceSymbolFor(trade)] : []))]
+    .filter((symbol) => /^[A-Z0-9.-]{1,15}$/.test(symbol)).sort().join(','), [trades]);
+
+  useEffect(() => {
+    if (!earningsEnabled || !earningsSymbolKey || yahooEarnings?.key === earningsSymbolKey) return;
+    const controller = new AbortController();
+    fetch(`/api/earnings?symbols=${encodeURIComponent(earningsSymbolKey)}`, { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { earnings?: Record<string, EarningsEvent>; failed?: string[]; error?: string };
+        if (!response.ok || !payload.earnings) throw new Error(payload.error ?? '財報日暫時無法取得');
+        if (!controller.signal.aborted) setYahooEarnings({ key: earningsSymbolKey, events: payload.earnings, failed: payload.failed ?? [] });
+      })
+      // Without Yahoo the card still lists the symbols and takes manual dates.
+      .catch(() => { if (!controller.signal.aborted) setYahooEarnings({ key: earningsSymbolKey, events: {}, failed: earningsSymbolKey.split(',') }); });
+    return () => controller.abort();
+  }, [earningsEnabled, earningsSymbolKey, yahooEarnings?.key]);
+
+  const noticeEarnings = useMemo(() => earningsEnabled && earningsSymbolKey
+    ? { symbols: earningsSymbolKey.split(','), yahoo: yahooEarnings?.events ?? {}, manual: manualEarnings }
+    : null, [earningsEnabled, earningsSymbolKey, manualEarnings, yahooEarnings?.events]);
+
+  const earningsRows = useMemo(() => {
+    if (!noticeEarnings) return [];
+    const now = Date.now();
+    const merged = mergeEarnings(noticeEarnings.symbols, noticeEarnings.yahoo, noticeEarnings.manual, now);
+    return noticeEarnings.symbols
+      .map((symbol) => ({ symbol, entry: merged[symbol] as EarningsEntry | null, today: exchangeTodayKey(symbol, now) }))
+      .sort((a, b) => (a.entry?.date ?? '9999').localeCompare(b.entry?.date ?? '9999') || a.symbol.localeCompare(b.symbol));
+  }, [noticeEarnings]);
 
   const loadUnderlyingQuote = useCallback(async (symbol: string, signal?: AbortSignal) => {
     const fetchedAt = underlyingFetchedAtRef.current.get(symbol) ?? 0;
@@ -2517,7 +2603,7 @@ export default function Home() {
           <button className="primary-button" type="button" onClick={() => setEditor(blankTrade())}>＋新增交易</button>
         </div>
       </header>
-      <HolidayNotice enabled={holidayNoticeEnabled} />
+      <HolidayNotice enabled={holidayNoticeEnabled} earnings={noticeEarnings} />
 
       <div className="page-frame">
         <nav className="side-nav" aria-label="頁面切換">
@@ -2773,6 +2859,30 @@ export default function Home() {
               <div className="settings-feature-actions">
                 <span>按提示右側的 × 只會隱藏目前這幾天；設定保存在這個瀏覽器。</span>
                 <button type="button" className={`settings-toggle ${holidayNoticeEnabled ? 'is-on' : ''}`} role="switch" aria-checked={holidayNoticeEnabled} onClick={toggleHolidayNotice}><i /><b>{holidayNoticeEnabled ? '開啟' : '關閉'}</b></button>
+              </div>
+            </section>
+            <section className={`settings-feature-card earnings-settings-card ${earningsEnabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon earnings" aria-hidden="true">決</span><div><p>Earnings calendar</p><h3>持倉財報日曆與提醒</h3></div><span className="settings-feature-status">{earningsEnabled ? (earningsSymbolKey && yahooEarnings?.key !== earningsSymbolKey ? '讀取中' : '已開啟') : '已關閉'}</span></div>
+              <p>列出未平倉股票與選擇權標的的下一次財報日；財報前 7 天起在頁首下方提醒。日期來自 Yahoo Finance，查不到時可自行填入。</p>
+              {earningsEnabled && <div className="earnings-table" role="table" aria-label="持倉財報日">
+                {!earningsRows.length && <p className="earnings-empty">目前沒有未平倉的股票或選擇權。</p>}
+                {earningsRows.map(({ symbol, entry, today }) => {
+                  const failed = yahooEarnings?.key === earningsSymbolKey && yahooEarnings.failed.includes(symbol);
+                  const source = entry?.source === 'manual' ? '手動' : entry ? (entry.estimate ? 'Yahoo 預估' : 'Yahoo') : failed ? '無法連線' : symbol.endsWith('.T') ? '日股不支援' : '未取得';
+                  return <div className="earnings-row" role="row" key={symbol}>
+                    <strong role="cell">{symbol}</strong>
+                    <span role="cell" className={entry ? '' : 'is-missing'}>{entry ? `${entry.date}${entry.endDate ? ` ～ ${entry.endDate}` : ''}${earningsTimingLabel(entry.timing) ? ` · ${earningsTimingLabel(entry.timing)}` : ''}` : '—'}</span>
+                    <small role="cell">{source}</small>
+                    <span role="cell" className="earnings-manual">
+                      <input type="date" min={today} value={manualEarnings[symbol] ?? ''} aria-label={`手動財報日 ${symbol}`} onChange={(event) => setManualEarningsDate(symbol, event.target.value || null)} />
+                      {manualEarnings[symbol] && <button type="button" onClick={() => setManualEarningsDate(symbol, null)} aria-label={`清除手動財報日 ${symbol}`}>×</button>}
+                    </span>
+                  </div>;
+                })}
+              </div>}
+              <div className="settings-feature-actions">
+                <span>手動日期優先於 Yahoo，過了那天會自動改回 Yahoo 的日期；手動日期與開關保存在這個瀏覽器。</span>
+                <button type="button" className={`settings-toggle ${earningsEnabled ? 'is-on' : ''}`} role="switch" aria-checked={earningsEnabled} aria-label="持倉財報日曆與提醒" onClick={toggleEarnings}><i /><b>{earningsEnabled ? '開啟' : '關閉'}</b></button>
               </div>
             </section>
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>

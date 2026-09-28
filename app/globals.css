@@ -808,3 +808,26 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
   .holiday-notice-item { padding: 4px 8px; gap: 5px; }
   .holiday-notice-item small { font-size: 9.5px; }
 }
+
+/* Earnings reminders and calendar card. */
+.holiday-notice-item.is-earnings b { color: #5b4a9a; }
+.settings-feature-icon.earnings { background: linear-gradient(145deg, #7d6fb3, #574b8c); box-shadow: 0 8px 18px rgba(72,60,120,.18); font-size: 18px; }
+.earnings-table { display: grid; gap: 4px; margin: -4px 0 16px; padding: 6px; background: white; border: 1px solid #e3e8f0; border-radius: 12px; }
+.earnings-row { display: grid; grid-template-columns: minmax(64px, .8fr) minmax(120px, 1.6fr) minmax(70px, .8fr) auto; align-items: center; gap: 10px; min-height: 38px; padding: 4px 8px; border-radius: 8px; font-size: 12px; }
+.earnings-row:nth-child(even) { background: #f7f9fc; }
+.earnings-row strong { color: #273449; font-weight: 850; }
+.earnings-row > span { color: #33415a; font-variant-numeric: tabular-nums; font-weight: 700; }
+.earnings-row > span.is-missing { color: #9aa6b8; }
+.earnings-row small { color: #7b889c; font-size: 10.5px; font-weight: 700; }
+.earnings-manual { display: flex; align-items: center; gap: 4px; }
+.earnings-manual input { width: 132px; min-height: 30px; padding: 0 6px; color: #33415a; background: #fbfcfe; border: 1px solid #d8e0ec; border-radius: 7px; font: inherit; font-size: 11.5px; }
+.earnings-manual button { width: 24px; height: 24px; color: #8793a6; background: transparent; border: 0; border-radius: 6px; cursor: pointer; font-size: 15px; line-height: 1; }
+.earnings-manual button:hover { color: #33415a; background: #eef2f8; }
+.earnings-empty { margin: 6px 8px; color: #7b889c; font-size: 12px; }
+@media (max-width: 620px) {
+  .earnings-row { grid-template-columns: minmax(56px, 1fr) auto; gap: 2px 8px; padding: 6px 8px; }
+  .earnings-row > span:not(.earnings-manual) { grid-column: 1 / -1; grid-row: 2; }
+  .earnings-row small { justify-self: end; }
+  .earnings-manual { grid-column: 1 / -1; }
+  .earnings-manual input { flex: 1; width: auto; }
+}

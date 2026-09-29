@@ -144,6 +144,8 @@ const translations: ReadonlyArray<readonly [string, string | null, string | null
   ['雪夜湯宿 · 青與琥珀', '雪夜の湯宿 · 青と琥珀', 'Snowy hot-spring night · teal and amber'], ['每次開啟時選一個', '開くたびにどちらかを選択', 'Picks one each time you open the page'], ['介面主題', 'テーマ', 'Theme'],
   ['桔梗與時雨兩個深色主題：明朝字體、角色光環與和紙質感。只改外觀，資料與功能完全相同；選擇保存在這個瀏覽器。', '桔梗と時雨の 2 つのダークテーマ：明朝体、キャラクターの光輪、和紙の質感。見た目だけが変わり、データと機能は同じです。選択はこのブラウザに保存されます。', 'Two dark themes, 桔梗 and 時雨: Mincho type, the characters\' halos and a washi-paper feel. Only the look changes; data and features stay the same. The choice is saved in this browser.'],
   ['經典', 'クラシック', 'Classic'], ['隨機', 'ランダム', 'Random'],
+  ['開場動畫', 'オープニング', 'Opening'], ['每個分頁一次', 'タブごとに 1 回', 'Once per tab'], ['每次開啟', '毎回', 'Every time'], ['預覽開場', 'オープニングをプレビュー', 'Preview opening'],
+  ['裝置較慢時自動改用輕量開場（不顯示水墨）', '端末が遅いときは軽量版に自動で切り替える（水墨なし）', 'Use the lite opening on slow devices (no ink)'], ['這台裝置已改用輕量開場。', 'この端末は軽量版のオープニングを使用しています。', 'This device uses the lite opening.'], ['重新偵測', '再検出', 'Detect again'],
   // English only: labels and notes the Japanese list never covered.
   ['即時市場時間', null, 'Live market time'], ['美東', null, 'New York'], ['報價每 60 秒更新 · 上次', null, 'Quotes refresh every 60 s · last'],
   ['筆未平倉持倉', null, 'open positions'], ['筆有效平倉交易', null, 'closed trades counted'], ['股票採買入成本；賣方選擇權採擔保金或履約價名目', null, 'Stocks at cost; short options at collateral or strike notional'],

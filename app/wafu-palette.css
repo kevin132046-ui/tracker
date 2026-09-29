@@ -174,7 +174,7 @@
     box-shadow: 0 12px 36px rgb(0 0 0 / 0.121)
 }
 :root[data-wafu] .metric-card:before {
-    background: var(--wa-accent)
+    background: var(--wa-accent-soft)
 }
 :root[data-wafu] .metric-card.featured {
     background: linear-gradient(145deg, var(--wa-panel), var(--wa-accent-soft))
@@ -195,7 +195,7 @@
     color: var(--wa-down)
 }
 :root[data-wafu] .panel-resizer span {
-    background: var(--wa-accent);
+    background: var(--wa-accent-soft);
     box-shadow: 0 0 0 4px rgb(0 0 0 / 0.4)
 }
 :root[data-wafu] .panel-resizer:hover span, :root[data-wafu] .panel-resizer:focus-visible span, :root[data-wafu] .content-grid.is-resizing .panel-resizer span {
@@ -701,7 +701,7 @@
 }
 :root[data-wafu] .summary-tip i {
     color: var(--wa-up);
-    background: var(--wa-up)
+    background: var(--wa-up-soft)
 }
 :root[data-wafu] .editor-actions {
     background: var(--wa-panel)
@@ -1329,7 +1329,7 @@
 }
 :root[data-wafu] .settings-feature-card.is-enabled .settings-feature-status {
     color: var(--wa-up);
-    background: var(--wa-up)
+    background: var(--wa-up-soft)
 }
 :root[data-wafu] .settings-feature-card > p {
     color: var(--wa-muted)
@@ -2409,7 +2409,7 @@
     border-color: var(--wa-line-2)
 }
 :root[data-wafu] .earnings-ai-actions button.is-filing:hover {
-    background: var(--wa-up)
+    background: var(--wa-up-soft)
 }
 :root[data-wafu] .earnings-ai-hint {
     color: var(--wa-muted) !important

@@ -205,3 +205,17 @@
 :root[data-wafu] .wafu-theme-option.active { background: var(--wa-accent-soft); border-color: var(--wa-accent); }
 :root[data-wafu] .wafu-theme-option small { color: var(--wa-muted); }
 @media (max-width: 560px) { .wafu-theme-options { grid-template-columns: minmax(0, 1fr); } }
+/* Opening settings (only shown in a 和風 theme) */
+:root[data-wafu] .wafu-intro-settings { display: grid; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--wa-line); }
+:root[data-wafu] .wafu-intro-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+:root[data-wafu] .wafu-intro-row > span { color: var(--wa-ink-2); font-size: 13px; font-weight: 700; }
+:root[data-wafu] .wafu-intro-choices { display: inline-flex; padding: 2px; border: 1px solid var(--wa-line); border-radius: var(--wa-r); }
+:root[data-wafu] .wafu-intro-choices button { padding: 5px 11px; color: var(--wa-muted); font-size: 12.5px; background: transparent; border: 0; border-radius: calc(var(--wa-r) - 1px); cursor: pointer; }
+:root[data-wafu] .wafu-intro-choices button.active { color: var(--wa-on-accent); background: var(--wa-accent); }
+:root[data-wafu] .wafu-intro-preview, :root[data-wafu] .wafu-intro-note button { padding: 5px 12px; color: var(--wa-accent); font-size: 12.5px; background: transparent; border: 1px solid var(--wa-accent); border-radius: var(--wa-r); cursor: pointer; }
+:root[data-wafu] .wafu-intro-preview { margin-left: auto; }
+:root[data-wafu] .wafu-intro-lite { display: flex; align-items: center; gap: 8px; color: var(--wa-muted); font-size: 12.5px; cursor: pointer; }
+:root[data-wafu] .wafu-intro-lite input { accent-color: var(--wa-accent); }
+:root[data-wafu] .wafu-intro-note { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--wa-muted); font-size: 12px; }
+:root[data-wafu] .wafu-intro-note button { padding: 3px 10px; font-size: 12px; }
+@media (max-width: 560px) { :root[data-wafu] .wafu-intro-preview { margin-left: 0; } }

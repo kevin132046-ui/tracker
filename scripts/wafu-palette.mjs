@@ -70,6 +70,8 @@ function mapColor(raw, role, onStrong = false) {
       if (s < 0.3 || l >= 0.985) return a < 1 ? `rgb(var(--wa-raise-rgb) / ${+Math.min(0.08, a * 0.08).toFixed(3)})` : r + g + b === 765 ? 'var(--wa-panel)' : 'var(--wa-raise)';
       return `var(--wa-${family(h)}-soft)`;
     }
+    // Pastel badges (light green, light red…) carry text of the same hue, so they stay soft.
+    if (l >= 0.84 && s > 0.3) return `var(--wa-${family(h)}-soft)`;
     if (saturated) return withAlpha(family(h), a);
     if (l < 0.3) return a < 1 ? `rgb(0 0 0 / ${+Math.min(0.7, a * 1.6).toFixed(3)})` : 'var(--wa-panel-solid)';
     return withAlpha('line-2', Math.min(1, a));

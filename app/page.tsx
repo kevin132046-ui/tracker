@@ -2,6 +2,7 @@
 
 import type { ChangeEvent, CSSProperties } from 'react';
 import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { BrokerWorkspace } from '@/lib/broker-workspace';
 import {
   buildAnnualRocSummary,
@@ -48,6 +49,8 @@ import type { WafuNavIconName } from '@/components/wafu/NavIcon';
 import WafuThemeCard from '@/components/wafu/WafuThemeCard';
 import type { WafuPreference, WafuTheme } from '@/lib/wafu/theme';
 import { applyWafu, defaultWafuPreference, loadWafuPreference, resolveWafu, saveWafuPreference } from '@/lib/wafu/theme';
+import type { WafuIntroPreference } from '@/lib/wafu/intro';
+import { defaultWafuIntro, introPending, liftIntroVeil, loadIntroLiteAuto, loadWafuIntro, saveIntroLiteAuto, saveWafuIntro } from '@/lib/wafu/intro';
 import DatePicker from '@/components/DatePicker';
 import TradeColumnPicker from '@/components/TradeColumnPicker';
 
@@ -179,10 +182,13 @@ const loadBrokerHub = () => import('@/components/BrokerHub');
 const loadDcfCalculator = () => import('@/components/DcfCalculator');
 const loadCompanyFundamentals = () => import('@/components/CompanyFundamentals');
 const loadTradeImportDialog = () => import('@/components/TradeImportDialog');
+// The 和風 opening (and its ink engine) is only fetched when a 和風 theme plays it.
+const loadWafuOpening = () => import('@/components/wafu/opening/Opening');
 const BrokerHub = lazy(loadBrokerHub);
 const DcfCalculator = lazy(loadDcfCalculator);
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
 const TradeImportDialog = lazy(loadTradeImportDialog);
+const WafuOpening = lazy(loadWafuOpening);
 
 const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
 const companyNames: Record<string, string> = {
@@ -978,6 +984,10 @@ export default function Home() {
   const [claudeModel, setClaudeModel] = useState<ClaudeModel>(defaultClaudeModel);
   const [wafuPreference, setWafuPreference] = useState<WafuPreference>(defaultWafuPreference);
   const [wafuTheme, setWafuTheme] = useState<WafuTheme | null>(null);
+  const [wafuIntro, setWafuIntro] = useState<WafuIntroPreference>(defaultWafuIntro);
+  const [introLiteAuto, setIntroLiteAuto] = useState(true);
+  // The opening playing now (on load, or previewed from the settings).
+  const [intro, setIntro] = useState<{ theme: WafuTheme; reduced: boolean } | null>(null);
   const [aiLookups, setAiLookups] = useState<Record<string, { loading: boolean; suggestion?: AiEarningsSuggestion; error?: string }>>({});
   const [yahooEarnings, setYahooEarnings] = useState<{ key: string; events: Record<string, EarningsEvent>; failed: string[] } | null>(null);
   const [brokerHubEnabled, setBrokerHubEnabled] = useState(false);
@@ -1200,6 +1210,11 @@ export default function Home() {
       const claude = loadClaudeModel();
       const wafu = loadWafuPreference();
       const wafuShown = resolveWafu(wafu);
+      const introPreference = loadWafuIntro();
+      const liteAuto = loadIntroLiteAuto();
+      // The boot script veiled the page when the opening should play; otherwise lift any veil now.
+      const playIntro = wafuShown && introPending() ? { theme: wafuShown, reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches } : null;
+      if (!playIntro) liftIntroVeil();
       const questions = loadQuestions();
       // Loading also drops analyses older than half a year.
       const analyses = loadAnalyses();
@@ -1214,10 +1229,13 @@ export default function Home() {
         setWafuPreference(wafu);
         setWafuTheme(wafuShown);
         applyWafu(wafuShown);
+        setWafuIntro(introPreference);
+        setIntroLiteAuto(liteAuto);
+        setIntro(playIntro);
         setAnalysisQuestions(questions);
         setFilingAnalyses(analyses);
       });
-    } catch { /* storage unavailable: keep the defaults */ }
+    } catch { liftIntroVeil(); /* storage unavailable: keep the defaults */ }
   }, []);
 
   const toggleEarnings = useCallback(() => {
@@ -1298,6 +1316,18 @@ export default function Home() {
     setWafuPreference(preference);
     setWafuTheme(theme);
     applyWafu(theme);
+  }, []);
+  const updateWafuIntro = useCallback((preference: WafuIntroPreference) => { setWafuIntro(preference); saveWafuIntro(preference); }, []);
+  const updateIntroLiteAuto = useCallback((on: boolean) => { setIntroLiteAuto(on); saveIntroLiteAuto(on); }, []);
+  const previewIntro = useCallback(() => {
+    if (wafuTheme) setIntro({ theme: wafuTheme, reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches });
+  }, [wafuTheme]);
+  const finishIntro = useCallback(() => setIntro(null), []);
+  // As the doors open the page rises into place (wafu-opening.css).
+  const revealAfterIntro = useCallback(() => {
+    const root = document.documentElement;
+    root.dataset.wafuReveal = '1';
+    window.setTimeout(() => { delete root.dataset.wafuReveal; }, 1500);
   }, []);
   // The import dialog's AI entry starts from the AI settings and can pick another model per use.
   const importAi = useMemo(() => ({ keys: aiKeys, defaultProvider: defaultAiProvider, openAiModel, claudeModel, usageTier: openAiTier, onUsed: refreshQuota }), [aiKeys, claudeModel, defaultAiProvider, openAiModel, openAiTier, refreshQuota]);
@@ -3054,7 +3084,7 @@ export default function Home() {
         <aside className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
           <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title">設定</h2><span>選擇要啟用的擴充工作區。</span></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
           <div className="settings-body">
-            <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} />
+            <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
             <section className={`settings-feature-card ${brokerHubEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon" aria-hidden="true">◎</span><div><p>Optional module</p><h3>跨券商資產追蹤與再平衡</h3></div><span className="settings-feature-status">{brokerHubLoading ? '讀取中' : brokerHubEnabled ? '已開啟' : '預設關閉'}</span></div>
               <p>把不同券商的手動部位聚合成單一全景，提供 USD／JPY 平抑檢視、偏離診斷、只買不賣試算與跨券商待辦清單。</p>
@@ -3324,6 +3354,7 @@ export default function Home() {
         </section>
       </div>}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
+      {intro && createPortal(<Suspense fallback={null}><WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} /></Suspense>, document.body)}
     </main>
   );
 }

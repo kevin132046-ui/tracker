@@ -1,3 +1,5 @@
+import { defaultWafuIntro, wafuIntroKey, wafuIntroSeenKey } from '@/lib/wafu/intro';
+
 /**
  * 和風介面: which look the page uses. 'classic' is the original light page; 桔梗 and 時雨 are the
  * dark 和風 themes, and 'random' picks one of them once per browser session. The choice lives in
@@ -58,6 +60,7 @@ export function applyWafu(theme: WafuTheme | null) {
 
 /**
  * Runs before the page paints (inlined in the layout) so a 和風 theme never flashes the classic page.
- * Kept in step with resolveWafu and applyWafu above.
+ * Kept in step with resolveWafu and applyWafu above. When the opening will play it also veils the
+ * page (data-wafu-intro); the veil lifts by itself after 8 s in case the page never starts.
  */
-export const wafuBootScript = `(function(){try{var p=localStorage.getItem('${wafuPreferenceKey}')||'${defaultWafuPreference}';var t=p;if(p==='random'){t=sessionStorage.getItem('${sessionPickKey}');if(t!=='kikyo'&&t!=='shigure'){t=Math.random()<0.5?'kikyo':'shigure';sessionStorage.setItem('${sessionPickKey}',t);}}if(t!=='kikyo'&&t!=='shigure')return;document.documentElement.dataset.wafu=t;var l=document.createElement('link');l.id='wafu-fonts';l.rel='stylesheet';l.href='${wafuFontsHref}';document.head.appendChild(l);}catch(e){}})();`;
+export const wafuBootScript = `(function(){try{var p=localStorage.getItem('${wafuPreferenceKey}')||'${defaultWafuPreference}';var t=p;if(p==='random'){t=sessionStorage.getItem('${sessionPickKey}');if(t!=='kikyo'&&t!=='shigure'){t=Math.random()<0.5?'kikyo':'shigure';sessionStorage.setItem('${sessionPickKey}',t);}}if(t!=='kikyo'&&t!=='shigure')return;var r=document.documentElement;r.dataset.wafu=t;var l=document.createElement('link');l.id='wafu-fonts';l.rel='stylesheet';l.href='${wafuFontsHref}';document.head.appendChild(l);var i=localStorage.getItem('${wafuIntroKey}')||'${defaultWafuIntro}';if(i==='off'||(i==='session'&&sessionStorage.getItem('${wafuIntroSeenKey}')))return;r.dataset.wafuIntro='1';setTimeout(function(){delete r.dataset.wafuIntro;},8000);}catch(e){}})();`;

@@ -206,6 +206,13 @@ const translations: ReadonlyArray<readonly [string, string | null, string | null
   ['目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。', null, 'A manual aggregation and planning tool: it never signs in to brokers, reads broker credentials or sends real orders.'], ['的股息資料暫時無法取得', null, ' dividend data is unavailable for now'], ['走勢', null, 'trend'],
   ['日走勢', null, 'Daily trend'], ['週走勢', null, 'Weekly trend'], ['月走勢', null, 'Monthly trend'], ['年走勢', null, 'Yearly trend'],
   ['目前', null, 'Now'], ['預設', null, 'Default'], ['（每行一題，最多', null, ' (one per line, up to'], ['題）', null, ')'],
+  // Guide bar, quick sheet, tabbed settings and the research drawer.
+  ['左右滑切換區塊，點一下回頂部，往上滑或長按開啟快捷面板', '左右スワイプでセクション切替、タップで先頭へ、上スワイプか長押しでクイックメニュー', 'Swipe left or right to switch sections, tap for the top, swipe up or hold for the quick menu'],
+  ['匯入 CSV／截圖', 'CSV・画像取込', 'Import CSV / screenshot'], ['AI 助手', 'AI アシスタント', 'AI assistant'], ['個股研究', '銘柄リサーチ', 'Stock research'], ['通知與休市', '通知・休場', 'Notices & closures'],
+  ['底部導覽', 'ボトムナビ', 'Bottom navigation'], ['引導條（預設）', 'ホームバー（既定）', 'Guide bar (default)'], ['選單列（手機）', 'メニューバー（スマホ）', 'Menu bar (phone)'], ['引導條', 'ホームバー', 'Guide bar'], ['選單列', 'メニューバー', 'Menu bar'],
+  ['匯入與匯出', '取込と書出', 'Import and export'], ['外觀', '外観', 'Look'], ['模組', 'モジュール', 'Modules'], ['資料', 'データ', 'Data'], ['音樂', '音楽', 'Music'],
+  ['技術面', 'テクニカル', 'Technical'], ['基本面', 'ファンダメンタルズ', 'Fundamentals'], ['DCF 估值', 'DCF 評価', 'DCF valuation'], ['購買紀錄', '購入履歴', 'Purchase lots'], ['關閉個股研究', '銘柄リサーチを閉じる', 'Close stock research'],
+  ['平均取得', '平均取得', 'Avg cost'], ['效能模式', 'パフォーマンスモード', 'Performance mode'],
   // AI settings: master switch, bring-your-own-key mode, key checks and model detection.
   ['AI 功能總開關：關閉後所有 AI 按鈕都會隱藏，不送出任何 AI 請求。', 'AI 機能のマスタースイッチ：オフにするとすべての AI ボタンが隠れ、AI リクエストは送信されません。', 'Master switch for AI: when off, every AI button is hidden and no AI request is sent.'],
   ['AI 功能已關閉：不顯示財報解讀、AI 查財報日、AI 記錄交易與 AI 助理，也不會送出任何 AI 請求。其他功能照常。', 'AI 機能はオフです：決算解説、AI 決算日検索、AI 取引記録、AI アシスタントは表示されず、AI リクエストも送信されません。ほかの機能は通常どおりです。', 'AI is off: filing analysis, AI earnings dates, AI trade entry and the AI assistant are hidden, and no AI request is sent. Everything else works as usual.'],

@@ -51,6 +51,8 @@ import WafuBackdrop from '@/components/wafu/Backdrop';
 import MusicDock from '@/components/wafu/MusicDock';
 import NotifyCenter from '@/components/wafu/NotifyCenter';
 import GuideBar from '@/components/wafu/GuideBar';
+import ResearchDrawer from '@/components/wafu/ResearchDrawer';
+import type { ResearchTab } from '@/components/wafu/ResearchDrawer';
 import HomeBar from '@/components/wafu/HomeBar';
 import type { NoticeItem } from '@/components/wafu/NotifyCenter';
 import WafuMediaCard from '@/components/wafu/WafuMediaCard';
@@ -786,7 +788,9 @@ function lastIndicator(values: Array<number | null>) {
   return values.findLast((value): value is number => typeof value === 'number' && Number.isFinite(value)) ?? null;
 }
 
-const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, customFrom, customTo, data, loading, error, stockTrades, lotSavingId, valuationOpen, onRangeChange, onCustomRangeApply, onClose, onOpenDcf, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
+const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, range, customFrom, customTo, data, loading, error, stockTrades, lotSavingId, valuationOpen, onRangeChange, onCustomRangeApply, onClose, onOpenDcf, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
+  /** Which part the research drawer shows: the charts, the company fundamentals or the purchase lots. */
+  view: 'technical' | 'fundamentals' | 'lots';
   symbol: string;
   range: TechnicalRange;
   customFrom: string;
@@ -872,7 +876,8 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, c
       ? { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }
       : { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(point.timestamp * 1000));
 
-  return <section className="panel stock-analysis-panel" id="stock-analysis" aria-live="polite">
+  return <section className={`panel stock-analysis-panel is-embedded view-${view}`} id="stock-analysis" aria-live="polite">
+    {view === 'technical' && <>
     <header className="technical-header">
       <div className="technical-title"><CompanyLogo ticker={symbol} /><div><p className="eyebrow">Technical view</p><div className="technical-title-heading"><h2>{symbol} 股票走勢</h2><button type="button" className="technical-back-inline" onClick={onClose}>← 返回持倉總覽</button></div><span>{activeData?.intervalLabel ?? '價格'} · RSI 14 · MACD 12/26/9</span></div></div>
       {activeData && <div className="technical-quote"><span>最新價格</span><strong>{priceMoney(activeData.latestPrice)}</strong><b className={activeData.change >= 0 ? 'positive' : 'negative'}>{signedPrice(symbol, activeData.change)} · {signedPrecisePercent(activeData.changePercent)}</b><small>前收 {priceMoney(activeData.previousClose)}</small></div>}
@@ -933,8 +938,10 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, c
         <div className="macd-legend"><span><i className="macd-key"/>MACD</span><span><i className="signal-key"/>Signal</span><span><i className="histogram-key"/>Histogram</span></div>
       </article>
     </div>}
-    <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 公司資料…</div>}><CompanyFundamentals key={symbol} symbol={symbol} valuationOpen={valuationOpen} onOpenDcf={onOpenDcf} onReturn={onClose} /></Suspense>
-    <section className="stock-lots-section">
+    <footer className="technical-note">價格、OHLC 與技術指標採同一組交易所時段資料計算；短期間使用分時 K，長期間使用日 K。僅供持倉追蹤，不構成投資建議。</footer>
+    </>}
+    {view === 'fundamentals' && <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 公司資料…</div>}><CompanyFundamentals key={symbol} symbol={symbol} valuationOpen={valuationOpen} onOpenDcf={onOpenDcf} onReturn={onClose} /></Suspense>}
+    {view === 'lots' && <section className="stock-lots-section">
       <div className="stock-lots-heading"><div><p className="eyebrow">Cost basis</p><h3>買入均價與購買紀錄</h3><span>直接修改日期或均價；儲存後持倉、損益與圖表會立即重算。</span></div><button type="button" onClick={onAddLot}>＋新增 {symbol} 買入紀錄</button></div>
       <div className="stock-lot-summary"><div><span>股票加權均價</span><strong>{summaryLots.length ? priceMoney(averageEntry) : '—'}</strong></div><div><span>持股數量</span><strong>{totalQuantity || '—'}</strong></div><div><span>首次買入日期</span><strong>{firstPurchaseDate ? dateLabel(firstPurchaseDate) : '—'}</strong></div><div><span>購買紀錄</span><strong>{stockTrades.length} 筆</strong></div></div>
       <div className="stock-lot-list">
@@ -952,10 +959,10 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, c
           <div className="stock-lot-actions"><button type="submit" className="lot-save" disabled={lotSavingId === trade.id}>{lotSavingId === trade.id ? '儲存中…' : '儲存'}</button><button type="button" onClick={() => onEditLot(trade)}>完整編輯</button><button type="button" className="delete" onClick={() => onDeleteLot(trade)}>刪除</button></div>
         </form>)}
       </div>
-    </section>
-    <footer className="technical-note">價格、OHLC 與技術指標採同一組交易所時段資料計算；短期間使用分時 K，長期間使用日 K。僅供持倉追蹤，不構成投資建議。</footer>
+    </section>}
   </section>;
-}, (previous, next) => previous.symbol === next.symbol
+}, (previous, next) => previous.view === next.view
+  && previous.symbol === next.symbol
   && previous.range === next.range
   && previous.customFrom === next.customFrom
   && previous.customTo === next.customTo
@@ -998,6 +1005,7 @@ export default function Home() {
   const homeBarEnabled = bottomNav === 'menu';
   const [notifySignal, setNotifySignal] = useState(0);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('look');
+  const [researchTab, setResearchTab] = useState<ResearchTab>('technical');
   // Android Chrome offers installing the site as an app; the event is kept for the settings button.
   const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
   const [earningsEnabled, setEarningsEnabled] = useState(true);
@@ -2677,6 +2685,17 @@ export default function Home() {
       strategy: [...group.strategies].slice(0, 2).join(' · '),
     }));
   }, [filteredTrades, usdJpyRate]);
+  // The research drawer's header: holding, average cost and unrealised P&L of the ticker in view.
+  const researchPosition = drilledTicker ? visualPositions.find((position) => position.ticker === drilledTicker) ?? null : null;
+  const researchSummary = useMemo(() => {
+    if (!drilledTicker || !researchPosition) return [];
+    const parts: Array<{ text: string; tone?: 'positive' | 'negative' }> = [];
+    if (researchPosition.stockQuantity > 0) parts.push({ text: `持有 ${researchPosition.stockQuantity} 股` });
+    if (researchPosition.optionQuantity > 0) parts.push({ text: `選擇權 ${researchPosition.optionQuantity} 口` });
+    parts.push({ text: `平均取得 ${nativeMoney(drilledTicker, researchPosition.entryPrice)}` });
+    parts.push({ text: `未實現損益 ${researchPosition.pnl >= 0 ? '+' : '−'}${money.format(Math.abs(researchPosition.pnl))}（${signedPrecisePercent(researchPosition.roc)}）`, tone: researchPosition.pnl >= 0 ? 'positive' : 'negative' });
+    return parts;
+  }, [drilledTicker, researchPosition]);
 
   async function persistTrade(trade: Trade, method: 'POST' | 'PUT') {
     const response = await fetch('/api/trades', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(trade) });
@@ -2850,8 +2869,8 @@ export default function Home() {
     if (tickerChanged) {
       setTechnicalLoading(true);
       setTechnicalError('');
+      setResearchTab('technical');
     }
-    window.requestAnimationFrame(() => document.getElementById('stock-analysis')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
   }
 
   function selectTechnicalRange(range: TechnicalRange) {
@@ -3173,7 +3192,18 @@ export default function Home() {
           </article>
         </section>
 
-        {drilledTicker && <StockTechnicalPanel
+        {drilledTicker && <ResearchDrawer
+          symbol={drilledTicker}
+          company={researchPosition?.company ?? companyNames[drilledTicker] ?? ''}
+          summary={researchSummary}
+          tab={researchTab}
+          onTab={setResearchTab}
+          onClose={returnToPositionsOverview}
+        >
+          {researchTab === 'dcf'
+            ? <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在開啟 DCF 估值…</div>}><DcfCalculator key={drilledTicker} initialTicker={drilledTicker} onClose={() => setResearchTab('technical')} /></Suspense>
+            : <StockTechnicalPanel
+          view={researchTab}
           key={drilledTicker}
           symbol={drilledTicker}
           range={technicalRange}
@@ -3184,16 +3214,17 @@ export default function Home() {
           error={technicalError}
           stockTrades={selectedStockTrades}
           lotSavingId={lotSavingId}
-          valuationOpen={valuationOpen && valuationTicker === drilledTicker}
+          valuationOpen={false}
           onRangeChange={selectTechnicalRange}
           onCustomRangeApply={applyTechnicalCustomRange}
           onClose={returnToPositionsOverview}
-          onOpenDcf={() => toggleValuation(drilledTicker)}
+          onOpenDcf={() => setResearchTab('dcf')}
           onAddLot={() => setEditor({ ...blankTrade(), type: 'SDI', ticker: drilledTicker, event: 'STOCK', quoteMode: 'auto' })}
           onSaveLot={saveStockLot}
           onEditLot={(trade) => setEditor({ ...trade })}
           onDeleteLot={(trade) => setDeleteCandidate(trade)}
         />}
+        </ResearchDrawer>}
 
         {valuationOpen && <Suspense fallback={<section className="broker-hub-loader" id="valuation" aria-busy="true"><span /><strong>正在開啟 DCF 估值工作區…</strong></section>}><DcfCalculator key={valuationTicker} initialTicker={valuationTicker} onClose={closeValuation} /></Suspense>}
 

@@ -1002,6 +1002,20 @@ function VisualFieldStrip({ fields, values }: { fields: VisualFieldId[]; values:
   })}</div>;
 }
 
+// US session for the top-bar pill: 盤前 04:00–09:30, 交易中 09:30–16:00, 盤後 16:00–20:00 (ET).
+type MarketSession = 'pre' | 'open' | 'post' | 'closed';
+function marketSessionAt(timestamp: number): MarketSession {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(timestamp));
+  const day = parts.find((part) => part.type === 'weekday')?.value ?? '';
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
+  const clock = hour * 60 + minute;
+  const easternDate = zonedDate(timestamp, 'America/New_York');
+  const holiday = usMarketHolidays(easternDate.year).has(zonedDateKey(easternDate));
+  if (holiday || ['Sat', 'Sun'].includes(day)) return 'closed';
+  return clock >= 570 && clock < 960 ? 'open' : clock >= 240 && clock < 570 ? 'pre' : clock >= 960 && clock < 1200 ? 'post' : 'closed';
+}
+
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3165,17 +3179,14 @@ export default function Home() {
     }
   }
 
-  const marketOpen = (() => {
-    const timestamp = Date.now();
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(timestamp));
-    const day = parts.find((part) => part.type === 'weekday')?.value ?? '';
-    const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0);
-    const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
-    const clock = hour * 60 + minute;
-    const easternDate = zonedDate(timestamp, 'America/New_York');
-    const holiday = usMarketHolidays(easternDate.year).has(zonedDateKey(easternDate));
-    return !holiday && !['Sat', 'Sun'].includes(day) && clock >= 570 && clock < 960;
-  })();
+  // Worked out in the browser (and every 30 s) so the pill never differs from the server's render.
+  const [marketSession, setMarketSession] = useState<MarketSession>('closed');
+  useEffect(() => {
+    const update = () => setMarketSession(marketSessionAt(Date.now()));
+    update();
+    const timer = window.setInterval(update, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const contentGridStyle = useMemo(() => ({ '--return-panel-ratio': `${panelRatio}%` }) as CSSProperties, [panelRatio]);
   const imageBackgroundActive = backgroundMode === 'image' && Boolean(backgroundImage);
   const shellStyle = useMemo(() => imageBackgroundActive ? { '--custom-background': `url("${backgroundImage}")` } as CSSProperties : undefined, [backgroundImage, imageBackgroundActive]);
@@ -3204,7 +3215,7 @@ export default function Home() {
         <div className="header-actions">
           <LanguageSwitcher />
           {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
-          <span className={`market-pill ${marketOpen ? 'is-open' : ''}`}><span />{marketOpen ? '美股交易中' : '非交易時段'}</span>
+          <span className={`market-pill is-${marketSession}`}><span />{marketSession === 'open' ? '美股交易中' : marketSession === 'pre' ? '盤前' : marketSession === 'post' ? '盤後' : '非交易時段'}</span>
           <button className="secondary-button" type="button" onClick={() => refreshQuotes()} disabled={refreshing}>{refreshing ? '更新中…' : '↻ 更新報價'}</button>
           <button className="primary-button" type="button" onClick={() => setEditor(blankTrade())}>＋新增交易</button>
         </div>

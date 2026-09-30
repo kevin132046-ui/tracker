@@ -12,6 +12,8 @@ import type { OpenTradeHint } from '@/lib/ai-trade-entry';
 import { maxEntryLength, maxOpenTradeHints } from '@/lib/ai-trade-entry';
 import { parseEntryImage, parseTrades, tradeParseRequest } from '@/lib/server/trade-parse';
 import { parseDateKey } from '@/lib/market-calendar';
+import { maxAssistantQuestion } from '@/lib/ai-assistant';
+import { chatRequest, cleanSnapshot, cleanTurns, completeChat } from '@/lib/server/portfolio-chat';
 import { analysisRequest, completeFilingRequest, followUpRequest, type FilingContext } from '@/lib/server/filing-analysis';
 import { checkOpenAiQuota, quotaReport, recordOpenAiUsage } from '@/lib/server/openai-quota';
 import { SecNotConfigured, filingText, findFiling, isAccession, lookupCik, quarterlyFigures } from '@/lib/server/sec';
@@ -65,7 +67,7 @@ export async function GET(request: Request) {
   }, { headers: noStore });
 }
 
-type Body = { task?: unknown; symbol?: unknown; provider?: unknown; model?: unknown; accession?: unknown; questions?: unknown; history?: unknown; question?: unknown; usageTier?: unknown; text?: unknown; image?: unknown; today?: unknown; openTrades?: unknown };
+type Body = { task?: unknown; symbol?: unknown; provider?: unknown; model?: unknown; accession?: unknown; questions?: unknown; history?: unknown; question?: unknown; usageTier?: unknown; text?: unknown; image?: unknown; today?: unknown; openTrades?: unknown; persona?: unknown; language?: unknown; snapshot?: unknown; turns?: unknown };
 
 async function filingContext(symbol: string, accession: string): Promise<FilingContext | string> {
   const company = await lookupCik(symbol);
@@ -120,9 +122,9 @@ export async function POST(request: Request) {
     return fail('請求格式錯誤。', 400);
   }
   const task = body.task;
-  if (task !== 'earnings-date' && task !== 'earnings-analysis' && task !== 'filing-question' && task !== 'parse-trades') return fail('不支援的查詢類型。', 400);
+  if (task !== 'earnings-date' && task !== 'earnings-analysis' && task !== 'filing-question' && task !== 'parse-trades' && task !== 'portfolio-chat') return fail('不支援的查詢類型。', 400);
   const symbol = String(body.symbol ?? '').trim().toUpperCase();
-  if (task !== 'parse-trades' && !symbolPattern.test(symbol)) return fail('無效的股票代號。', 400);
+  if (task !== 'parse-trades' && task !== 'portfolio-chat' && !symbolPattern.test(symbol)) return fail('無效的股票代號。', 400);
   const provider: AiProvider | null = body.provider === 'anthropic' || body.provider === 'openai' ? body.provider : null;
   if (!provider) return fail('請選擇 Claude 或 ChatGPT。', 400);
 
@@ -160,6 +162,28 @@ export async function POST(request: Request) {
     } catch (error) {
       console.warn(`Trade parse failed (${provider} ${model}):`, error instanceof Error ? error.message : error);
       return fail(error instanceof Error && error.message.startsWith('AI ') ? `${providerName(provider)} 的回覆格式不正確，請再試一次或換個模型。` : `${providerName(provider)} 解析失敗，請稍後再試。`, 502);
+    }
+  }
+
+  if (task === 'portfolio-chat') {
+    const question = typeof body.question === 'string' ? body.question.trim() : '';
+    if (!question) return fail('請輸入問題。', 400);
+    if (question.length > maxAssistantQuestion) return fail(`問題請在 ${maxAssistantQuestion} 字以內。`, 400);
+    const snapshot = cleanSnapshot(body.snapshot);
+    if (!snapshot) return fail('缺少持倉摘要。', 400);
+    const persona = body.persona === 'kikyo' || body.persona === 'shigure' ? body.persona : 'neutral';
+    const language = body.language === 'ja' || body.language === 'en' ? body.language : 'zh';
+    const aiRequest = chatRequest(persona, language, snapshot, cleanTurns(body.turns), question);
+    const estimate = estimateTokens(`${aiRequest.system}\n${aiRequest.portfolio}\n${aiRequest.turns.map((turn) => turn.text).join('\n')}\n${aiRequest.question}`) + aiRequest.maxOutput;
+    const blocked = await guardQuota(estimate);
+    if (blocked) return blocked;
+    try {
+      const result = await completeChat(provider, apiKey, model, aiRequest);
+      if (provider === 'openai') recordOpenAiUsage(result.model, result.usageTokens || estimate);
+      return NextResponse.json({ provider, model: result.model, text: result.text }, { headers: noStore });
+    } catch (error) {
+      console.warn(`Portfolio chat failed (${provider} ${model}):`, error instanceof Error ? error.message : error);
+      return fail(`${providerName(provider)} 回覆失敗，請稍後再試。`, 502);
     }
   }
 

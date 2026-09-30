@@ -239,3 +239,35 @@
 @media (max-width: 720px) { .settings-tabs { margin: 0 18px; } :root[data-wafu] .settings-panel { animation-name: wafu-settings-up; } }
 @keyframes wafu-settings-up { from { transform: translateY(100%); } }
 @media (prefers-reduced-motion: reduce) { :root[data-wafu] .settings-panel, .settings-body > * { animation: none; } }
+
+/* ---------- 銘柄リサーチ drawer (from the prototype) ---------- */
+.wafu-research-backdrop { position: fixed; inset: 0; z-index: 92; display: flex; justify-content: flex-end; background: rgb(0 0 0 / .5); animation: wafu-guide-fade .2s backwards; }
+.wafu-research { display: flex; flex-direction: column; width: min(1180px, 94vw); height: 100%; color: var(--wa-ink); background: var(--wa-panel-solid); border-left: 1px solid var(--wa-line-2); box-shadow: -30px 0 80px -20px rgb(0 0 0 / .8); animation: wafu-settings-in .46s cubic-bezier(.22, 1.2, .36, 1) both; }
+.wafu-research-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: calc(16px + env(safe-area-inset-top, 0px)) 24px 10px; }
+.wafu-research-head h2 { display: flex; align-items: baseline; gap: 12px; margin: 0; font-family: var(--wa-f-display); font-size: 21px; font-weight: 700; letter-spacing: .06em; }
+.wafu-research-kicker { font-size: 19px; }
+.wafu-research-symbol { color: var(--wa-accent); font-size: 23px; letter-spacing: .04em; }
+.wafu-research-sub { display: flex; flex-wrap: wrap; gap: 4px 0; margin: 4px 0 0; color: var(--wa-ink-2); font-size: 12.5px; }
+.wafu-research-sub span + span::before { content: '·'; margin: 0 8px; color: var(--wa-muted); }
+.wafu-research-sub .positive { color: var(--wa-up); } .wafu-research-sub .negative { color: var(--wa-down); }
+.wafu-research-close { flex: none; display: grid; place-items: center; width: 36px; height: 36px; color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-2); border-radius: 50%; font-size: 20px; cursor: pointer; }
+.wafu-research-close:hover { border-color: var(--wa-accent); }
+.wafu-research-tabs { display: flex; gap: 4px; margin: 0 24px; padding-bottom: 10px; border-bottom: 1px solid var(--wa-line); overflow-x: auto; }
+.wafu-research-tabs button { flex: none; height: 34px; padding: 0 14px; color: var(--wa-ink-2); background: transparent; border: 0; border-radius: 999px; font-size: 13.5px; cursor: pointer; }
+.wafu-research-tabs button:hover { color: var(--wa-ink); }
+.wafu-research-tabs button.on { color: var(--wa-on-accent); background: var(--wa-accent); font-weight: 600; }
+:root[data-wafu='kikyo'] .wafu-research-tabs button { border-radius: var(--wa-r); }
+.wafu-research-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 24px calc(28px + env(safe-area-inset-bottom, 0px)); }
+.wafu-research-body > * { animation: wafu-settings-rise .35s cubic-bezier(.2, .8, .2, 1) backwards; }
+/* The site's panels inside the drawer: no second frame, no duplicate title or back button. */
+.wafu-research .stock-analysis-panel.is-embedded { margin: 0; padding: 0; background: none; border: 0; box-shadow: none; }
+.wafu-research .stock-analysis-panel.is-embedded .technical-title, .wafu-research .technical-back-inline { display: none; }
+.wafu-research .stock-analysis-panel.is-embedded .technical-header { padding-top: 0; }
+:root[data-research-open] body { overflow: hidden; }
+@media (max-width: 760px) {
+  .wafu-research { width: 100%; border-left: 0; animation-name: wafu-settings-up; }
+  .wafu-research-head { padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 8px; }
+  .wafu-research-tabs { margin: 0 16px; }
+  .wafu-research-body { padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) { .wafu-research, .wafu-research-body > * { animation: none; } }

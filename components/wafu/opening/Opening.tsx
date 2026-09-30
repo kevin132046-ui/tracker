@@ -15,7 +15,6 @@ import type { WafuTheme } from '@/lib/wafu/theme';
 
 type Stage = 'loading' | 'form' | 'stamp' | 'opening' | 'gone';
 
-const titles: Record<WafuTheme, string> = { kikyo: '桐生桔梗', shigure: '間宵時雨' };
 const loaderSteps: Record<WafuTheme, Record<IntroLanguage, string[]>> = {
   kikyo: {
     zh: ['偵察報價', '確認布陣', '推演損益', '整備圖表', '軍議完成'],
@@ -329,8 +328,6 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
           <span className="opening-pct" ref={pctRef}>00%</span>
         </div>
         <span className="opening-bar" ref={barRef}><i /></span>
-        <div className="opening-brand">{`OPTIONFLOW · ${titles[theme]}`}</div>
-        <div className="opening-skip">{skipHint}</div>
       </div>
     </div>
   );

@@ -33,7 +33,7 @@ import { loadUsageTier, saveUsageTier } from '@/lib/filings';
 import type { ClaudeModel } from '@/lib/ai-models';
 import { defaultClaudeModel, loadClaudeModel, requestModel, saveClaudeModel } from '@/lib/ai-models';
 import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
-import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
+import { OPTION_CONTRACT_SIZE, analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
 import type { TradeColumnId } from '@/lib/trade-columns';
@@ -591,7 +591,7 @@ const RocBreakdownDialog = memo(function RocBreakdownDialog({ summary, onClose }
   </div>;
 });
 
-const OptionRiskStrip = memo(function OptionRiskStrip({ risk }: { risk: OptionRiskSummary }) {
+const OptionRiskStrip = memo(function OptionRiskStrip({ risk, premium }: { risk: OptionRiskSummary; premium: { received: number; count: number; kept: number; closed: number } | null }) {
   const unpriced = risk.positions - risk.analyzed;
   const greeksReady = risk.analyzed > 0;
   const { nearestExpiry: nearest, maxAssignment: assignment } = risk;
@@ -602,10 +602,11 @@ const OptionRiskStrip = memo(function OptionRiskStrip({ risk }: { risk: OptionRi
     </header>
     <dl>
       <div><dt>淨 Delta（股數當量）</dt><dd><strong>{greeksReady ? `${signedDecimal(risk.netDelta)} 股` : '—'}</strong><small>{greeksReady ? `≈ ${signedMoney(risk.netDeltaDollars)} 標的名目` : '等待標的報價'}</small></dd></div>
-      <div><dt>每日 Theta</dt><dd><strong className={greeksReady ? risk.theta >= 0 ? 'positive' : 'negative' : ''}>{greeksReady ? signedMoney(risk.theta) : '—'}</strong><small>每過一天；賣方為正收入</small></dd></div>
+      <div><dt>每日 Theta</dt><dd><strong className={greeksReady ? risk.theta >= 0 ? 'positive' : 'negative' : ''}>{greeksReady ? signedMoney(risk.theta) : '—'}</strong><small>時間價值收入；每過一天，賣方為正</small></dd></div>
       <div><dt>Vega（$／vol 點）</dt><dd><strong>{greeksReady ? signedMoney(risk.vega) : '—'}</strong><small>隱含波動率上升 1 點</small></dd></div>
       <div><dt>最近到期</dt><dd><strong>{nearest ? `${nearest.ticker} · ${nearest.days} 天` : '—'}</strong><small>{nearest ? dateLabel(nearest.expiryDate) : '未填到期日'}</small></dd></div>
       <div><dt>最高被指派機率</dt><dd><strong>{assignment ? percent.format(assignment.probability) : '—'}</strong><small>{assignment ? `${assignment.ticker} ${assignment.strike ?? ''} ${assignment.right === 'put' ? 'PUT' : 'CALL'}` : greeksReady ? '沒有賣方部位' : '等待標的報價'}</small></dd></div>
+      {premium && <div><dt>本年權利金</dt><dd><strong className="positive">{signedMoney(premium.received)}</strong><small>{`${premium.count} 筆賣出`}{premium.closed > 0 && ` · 已平倉實收 ${signedMoney(premium.kept)}`}</small></dd></div>}
       <div><dt>擔保占用</dt><dd><strong>{money.format(risk.shortCapital)}</strong><small>{risk.shortCapitalShare === null ? '賣方選擇權的投入資本' : `占全部投入資本 ${percent.format(risk.shortCapitalShare)}`}</small></dd></div>
     </dl>
   </section>;
@@ -2527,6 +2528,19 @@ export default function Home() {
     }
     return items.length ? summarizeOptionRisk(items, capitalAtRisk) : null;
   }, [capitalAtRisk, optionRows, trades, usdJpyRate]);
+  // 本年權利金 (from the prototype): premium received on options sold this calendar year (USD, before
+  // buy-backs), and what the ones already closed this year actually kept.
+  const yearPremium = useMemo(() => {
+    const year = todayKey.slice(0, 4);
+    let received = 0, count = 0, kept = 0, closed = 0;
+    for (const item of enriched) {
+      const trade = item.trade;
+      if (!optionRightOf(trade) || !isShortTrade(trade) || trade.derived) continue;
+      if (trade.openDate.startsWith(year)) { received += normalizedUsdAmount(trade, trade.entryPrice * OPTION_CONTRACT_SIZE * Math.abs(trade.quantity), usdJpyRate); count += 1; }
+      if (trade.status === 'closed' && (trade.closeDate ?? '').startsWith(year)) { kept += item.pnl; closed += 1; }
+    }
+    return count || closed ? { received, count, kept, closed } : null;
+  }, [enriched, todayKey, usdJpyRate]);
   const currentRocYear = Number(today().slice(0, 4));
   const annualRocSummary = useMemo(() => buildAnnualRocSummary(closedTrades, currentRocYear, usdJpyRate), [closedTrades, currentRocYear, usdJpyRate]);
 
@@ -3386,7 +3400,7 @@ export default function Home() {
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
           {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}
           <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['cash', '現金'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? portfolioTrades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : portfolioTrades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : mode === 'cash' ? isCashTrade(trade) : trade.type !== 'SDI' && !isCashTrade(trade)).length}</span></button>)}{positionView === 'details' && <TradeColumnPicker columns={tradeColumnSet} onChange={updateTradeColumns} />}{positionView === 'visual' && <VisualFieldPicker fields={visualFieldSet} onChange={updateVisualFields} />}</div>
-          {optionRisk && <OptionRiskStrip risk={optionRisk} />}
+          {optionRisk && <OptionRiskStrip risk={optionRisk} premium={yearPremium} />}
           {positionView === 'visual' ? <div className="visual-positions">
             <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>成本均價／現價</span><span>標的價格波動／今日漲跌</span><span>損益／報酬率</span><span>組合占比</span></div>
             {!loading && !visualPositions.length && <div className="visual-empty">沒有符合目前篩選條件的持倉。</div>}

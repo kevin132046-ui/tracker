@@ -6,7 +6,8 @@
 .wafu-bd-photo {
   position: absolute; inset: -4%;
   background-size: cover; background-position: 40% 28%;
-  scale: 1.02; translate: 0 calc(var(--sy, 0px) * -0.05);
+  /* Its own GPU layer: the parallax moves it without repainting the filtered picture. */
+  scale: 1.02; translate: 0 calc(var(--sy, 0px) * -0.05); will-change: translate;
   animation: wafu-bd-in 2.8s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
 }
 @keyframes wafu-bd-in { from { scale: 1.13; opacity: 0.35; } to { scale: 1.02; opacity: 1; } }
@@ -158,3 +159,11 @@
   .wafu-notify-toggle, .wafu-music-toggle { width: 32px; height: 32px; }
   .header-actions { gap: 6px; }
 }
+
+/* ---------- 效能模式 (data-perf="lite"): decorative motion steps aside; content is unchanged ---------- */
+:root[data-perf='lite'] .wafu-bd-photo { animation: none; translate: none; will-change: auto; }
+:root[data-perf='lite'] .wafu-bd-beam, :root[data-perf='lite'] .wafu-bd-lantern { animation: none; will-change: auto; }
+:root[data-perf='lite'] .wafu-nav-halo, :root[data-perf='lite'] .wafu-homebar-halo, :root[data-perf='lite'] .halo-ico .halo-rot { animation: none; }
+:root[data-perf='lite'][data-wafu] .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgb(var(--wa-bg-rgb) / .94); }
+:root[data-perf='lite'][data-home-bar] .wafu-homebar { backdrop-filter: none; -webkit-backdrop-filter: none; }
+:root[data-perf='lite'] .wafu-notify.has-unread .wafu-notify-icon { animation: none; }

@@ -6,6 +6,7 @@ import InkFluid, { type InkFluidHandle } from './InkFluid';
 import type { IntroLanguage } from '@/lib/wafu/intro';
 import { introLanguage, introLiteDetected, liftIntroVeil, loadIntroLiteAuto, markIntroSeen, setIntroLiteDetected } from '@/lib/wafu/intro';
 import { useWafuAssets } from '@/lib/wafu/assets';
+import { applyPerf, loadPerfPreference } from '@/lib/wafu/perf';
 import { kikyoInner, kikyoOutline, kikyoStamen, snowCrystal, yukiwaOutline } from '@/lib/wafu/marks';
 import { setMediaPrefs, useMediaPrefs } from '@/lib/wafu/media';
 import { audioReady, playSfx, unlockAudio } from '@/lib/wafu/sfx';
@@ -59,7 +60,7 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
   const [step, setStep] = useState(0);
   const [stage, setStage] = useState<Stage>('loading');
   const [fading, setFading] = useState(false);
-  const [inkOk, setInkOk] = useState(() => !(loadIntroLiteAuto() && introLiteDetected()));
+  const [inkOk, setInkOk] = useState(() => loadPerfPreference() !== 'on' && !(loadIntroLiteAuto() && introLiteDetected()));
   const { assets } = useWafuAssets();
   const silhouette = assets[`sil-${theme}`]?.url ?? null;
   const prefs = useMediaPrefs();
@@ -147,6 +148,7 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
       const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
       if (median > slowFrameMs) {
         setIntroLiteDetected(true);
+        applyPerf();
         setInkOk(false);
       }
     };

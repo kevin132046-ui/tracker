@@ -78,12 +78,15 @@ export function loadAnalyses() {
 }
 export const saveAnalyses = (analyses: Record<string, FilingAnalysis>) => write(analysesKey, pruneAnalyses(analyses));
 
-export type AiKeys = { openai: string; anthropic: string };
+/** openaiAdmin: an OpenAI admin key, only used to read today's usage (the free-tier check). */
+export type AiKeys = { openai: string; anthropic: string; openaiAdmin: string };
+export const emptyAiKeys: AiKeys = { openai: '', anthropic: '', openaiAdmin: '' };
 export function loadAiKeys(): AiKeys {
   const stored = read<Partial<AiKeys>>(aiKeysKey, {});
-  return { openai: typeof stored.openai === 'string' ? stored.openai : '', anthropic: typeof stored.anthropic === 'string' ? stored.anthropic : '' };
+  const text = (value: unknown) => typeof value === 'string' ? value : '';
+  return { openai: text(stored.openai), anthropic: text(stored.anthropic), openaiAdmin: text(stored.openaiAdmin) };
 }
-export const saveAiKeys = (keys: AiKeys) => keys.openai || keys.anthropic ? write(aiKeysKey, keys) : (() => { try { window.localStorage.removeItem(aiKeysKey); } catch { /* storage unavailable */ } })();
+export const saveAiKeys = (keys: AiKeys) => keys.openai || keys.anthropic || keys.openaiAdmin ? write(aiKeysKey, keys) : (() => { try { window.localStorage.removeItem(aiKeysKey); } catch { /* storage unavailable */ } })();
 
 export const loadDefaultProvider = (): AiProvider => read<string>(aiDefaultProviderKey, 'openai') === 'anthropic' ? 'anthropic' : 'openai';
 export const saveDefaultProvider = (provider: AiProvider) => write(aiDefaultProviderKey, provider);
@@ -108,5 +111,6 @@ export function aiKeyHeaders(keys: AiKeys): Record<string, string> {
   return {
     ...(keys.openai.trim() ? { 'X-OpenAI-Key': keys.openai.trim() } : {}),
     ...(keys.anthropic.trim() ? { 'X-Anthropic-Key': keys.anthropic.trim() } : {}),
+    ...(keys.openaiAdmin?.trim() ? { 'X-OpenAI-Admin-Key': keys.openaiAdmin.trim() } : {}),
   };
 }

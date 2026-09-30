@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { AiEarningsSuggestion, AiProvider } from '@/lib/earnings';
 import { exchangeTodayKey } from '@/lib/earnings';
 import { addDaysToKey, parseDateKey } from '@/lib/market-calendar';
-import { defaultClaudeModel } from '@/lib/ai-models';
+import { defaultClaudeModel, claudeExtras, claudeWebSearch } from '@/lib/ai-models';
 
 /**
  * Asks Claude or ChatGPT, with web search, for a symbol's next earnings date. The answer is
@@ -67,10 +67,9 @@ async function askClaude(apiKey: string, model: string, symbol: string, today: s
     response = await client.beta.messages.create({
       model,
       max_tokens: 16000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
+      ...claudeExtras(model),
       output_config: { effort: 'medium' },
-      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],
+      tools: [{ type: claudeWebSearch(model), name: 'web_search', max_uses: 5 }],
       messages,
     });
     if (response.stop_reason !== 'pause_turn') break;

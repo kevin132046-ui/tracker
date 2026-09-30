@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import type { AiEarningsSuggestion, AiProvider } from '@/lib/earnings';
 import type { FilingExchange, QuarterRow } from '@/lib/filings';
 import { cleanQuestions, maxFollowUps, maxQuestionLength } from '@/lib/filings';
-import { verifyAccess } from '@/lib/server/access';
+import { aiGate, byokLimited, openAiUsageScope, providerKey, serverKeys, type AiGate } from '@/lib/server/ai-gate';
 import type { UsageTier } from '@/lib/openai-free-tier';
 import { estimateTokens } from '@/lib/openai-free-tier';
 import { anthropicModel, dateLookupEstimate, findEarningsDate, openAiModelPattern } from '@/lib/server/ai-earnings';
@@ -21,48 +21,45 @@ import { SecNotConfigured, filingText, findFiling, isAccession, lookupCik, quart
 export const dynamic = 'force-dynamic';
 
 const symbolPattern = /^[A-Z0-9.-]{1,15}$/;
-// Keys typed into the browser: printable, no spaces, bounded. Never logged or stored here.
-const apiKeyPattern = /^[\x21-\x7e]{20,300}$/;
 // The same question within a few hours returns the earlier answer instead of paying again.
 const answerFreshMs = 6 * 60 * 60_000;
 const answerCache = new Map<string, { suggestion: AiEarningsSuggestion; fetchedAt: number }>();
 const pending = new Map<string, Promise<{ suggestion: AiEarningsSuggestion; usageTokens: number }>>();
 const analysisForms = new Set(['8-K', '8-K/A', '10-Q', '10-K']);
 
+// Without Access, AI still works with keys typed into the browser (the Worker's own keys stay locked).
 const accessMessages = {
   // A secret added in the dashboard only reaches versions built after it, hence the hint.
-  'access-not-configured': '伺服器尚未設定 Cloudflare Access（ACCESS_TEAM_DOMAIN、ACCESS_AUD），AI 查詢已停用。剛在 Cloudflare 新增 Secret 的話，要等下一次部署或重新建置後才會生效。',
-  'access-required': '需要先通過 Cloudflare Access 登入。',
-  'access-invalid': 'Cloudflare Access 登入已失效，請重新整理頁面再登入。',
+  'access-not-configured': '伺服器未設定 Cloudflare Access（ACCESS_TEAM_DOMAIN、ACCESS_AUD），目前是自備金鑰模式：只使用你在「AI 設定」輸入的金鑰。剛在 Cloudflare 新增 Secret 的話，要等下一次部署或重新建置後才會生效。',
+  'access-required': '尚未通過 Cloudflare Access 登入，目前是自備金鑰模式：只使用你在「AI 設定」輸入的金鑰。',
+  'access-invalid': 'Cloudflare Access 登入已失效（重新整理頁面可再登入），目前是自備金鑰模式：只使用你在「AI 設定」輸入的金鑰。',
 } as const;
+const byokNote = (gate: AiGate) => gate.mode === 'byok' ? accessMessages[gate.access] : null;
 
 const noStore = { 'Cache-Control': 'no-store' };
 const fail = (error: string, status: number) => NextResponse.json({ error }, { status, headers: noStore });
 const providerName = (provider: AiProvider) => provider === 'anthropic' ? 'Claude' : 'ChatGPT';
 
-/** A key sent from the browser wins over the Worker secret. */
-function apiKeyFor(request: Request, provider: AiProvider) {
-  const header = request.headers.get(provider === 'anthropic' ? 'X-Anthropic-Key' : 'X-OpenAI-Key')?.trim() ?? '';
-  if (header) return apiKeyPattern.test(header) ? header : null;
-  return (provider === 'anthropic' ? env.ANTHROPIC_API_KEY : env.OPENAI_API_KEY) ?? null;
-}
-
 const tierOf = (value: unknown): UsageTier => value === 'high' ? 'high' : 'low';
 
 export async function GET(request: Request) {
-  const access = await verifyAccess(request);
-  if (!access.ok) return NextResponse.json({ error: accessMessages[access.code], code: access.code }, { status: access.status, headers: noStore });
+  const gate = await aiGate(request);
+  if (byokLimited(request, gate, 'status', 120)) return fail('查詢太頻繁，請稍後再試。', 429);
   const params = new URL(request.url).searchParams;
   const model = String(params.get('model') ?? '').trim();
+  const scope = await openAiUsageScope(request, gate);
   // Asked on every open of the AI settings and the analysis dialog, so the page always shows today's allowance.
-  const quota = await quotaReport(openAiModelPattern.test(model) ? model : env.OPENAI_MODEL ?? '', tierOf(params.get('tier')));
+  const quota = await quotaReport(openAiModelPattern.test(model) ? model : gate.mode === 'access' ? env.OPENAI_MODEL ?? '' : '', tierOf(params.get('tier')), scope);
   return NextResponse.json({
-    quota,
-    email: access.email,
-    providers: { anthropic: Boolean(env.ANTHROPIC_API_KEY), openai: Boolean(env.OPENAI_API_KEY) },
+    mode: gate.mode,
+    note: byokNote(gate),
+    // Without an admin key (possible only in byok mode) ChatGPT is not held to the free tier.
+    quota: { ...quota, enforced: gate.mode === 'access' || scope !== null },
+    email: gate.mode === 'access' ? gate.email : null,
+    providers: serverKeys(gate),
     anthropicModel,
     claudeModels: claudeModels.map((model) => model.id),
-    openAiModel: env.OPENAI_MODEL && openAiModelPattern.test(env.OPENAI_MODEL) ? env.OPENAI_MODEL : null,
+    openAiModel: gate.mode === 'access' && env.OPENAI_MODEL && openAiModelPattern.test(env.OPENAI_MODEL) ? env.OPENAI_MODEL : null,
     sec: Boolean(env.SEC_CONTACT),
   }, { headers: noStore });
 }
@@ -112,8 +109,8 @@ function cleanOpenTrades(value: unknown): OpenTradeHint[] {
 }
 
 export async function POST(request: Request) {
-  const access = await verifyAccess(request);
-  if (!access.ok) return NextResponse.json({ error: accessMessages[access.code], code: access.code }, { status: access.status, headers: noStore });
+  const gate = await aiGate(request);
+  if (byokLimited(request, gate, 'ask', 40)) return fail('AI 請求太頻繁，請十分鐘後再試。', 429);
 
   let body: Body;
   try {
@@ -128,19 +125,26 @@ export async function POST(request: Request) {
   const provider: AiProvider | null = body.provider === 'anthropic' || body.provider === 'openai' ? body.provider : null;
   if (!provider) return fail('請選擇 Claude 或 ChatGPT。', 400);
 
-  const apiKey = apiKeyFor(request, provider);
-  if (apiKey === null) return fail(request.headers.has(provider === 'anthropic' ? 'X-Anthropic-Key' : 'X-OpenAI-Key') ? `設定中的 ${providerName(provider)} 金鑰格式不正確。` : `尚未設定 ${providerName(provider)} 金鑰：請在「AI 設定」輸入，或在伺服器設定 ${provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'}。`, 503);
+  const apiKey = providerKey(request, gate, provider);
+  if (apiKey === 'invalid') return fail(`設定中的 ${providerName(provider)} 金鑰格式不正確。`, 400);
+  if (apiKey === null) {
+    return fail(gate.mode === 'access'
+      ? `尚未設定 ${providerName(provider)} 金鑰：請在「AI 設定」輸入，或在伺服器設定 ${provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'}。`
+      : `${accessMessages[gate.access]}請先在「AI 設定」輸入 ${providerName(provider)} 金鑰。`, 503);
+  }
   const requestedModel = typeof body.model === 'string' ? body.model.trim() : '';
-  const openAiModel = provider === 'openai' ? requestedModel || env.OPENAI_MODEL || '' : '';
+  const openAiModel = provider === 'openai' ? requestedModel || (gate.mode === 'access' ? env.OPENAI_MODEL : '') || '' : '';
   if (provider === 'openai' && !openAiModelPattern.test(openAiModel)) return fail('請先在設定中填入 ChatGPT 模型名稱。', 400);
   // Claude runs only the models on the list; anything else falls back to the default.
   const claudeModel = resolveClaudeModel(requestedModel);
   const model = provider === 'openai' ? openAiModel : claudeModel;
   const usageTier = tierOf(body.usageTier);
   // Every ChatGPT call must fit in today's free tokens for its model; otherwise it is refused.
+  // In byok mode without an admin key the usage cannot be read, and the call is billed to that key.
+  const scope = provider === 'openai' ? await openAiUsageScope(request, gate) : null;
   const guardQuota = async (estimate: number) => {
-    if (provider !== 'openai') return null;
-    const check = await checkOpenAiQuota(openAiModel, usageTier, estimate);
+    if (provider !== 'openai' || (gate.mode === 'byok' && !scope)) return null;
+    const check = await checkOpenAiQuota(openAiModel, usageTier, estimate, scope);
     return check.ok ? null : NextResponse.json({ error: check.message, code: 'free-quota', quota: check.report, estimate }, { status: 429, headers: noStore });
   };
 
@@ -157,7 +161,7 @@ export async function POST(request: Request) {
     if (blocked) return blocked;
     try {
       const result = await parseTrades(provider, apiKey, model, aiRequest);
-      if (provider === 'openai') recordOpenAiUsage(result.model, result.usageTokens || aiRequest.estimate);
+      if (provider === 'openai') recordOpenAiUsage(scope, result.model, result.usageTokens || aiRequest.estimate);
       return NextResponse.json({ provider, model: result.model, rows: result.rows, questions: result.questions }, { headers: noStore });
     } catch (error) {
       console.warn(`Trade parse failed (${provider} ${model}):`, error instanceof Error ? error.message : error);
@@ -179,7 +183,7 @@ export async function POST(request: Request) {
     if (blocked) return blocked;
     try {
       const result = await completeChat(provider, apiKey, model, aiRequest);
-      if (provider === 'openai') recordOpenAiUsage(result.model, result.usageTokens || estimate);
+      if (provider === 'openai') recordOpenAiUsage(scope, result.model, result.usageTokens || estimate);
       return NextResponse.json({ provider, model: result.model, text: result.text }, { headers: noStore });
     } catch (error) {
       console.warn(`Portfolio chat failed (${provider} ${model}):`, error instanceof Error ? error.message : error);
@@ -198,7 +202,7 @@ export async function POST(request: Request) {
       if (!lookup) {
         lookup = findEarningsDate(provider, symbol, { [provider]: apiKey }, openAiModel, claudeModel).finally(() => pending.delete(key));
         pending.set(key, lookup);
-        void lookup.then(({ suggestion: found, usageTokens }) => { if (provider === 'openai') recordOpenAiUsage(found.model, usageTokens || dateLookupEstimate); }, () => undefined);
+        void lookup.then(({ suggestion: found, usageTokens }) => { if (provider === 'openai') recordOpenAiUsage(scope, found.model, usageTokens || dateLookupEstimate); }, () => undefined);
       }
       const { suggestion } = await lookup;
       answerCache.set(key, { suggestion, fetchedAt: Date.now() });
@@ -234,7 +238,7 @@ export async function POST(request: Request) {
   if (blocked) return blocked;
   try {
     const result = await completeFilingRequest(provider, apiKey, model, aiRequest);
-    if (provider === 'openai') recordOpenAiUsage(result.model, result.usageTokens || estimate);
+    if (provider === 'openai') recordOpenAiUsage(scope, result.model, result.usageTokens || estimate);
     return NextResponse.json({
       provider,
       model: result.model,

@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { claudeExtras } from '@/lib/ai-models';
 import type { AiProvider } from '@/lib/earnings';
 import type { FilingExchange, QuarterRow } from '@/lib/filings';
 
@@ -79,8 +80,7 @@ async function claudeText(apiKey: string, model: string, document: string, promp
   const response = await client.beta.messages.create({
     model,
     max_tokens: 16000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    ...claudeExtras(model),
     output_config: { effort: 'medium' },
     system: systemPrompt,
     messages: [{ role: 'user', content: [

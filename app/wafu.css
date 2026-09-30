@@ -65,8 +65,6 @@
 :root[data-wafu] .topbar { color: var(--wa-ink); background: rgb(var(--wa-bg-rgb) / .72); border-bottom: 1px solid var(--wa-line); box-shadow: none; backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2); }
 :root[data-wafu] .brand { color: var(--wa-ink); }
 :root[data-wafu] .brand > span { font-family: var(--wa-f-display); font-weight: 800; letter-spacing: .24em; }
-:root[data-wafu] .brand-logo { border: 1px solid var(--wa-line-2); border-radius: var(--wa-r); box-shadow: none; }
-:root[data-wafu='shigure'] .brand-logo { border-radius: 50%; }
 :root[data-wafu] .brand-calendar { border-left-color: var(--wa-line); }
 :root[data-wafu] .brand-calendar > strong { color: var(--wa-ink-2); font-weight: 600; letter-spacing: .04em; }
 :root[data-wafu] .market-calendar-tags em { color: var(--wa-ink-2); background: rgb(255 255 255 / .04); border-color: var(--wa-line); }

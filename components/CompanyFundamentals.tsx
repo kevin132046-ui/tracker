@@ -37,20 +37,20 @@ type CompanyPayload = {
 type MetricConfig = { label: string; caption: string; format: 'amount' | 'percent'; color: string; defaultChart: ChartKind };
 
 const historyMetricConfig: Record<HistoryMetricKey, MetricConfig> = {
-  freeCashFlow: { label: '自由現金流', caption: '營運現金流扣除資本支出', format: 'amount', color: '#2f73ed', defaultChart: 'bar' },
-  adjustedFreeCashFlow: { label: 'SBC 調整後自由現金流', caption: '自由現金流扣除股票薪酬', format: 'amount', color: '#1d9c82', defaultChart: 'bar' },
-  operatingCashFlow: { label: '營運現金流', caption: '本業產生的現金', format: 'amount', color: '#16a3b8', defaultChart: 'bar' },
-  capitalExpenditure: { label: '資本支出', caption: '設備與長期資產投資', format: 'amount', color: '#cf7b18', defaultChart: 'bar' },
-  stockBasedCompensation: { label: '股票薪酬', caption: 'SBC 認列金額', format: 'amount', color: '#6d63df', defaultChart: 'bar' },
-  stockBasedCompensationImpact: { label: 'SBC 對 FCF 影響', caption: '股票薪酬占自由現金流比重', format: 'percent', color: '#d4536b', defaultChart: 'line' },
-  revenue: { label: '營收', caption: '公司銷售收入', format: 'amount', color: '#2f73ed', defaultChart: 'bar' },
-  netIncome: { label: '淨利', caption: '稅後損益', format: 'amount', color: '#1d9c82', defaultChart: 'bar' },
-  operatingIncome: { label: '營業利益', caption: '本業營運損益', format: 'amount', color: '#16a3b8', defaultChart: 'bar' },
-  profitMargin: { label: '淨利率', caption: '淨利占營收比重', format: 'percent', color: '#6d63df', defaultChart: 'line' },
-  operatingMargin: { label: '營業利益率', caption: '營業利益占營收比重', format: 'percent', color: '#2f73ed', defaultChart: 'line' },
-  cash: { label: '現金與短期投資', caption: '期末流動性部位', format: 'amount', color: '#1d9c82', defaultChart: 'bar' },
-  debt: { label: '總負債', caption: '期末有息負債', format: 'amount', color: '#cf7b18', defaultChart: 'bar' },
-  netCash: { label: '淨現金／（淨負債）', caption: '現金與短期投資扣除總負債', format: 'amount', color: '#2f73ed', defaultChart: 'bar' },
+  freeCashFlow: { label: '自由現金流', caption: '營運現金流扣除資本支出', format: 'amount', color: 'var(--wa-accent)', defaultChart: 'bar' },
+  adjustedFreeCashFlow: { label: 'SBC 調整後自由現金流', caption: '自由現金流扣除股票薪酬', format: 'amount', color: 'var(--wa-up)', defaultChart: 'bar' },
+  operatingCashFlow: { label: '營運現金流', caption: '本業產生的現金', format: 'amount', color: '#6fc3d0', defaultChart: 'bar' },
+  capitalExpenditure: { label: '資本支出', caption: '設備與長期資產投資', format: 'amount', color: 'var(--wa-gold)', defaultChart: 'bar' },
+  stockBasedCompensation: { label: '股票薪酬', caption: 'SBC 認列金額', format: 'amount', color: 'var(--wa-accent-2)', defaultChart: 'bar' },
+  stockBasedCompensationImpact: { label: 'SBC 對 FCF 影響', caption: '股票薪酬占自由現金流比重', format: 'percent', color: 'var(--wa-down)', defaultChart: 'line' },
+  revenue: { label: '營收', caption: '公司銷售收入', format: 'amount', color: 'var(--wa-accent)', defaultChart: 'bar' },
+  netIncome: { label: '淨利', caption: '稅後損益', format: 'amount', color: 'var(--wa-up)', defaultChart: 'bar' },
+  operatingIncome: { label: '營業利益', caption: '本業營運損益', format: 'amount', color: '#6fc3d0', defaultChart: 'bar' },
+  profitMargin: { label: '淨利率', caption: '淨利占營收比重', format: 'percent', color: 'var(--wa-accent-2)', defaultChart: 'line' },
+  operatingMargin: { label: '營業利益率', caption: '營業利益占營收比重', format: 'percent', color: 'var(--wa-accent)', defaultChart: 'line' },
+  cash: { label: '現金與短期投資', caption: '期末流動性部位', format: 'amount', color: 'var(--wa-up)', defaultChart: 'bar' },
+  debt: { label: '總負債', caption: '期末有息負債', format: 'amount', color: 'var(--wa-gold)', defaultChart: 'bar' },
+  netCash: { label: '淨現金／（淨負債）', caption: '現金與短期投資扣除總負債', format: 'amount', color: 'var(--wa-accent)', defaultChart: 'bar' },
 };
 
 const percent = (value: unknown) => typeof value === 'number' ? `${value >= 0 ? '' : '−'}${Math.abs(value * 100).toFixed(2)}%` : '—';

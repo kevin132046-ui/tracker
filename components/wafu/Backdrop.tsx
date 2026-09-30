@@ -1,12 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { useWafuAssets } from '@/lib/wafu/assets';
 import { useMediaPrefs } from '@/lib/wafu/media';
 import type { WafuTheme } from '@/lib/wafu/theme';
 
 const reducedQuery = '(prefers-reduced-motion: reduce)';
+const watchReduced = (change: () => void) => {
+  const query = window.matchMedia(reducedQuery);
+  query.addEventListener('change', change);
+  return () => query.removeEventListener('change', change);
+};
 
 /**
  * The 和風 backdrop behind the page: the uploaded picture (if any) and the theme's light —
@@ -15,17 +20,11 @@ const reducedQuery = '(prefers-reduced-motion: reduce)';
 export default function Backdrop({ theme, paused }: { theme: WafuTheme; paused: boolean }) {
   const { assets } = useWafuAssets();
   const prefs = useMediaPrefs();
-  const [reduced, setReduced] = useState(() => window.matchMedia(reducedQuery).matches);
+  // null on the server and while hydrating: the backdrop only exists in the browser.
+  const reduced = useSyncExternalStore(watchReduced, () => window.matchMedia(reducedQuery).matches, () => null);
   const ref = useRef<HTMLDivElement>(null);
   const photo = prefs.photo ? assets[`bg-${theme}`]?.url ?? null : null;
-  const shown = Boolean(photo) || prefs.effects;
-
-  useEffect(() => {
-    const query = window.matchMedia(reducedQuery);
-    const change = () => setReduced(query.matches);
-    query.addEventListener('change', change);
-    return () => query.removeEventListener('change', change);
-  }, []);
+  const shown = reduced !== null && (Boolean(photo) || prefs.effects);
 
   // The page's own gradient steps aside while the backdrop is shown.
   useEffect(() => {
@@ -52,7 +51,7 @@ export default function Backdrop({ theme, paused }: { theme: WafuTheme; paused: 
     <div className={`wafu-bd wafu-bd-${theme}${photo ? ' has-photo' : ''}`} aria-hidden="true" ref={ref}>
       {photo && <div key={photo} className="wafu-bd-photo" style={{ backgroundImage: `url("${photo}")` }} />}
       {prefs.effects && theme === 'kikyo' && <div className="wafu-bd-beam" />}
-      {prefs.effects && theme === 'shigure' && <><div className="wafu-bd-lantern" /><Snow still={reduced || paused} /></>}
+      {prefs.effects && theme === 'shigure' && <><div className="wafu-bd-lantern" /><Snow still={Boolean(reduced) || paused} /></>}
       <div className="wafu-bd-shade" />
     </div>,
     document.body,

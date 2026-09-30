@@ -987,7 +987,8 @@ export default function Home() {
   const [openAiModel, setOpenAiModel] = useState('');
   const [claudeModel, setClaudeModel] = useState<ClaudeModel>(defaultClaudeModel);
   const [wafuPreference, setWafuPreference] = useState<WafuPreference>(defaultWafuPreference);
-  const [wafuTheme, setWafuTheme] = useState<WafuTheme | null>(null);
+  // The server renders 桔梗; the saved choice is applied on load (the boot script already set <html data-wafu>).
+  const [wafuTheme, setWafuTheme] = useState<WafuTheme>('kikyo');
   const [wafuIntro, setWafuIntro] = useState<WafuIntroPreference>(defaultWafuIntro);
   const [introLiteAuto, setIntroLiteAuto] = useState(true);
   // The opening playing now (on load, or previewed from the settings).
@@ -1218,7 +1219,7 @@ export default function Home() {
       const introPreference = loadWafuIntro();
       const liteAuto = loadIntroLiteAuto();
       // The boot script veiled the page when the opening should play; otherwise lift any veil now.
-      const playIntro = wafuShown && introPending() ? { theme: wafuShown, reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches } : null;
+      const playIntro = introPending() ? { theme: wafuShown, reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches } : null;
       if (!playIntro) liftIntroVeil();
       const questions = loadQuestions();
       // Loading also drops analyses older than half a year.
@@ -1325,7 +1326,7 @@ export default function Home() {
   const updateWafuIntro = useCallback((preference: WafuIntroPreference) => { setWafuIntro(preference); saveWafuIntro(preference); }, []);
   const updateIntroLiteAuto = useCallback((on: boolean) => { setIntroLiteAuto(on); saveIntroLiteAuto(on); }, []);
   const previewIntro = useCallback(() => {
-    if (wafuTheme) setIntro({ theme: wafuTheme, reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches });
+    setIntro({ theme: wafuTheme, reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches });
   }, [wafuTheme]);
   const finishIntro = useCallback(() => setIntro(null), []);
   // As the doors open the page rises into place (wafu-opening.css).
@@ -2815,9 +2816,7 @@ export default function Home() {
   const shellStyle = useMemo(() => imageBackgroundActive ? { '--custom-background': `url("${backgroundImage}")` } as CSSProperties : undefined, [backgroundImage, imageBackgroundActive]);
   const selectedStockTrades = useMemo(() => drilledTicker ? trades.filter((trade) => trade.ticker === drilledTicker && (trade.type === 'SDI' || trade.event === 'STOCK')) : [], [drilledTicker, trades]);
   // Side-navigation icon: the original glyph, or in a 和風 theme a line icon with the character's halo over the current item.
-  const navGlyph = (name: WafuNavIconName, glyph: string, current: boolean) => wafuTheme
-    ? <i className="wafu-nav-glyph"><NavIcon name={name} />{current && <span className="wafu-nav-halo" aria-hidden="true"><HaloIcon theme={wafuTheme} size={34} tilt={64} /></span>}</i>
-    : <i>{glyph}</i>;
+  const navGlyph = (name: WafuNavIconName, current: boolean) => <i className="wafu-nav-glyph"><NavIcon name={name} />{current && <span className="wafu-nav-halo" aria-hidden="true"><HaloIcon theme={wafuTheme} size={34} tilt={64} /></span>}</i>;
 
   return (
     <main
@@ -2838,7 +2837,7 @@ export default function Home() {
         </div>
         <div className="header-actions">
           <LanguageSwitcher />
-          {wafuTheme && wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
+          {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
           <span className={`market-pill ${marketOpen ? 'is-open' : ''}`}><span />{marketOpen ? '美股交易中' : '非交易時段'}</span>
           <button className="secondary-button" type="button" onClick={() => refreshQuotes()} disabled={refreshing}>{refreshing ? '更新中…' : '↻ 更新報價'}</button>
           <button className="primary-button" type="button" onClick={() => setEditor(blankTrade())}>＋新增交易</button>
@@ -2848,18 +2847,18 @@ export default function Home() {
 
       <div className="page-frame">
         <nav className="side-nav" aria-label="頁面切換">
-          <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}>{navGlyph('settings', '⚙', settingsOpen)}<span>設定</span></button>
-          {([['overview', '總覽', '⌂'], ['positions', '持倉', '▦'], ['returns', '收益', '⌁']] as const).map(([section, label, icon]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}>{navGlyph(section, icon, activeSection === section)}<span>{label}</span></a>)}
-          <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}>{navGlyph('valuation', '◇', activeSection === 'valuation')}<span>估值</span></button>
+          <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}>{navGlyph('settings', settingsOpen)}<span>設定</span></button>
+          {([['overview', '總覽'], ['positions', '持倉'], ['returns', '收益']] as const).map(([section, label]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}>{navGlyph(section, activeSection === section)}<span>{label}</span></a>)}
+          <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}>{navGlyph('valuation', activeSection === 'valuation')}<span>估值</span></button>
           <div className="background-control">
-            <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}>{navGlyph(backgroundSaving ? 'saving' : 'background', backgroundSaving ? '◌' : '▧', false)}<span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
+            <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}>{navGlyph(backgroundSaving ? 'saving' : 'background', false)}<span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
             {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" disabled={backgroundSaving} className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" disabled={backgroundSaving} className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
             <input ref={backgroundInputRef} className="visually-hidden" type="file" accept="image/*" disabled={backgroundSaving} onChange={handleBackgroundUpload} />
           </div>
         </nav>
         <div className="dashboard">
         <section className="hero" id="overview">
-          <div><EditableHeroTitle onNotify={notify} vertical={Boolean(wafuTheme)} /></div>
+          <div><EditableHeroTitle onNotify={notify} /></div>
           <LiveMarketClocks lastQuoteAt={lastQuoteAt} />
         </section>
 
@@ -3091,7 +3090,7 @@ export default function Home() {
           <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title">設定</h2><span>選擇要啟用的擴充工作區。</span></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
           <div className="settings-body">
             <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
-            {wafuTheme && <WafuMediaCard theme={wafuTheme} />}
+            <WafuMediaCard theme={wafuTheme} />
             <section className={`settings-feature-card ${brokerHubEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon" aria-hidden="true">◎</span><div><p>Optional module</p><h3>跨券商資產追蹤與再平衡</h3></div><span className="settings-feature-status">{brokerHubLoading ? '讀取中' : brokerHubEnabled ? '已開啟' : '預設關閉'}</span></div>
               <p>把不同券商的手動部位聚合成單一全景，提供 USD／JPY 平抑檢視、偏離診斷、只買不賣試算與跨券商待辦清單。</p>
@@ -3361,7 +3360,7 @@ export default function Home() {
         </section>
       </div>}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
-      {wafuTheme && <WafuBackdrop theme={wafuTheme} paused={Boolean(intro)} />}
+      <WafuBackdrop theme={wafuTheme} paused={Boolean(intro)} />
       {intro && createPortal(<Suspense fallback={null}><WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} /></Suspense>, document.body)}
     </main>
   );

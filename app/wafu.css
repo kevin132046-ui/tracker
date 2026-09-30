@@ -1,5 +1,5 @@
 /*
- * 和風介面 (桔梗・時雨): the hand-tuned layer over wafu-palette.css. Everything here is scoped to
+ * 和風介面 (桔梗・時雨): the hand-tuned layer over globals.css (whose colours are the theme tokens). Everything here is scoped to
  * <html data-wafu>, so the classic page is untouched when no theme is chosen.
  */
 :root[data-wafu='kikyo'] {
@@ -186,16 +186,13 @@
 :root[data-wafu] .settings-feature-icon { color: var(--wa-on-accent); background: var(--wa-accent); border-radius: var(--wa-r); box-shadow: none; font-family: var(--wa-f-display); }
 :root[data-wafu] input, :root[data-wafu] select, :root[data-wafu] textarea { color-scheme: dark; }
 
-/* ---------- Theme card (shown in every theme, styled for the classic page too) ---------- */
-.wafu-theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
-.wafu-theme-option { min-width: 0; display: flex; align-items: center; gap: 11px; padding: 10px 12px; color: #17243d; text-align: left; background: #fbfcfe; border: 1px solid #e1e8f2; border-radius: 12px; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
-.wafu-theme-option:hover { border-color: #98b9ed; }
-.wafu-theme-option.active { background: #eef4ff; border-color: #2f73ed; }
+/* ---------- Theme card ---------- */
+.wafu-theme-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.wafu-theme-option { min-width: 0; display: flex; align-items: center; gap: 11px; padding: 10px 12px; text-align: left; border: 1px solid; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
 .wafu-theme-option b, .wafu-theme-option small { display: block; }
 .wafu-theme-option b { font-size: 13.5px; }
-.wafu-theme-option small { margin-top: 2px; color: #71809a; font-size: 11px; }
+.wafu-theme-option small { margin-top: 2px; font-size: 11px; }
 .wafu-swatch { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; font-family: 'Shippori Mincho B1', 'Noto Serif TC', serif; font-size: 16px; font-weight: 700; }
-.wafu-swatch.is-classic { color: #2f73ed; background: #fff; border: 1px solid #dce4ef; }
 .wafu-swatch.is-kikyo { color: #9dbcf0; background: #0c0d11; border: 1px solid rgb(157 188 240 / .4); border-radius: 2px; }
 .wafu-swatch.is-shigure { color: #62d4d2; background: #07141a; border: 1px solid rgb(98 212 210 / .4); border-radius: 50%; }
 .wafu-swatch.is-random { color: #ece8df; background: linear-gradient(135deg, #0c0d11 50%, #07141a 50%); border: 1px solid #c9d3e2; }
@@ -205,7 +202,7 @@
 :root[data-wafu] .wafu-theme-option.active { background: var(--wa-accent-soft); border-color: var(--wa-accent); }
 :root[data-wafu] .wafu-theme-option small { color: var(--wa-muted); }
 @media (max-width: 560px) { .wafu-theme-options { grid-template-columns: minmax(0, 1fr); } }
-/* Opening settings (only shown in a 和風 theme) */
+/* Opening settings */
 :root[data-wafu] .wafu-intro-settings { display: grid; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--wa-line); }
 :root[data-wafu] .wafu-intro-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 :root[data-wafu] .wafu-intro-row > span { color: var(--wa-ink-2); font-size: 13px; font-weight: 700; }

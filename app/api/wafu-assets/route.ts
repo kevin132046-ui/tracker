@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic';
 const prefix = 'wafu/';
 const noStore = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 const fail = (error: string, status: number) => NextResponse.json({ error }, { status, headers: noStore });
+// A Cloudflare Preview only has the bindings listed in the config's previews block.
+const noBucket = () => env.BACKGROUND_IMAGES ? null : fail('這個網址沒有連到 R2 儲存空間（BACKGROUND_IMAGES 未綁定），無法存取和風素材。', 503);
 
 async function listSlot(slot?: WafuAssetSlot) {
   const objects: R2Object[] = [];
@@ -37,6 +39,8 @@ function describe(object: R2Object): WafuAsset | null {
 
 /** Without a slot: what is uploaded. With ?slot=&v=: the file itself (ranges supported, so audio can seek). */
 export async function GET(request: Request) {
+  const missing = noBucket();
+  if (missing) return missing;
   try {
     const url = new URL(request.url);
     const slot = url.searchParams.get('slot');
@@ -88,6 +92,8 @@ export async function GET(request: Request) {
 
 /** Replaces one slot: PUT ?slot=<slot> with the file as the body (and X-File-Name for music). */
 export async function PUT(request: Request) {
+  const missing = noBucket();
+  if (missing) return missing;
   const slot = new URL(request.url).searchParams.get('slot');
   if (!isWafuAssetSlot(slot)) return fail('素材欄位不正確', 400);
   const kind = assetKind(slot);
@@ -121,6 +127,8 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const missing = noBucket();
+  if (missing) return missing;
   const slot = new URL(request.url).searchParams.get('slot');
   if (!isWafuAssetSlot(slot)) return fail('素材欄位不正確', 400);
   try {

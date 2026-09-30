@@ -59,6 +59,7 @@ import type { NoticeItem } from '@/components/wafu/NotifyCenter';
 import WafuMediaCard from '@/components/wafu/WafuMediaCard';
 import { useMediaPrefs } from '@/lib/wafu/media';
 import { applyPerf, probeFramesOnce } from '@/lib/wafu/perf';
+import { jikanOf, sekkiOf } from '@/lib/wafu/koyomi';
 import type { AssistantPrefs, PortfolioSnapshot, SnapshotPosition } from '@/lib/ai-assistant';
 import { defaultAssistantPrefs, loadAssistantPrefs, saveAssistantPrefs } from '@/lib/ai-assistant';
 import type { WafuPreference, WafuTheme } from '@/lib/wafu/theme';
@@ -621,7 +622,7 @@ const LiveMarketClocks = memo(function LiveMarketClocks({ lastQuoteAt }: { lastQ
   ];
   return <div className="as-of">
     <div className="clock-stack-heading"><span>即時市場時間</span><div className="clock-zone-switch" role="group" aria-label="切換即時時區">{clocks.map((clock) => <button type="button" key={clock.id} className={activeZone === clock.id ? 'active' : ''} aria-pressed={activeZone === clock.id} onClick={() => setActiveZone(clock.id)}>{clock.label}</button>)}</div></div>
-    <div className="stacked-clock-deck" aria-live="polite">{clocks.map((clock) => <div key={clock.id} className={`stacked-clock-card ${activeZone === clock.id ? 'is-active' : 'is-behind'}`} aria-hidden={activeZone !== clock.id}><span>{clock.label}</span><strong>{clock.time}</strong><b>[{clock.zone}]</b></div>)}</div>
+    <div className="stacked-clock-deck" aria-live="polite">{clocks.map((clock) => <div key={clock.id} className={`stacked-clock-card ${activeZone === clock.id ? 'is-active' : 'is-behind'}`} aria-hidden={activeZone !== clock.id}><span>{clock.label}</span><strong>{clock.time}</strong><b>[{clock.zone}]</b>{clockNow !== null && <em className="clock-jikan">{jikanOf(clockNow)}</em>}</div>)}</div>
     <p>報價每 60 秒更新 · 上次 {lastQuoteLabel}</p>
   </div>;
 });
@@ -636,7 +637,7 @@ const HeaderMarketCalendar = memo(function HeaderMarketCalendar() {
   }, []);
   const status = timestamp === null ? null : marketCalendarStatus(timestamp);
   return <div className="brand-calendar" aria-live="polite">
-    <strong>{status?.japaneseDate ?? '日本日期讀取中'}</strong>
+    <strong>{status?.japaneseDate ?? '日本日期讀取中'}{timestamp !== null && <small className="brand-sekki"> · {sekkiOf(timestamp)}</small>}</strong>
     {status && (status.japanHoliday || status.japanClosedReason || status.usClosedReason) && <span className="market-calendar-tags">
       {status.japanHoliday && <em className="holiday-tag">日本祝日 · {status.japanHoliday}</em>}
       {status.japanClosedReason && <em>日股休市 · {status.japanClosedReason}</em>}
@@ -3033,9 +3034,9 @@ export default function Home() {
           </a>
           <HeaderMarketCalendar />
         </div>
+        {notifyEnabled && <div className="topbar-notice"><NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} /></div>}
         <div className="header-actions">
           <LanguageSwitcher />
-          {notifyEnabled && <NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} />}
           {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
           <span className={`market-pill ${marketOpen ? 'is-open' : ''}`}><span />{marketOpen ? '美股交易中' : '非交易時段'}</span>
           <button className="secondary-button" type="button" onClick={() => refreshQuotes()} disabled={refreshing}>{refreshing ? '更新中…' : '↻ 更新報價'}</button>

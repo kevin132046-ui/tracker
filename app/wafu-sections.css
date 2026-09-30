@@ -178,3 +178,26 @@
 .wafu-heat td.negative { color: var(--wa-down); }
 .wafu-heat-empty { margin: 30px 0; text-align: center; color: var(--wa-muted); font-size: 12px; }
 @media (max-width: 640px) { .wafu-kpi-grid { grid-template-columns: repeat(2, 1fr); } .wafu-kpis-head button { margin-left: 0; } }
+
+/* ---- 欄位 for the visual positions (from the prototype) ---- */
+.wafu-vfields { position: relative; margin-left: auto; flex: 0 0 auto; }
+.filter-row .wafu-vfields .column-picker-trigger { margin-left: 0; position: static; }
+.wafu-vfields-panel { position: fixed; z-index: 80; max-height: min(70vh, 520px); overflow-y: auto; width: 300px; display: grid; gap: 2px; padding: 12px; background: var(--wa-panel); border: 1px solid var(--wa-line); border-radius: 12px; box-shadow: 0 18px 44px rgb(0 0 0 / .45); }
+.wafu-vfields-panel > p { margin: 0 0 6px; color: var(--wa-muted); font-size: 11px; }
+.wafu-vfields-panel label { display: grid; grid-template-columns: 18px 1fr; column-gap: 8px; align-items: center; padding: 6px 4px; border-radius: 6px; cursor: pointer; }
+.wafu-vfields-panel label:hover { background: var(--wa-raise); }
+.wafu-vfields-panel label input { accent-color: var(--wa-accent); margin: 0; }
+.wafu-vfields-panel label span { color: var(--wa-ink); font-size: 13px; }
+.wafu-vfields-panel label small { grid-column: 2; color: var(--wa-muted); font-size: 10.5px; }
+.wafu-vfields-actions { display: flex; gap: 8px; margin-top: 8px; }
+.wafu-vfields-actions button { flex: 1; border: 1px solid var(--wa-line); background: transparent; color: var(--wa-accent); border-radius: 999px; padding: 4px 0; font-size: 11px; cursor: pointer; }
+.wafu-vstrip { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 6px; padding: 7px 0 0 63px; border-top: 1px dashed color-mix(in srgb, var(--wa-line) 70%, transparent); font-variant-numeric: tabular-nums; }
+.wafu-vstrip > span { display: inline-flex; align-items: baseline; gap: 7px; }
+.wafu-vstrip small { color: var(--wa-muted); font-size: 10.5px; letter-spacing: .04em; }
+.wafu-vstrip b { color: var(--wa-ink); font-size: 12px; font-weight: 600; }
+.wafu-vstrip .positive b { color: var(--wa-up); }
+.wafu-vstrip .negative b { color: var(--wa-down); }
+.wafu-vrange { position: relative; align-self: center; width: 64px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--wa-down), var(--wa-gold), var(--wa-up)); opacity: .75; }
+.wafu-vrange em { position: absolute; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--wa-ink); box-shadow: 0 0 6px var(--wa-accent); }
+@media (max-width: 1180px) { .wafu-vstrip { padding-left: 0; } }
+@media (max-width: 640px) { .wafu-vfields-panel { left: 12px; right: 12px !important; top: auto !important; bottom: calc(76px + env(safe-area-inset-bottom)); width: auto; } }

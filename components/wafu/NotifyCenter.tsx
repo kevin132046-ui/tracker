@@ -48,8 +48,14 @@ function ThemeIcon({ theme }: { theme: WafuTheme }) {
  * Notification center in the top bar: results out, market closures, earnings dates, options about to
  * expire and dividend payments, gathered in one list. Read and dismissed items are kept per browser.
  */
-export default function NotifyCenter({ theme, items }: { theme: WafuTheme; items: NoticeItem[] }) {
+export default function NotifyCenter({ theme, items, openSignal = 0 }: {
+  theme: WafuTheme;
+  items: NoticeItem[];
+  /** Bumped from outside (the quick sheet) to open the panel. */
+  openSignal?: number;
+}) {
   const [open, setOpen] = useState(false);
+  useEffect(() => { if (openSignal) queueMicrotask(() => setOpen(true)); }, [openSignal]);
   const [read, setRead] = useState<string[] | null>(null);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);

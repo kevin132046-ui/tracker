@@ -265,3 +265,12 @@
 /* The empty notice bar reads quieter. */
 .wafu-notify-roll.is-empty span { color: var(--wa-muted); }
 .wafu-notify-roll.is-empty .wafu-notify-lamp { background: var(--wa-muted); box-shadow: none; }
+
+/* 今日漲跌: coloured figure beside the sparkline, not a filled pill (the pill's fill matched the
+   text colour, so the figure disappeared). */
+:root[data-wafu] .visual-market-move > div strong { display: inline; min-width: 0; padding: 0; background: none; border-radius: 0; font-size: 12.5px; color: var(--wa-ink-2, var(--wa-ink)); }
+:root[data-wafu] .visual-market-move.positive > div strong { color: var(--wa-up); }
+:root[data-wafu] .visual-market-move.negative > div strong { color: var(--wa-down); }
+:root[data-wafu] .visual-market-move.neutral > div strong { color: var(--wa-muted); background: none; }
+/* Figures a touch bolder, as in the prototype list. */
+:root[data-wafu] .visual-value strong, :root[data-wafu] .visual-price-flow > div:last-child strong, :root[data-wafu] .visual-gain strong { font-weight: 600; }

@@ -74,9 +74,28 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
   const barRef = useRef<HTMLSpanElement>(null);
   // The ink engine (WebGL) starts a moment after the first frames, not in the same frame as the page.
   const [inkMounted, setInkMounted] = useState(false);
+  // 'live' once the opening has actually painted and the main thread has a moment: the crest's
+  // brush strokes wait for it, so they are drawn on screen instead of finishing unseen while the
+  // page is still loading (they used to 'just show up'). The ink starts a little after.
+  const [live, setLive] = useState(false);
+  const liveWaiters = useRef<Array<() => void>>([]);
+  const liveRef = useRef(false);
+  useEffect(() => { liveRef.current = live; if (live) liveWaiters.current.splice(0).forEach((resolve) => resolve()); }, [live]);
   useEffect(() => {
-    let raf = requestAnimationFrame(() => { raf = requestAnimationFrame(() => setInkMounted(true)); });
-    return () => cancelAnimationFrame(raf);
+    let raf = 0, timer = 0, idle = 0;
+    const idleCb = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    const goLive = () => { setLive(true); timer = window.setTimeout(() => setInkMounted(true), 260); };
+    raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => {
+        if (idleCb) idle = idleCb(goLive, { timeout: 450 });
+        else timer = window.setTimeout(goLive, 120);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+      (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(idle);
+    };
   }, []);
   const doneRef = useRef(false);
   const callbacks = useRef({ onDone, onReveal });
@@ -107,6 +126,9 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
     const wait = (ms: number) => new Promise<void>((resolve) => { timers.push(window.setTimeout(resolve, ms)); });
     const untilReady = () => readyRef.current ? Promise.resolve() : new Promise<void>((resolve) => { readyWaiters.current.push(resolve); });
     void (async () => {
+      // The timeline starts with the crest's first stroke, not before the opening is on screen.
+      if (!liveRef.current) await new Promise<void>((resolve) => { liveWaiters.current.push(resolve); });
+      if (!alive) return;
       const fonts = document.fonts?.ready ?? Promise.resolve();
       const durations = reduced ? [120, 120, 120, 120] : [420, 380, 360, 320];
       for (let i = 0; i < durations.length; i++) {
@@ -242,7 +264,7 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
 
   return (
     <div
-      className={`opening opening-${theme} stage-${stage}${fading ? ' is-fading' : ''}${reduced ? ' is-reduced' : ''}`}
+      className={`opening opening-${theme} stage-${stage}${live ? ' is-live' : ''}${fading ? ' is-fading' : ''}${reduced ? ' is-reduced' : ''}`}
       role="status"
       aria-live="polite"
       aria-label={`${label} ${pct}% · ${skipHint}`}

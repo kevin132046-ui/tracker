@@ -79,7 +79,7 @@ export default function HaloParticles({ phase, theme, getAnchor }: Props) {
     const paper = theme === "kikyo"; // 桔梗在和紙丸窗上：深色墨點；時雨在夜色上：加法發光
     let w = 0, h = 0;
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
       w = window.innerWidth; h = window.innerHeight;
       canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
       canvas.style.width = w + "px"; canvas.style.height = h + "px";
@@ -92,7 +92,7 @@ export default function HaloParticles({ phase, theme, getAnchor }: Props) {
     const coreB = paper ? sprite("64,170,235", [[0, 0.9], [0.3, 0.45], [0.65, 0.06], [1, 0]], 32) : sprite("200,244,255", [[0, 1], [0.22, 0.5], [0.6, 0.05], [1, 0]], 32);
     const aura = paper ? sprite("90,170,255", [[0, 0.16], [1, 0]], 64) : sprite("214,200,255", [[0, 0.14], [1, 0]], 64);
 
-    const N = w < 640 ? 280 : 440;
+    const N = w < 640 ? 220 : 340;
     const targets = sampleHalo(theme, N);
     // 打亂對應，讓粒子從四面八方匯聚
     for (let i = targets.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [targets[i], targets[j]] = [targets[j], targets[i]]; }

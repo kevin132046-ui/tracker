@@ -16,7 +16,7 @@
   --wa-down: #ec7a72; --wa-down-rgb: 236 122 114; --wa-down-soft: rgb(236 122 114 / .13);
   --wa-seal: #d9483b;
   --wa-r: 2px; --wa-r-lg: 3px;
-  --wa-f-display: 'Shippori Mincho B1', 'Noto Serif TC', 'Songti TC', serif;
+  --wa-f-display: 'Source Serif 4', 'Shippori Mincho B1', 'Noto Serif TC', 'Songti TC', serif;
   --wa-f-title: 'Shippori Mincho B1', 'Noto Serif TC', serif;
   --wa-f-body: 'Noto Sans TC', 'Hiragino Sans', system-ui, sans-serif;
   --wa-f-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
@@ -39,7 +39,7 @@
   --wa-down: #f08a86; --wa-down-rgb: 240 138 134; --wa-down-soft: rgb(240 138 134 / .13);
   --wa-seal: #ec8f7f;
   --wa-r: 12px; --wa-r-lg: 18px;
-  --wa-f-display: 'Kaisei Decol', 'Noto Serif TC', serif;
+  --wa-f-display: 'Source Serif 4', 'Kaisei Decol', 'Noto Serif TC', serif;
   --wa-f-title: 'Yuji Syuku', 'Kaisei Decol', 'Noto Serif TC', serif;
   --wa-f-body: 'Noto Sans TC', 'Hiragino Sans', system-ui, sans-serif;
   --wa-f-mono: 'IBM Plex Mono', ui-monospace, monospace;
@@ -64,7 +64,7 @@
 /* ---------- Top bar ---------- */
 :root[data-wafu] .topbar { color: var(--wa-ink); background: rgb(var(--wa-bg-rgb) / .72); border-bottom: 1px solid var(--wa-line); box-shadow: none; backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2); }
 :root[data-wafu] .brand { color: var(--wa-ink); }
-:root[data-wafu] .brand > span { font-family: var(--wa-f-display); font-weight: 800; letter-spacing: .24em; }
+:root[data-wafu] .brand > span { font-family: var(--wa-f-display); font-weight: 600; letter-spacing: .24em; }
 :root[data-wafu] .brand-calendar { border-left-color: var(--wa-line); }
 :root[data-wafu] .brand-calendar > strong { color: var(--wa-ink-2); font-weight: 600; letter-spacing: .04em; }
 :root[data-wafu] .market-calendar-tags em { color: var(--wa-ink-2); background: rgb(255 255 255 / .04); border-color: var(--wa-line); }
@@ -72,7 +72,7 @@
 :root[data-wafu] .market-pill.is-open > span { background: var(--wa-seal); box-shadow: 0 0 10px var(--wa-seal); }
 :root[data-wafu] .secondary-button { color: var(--wa-ink-2); background: transparent; border: 1px solid var(--wa-line-2); border-radius: var(--wa-r); }
 :root[data-wafu] .secondary-button:hover { color: var(--wa-ink); background: var(--wa-accent-soft); border-color: var(--wa-accent); }
-:root[data-wafu] .primary-button, :root[data-wafu] .topbar .primary-button { color: var(--wa-on-accent); background: var(--wa-accent); border-radius: var(--wa-r); box-shadow: none; font-weight: 800; }
+:root[data-wafu] .primary-button, :root[data-wafu] .topbar .primary-button { color: var(--wa-on-accent); background: var(--wa-accent); border-radius: var(--wa-r); box-shadow: none; font-weight: 600; }
 :root[data-wafu] .primary-button:hover, :root[data-wafu] .topbar .primary-button:hover { background: var(--wa-accent-strong); transform: none; }
 :root[data-wafu='shigure'] .secondary-button, :root[data-wafu='shigure'] .primary-button { border-radius: 999px; }
 :root[data-wafu] .language-picker-toggle { color: var(--wa-ink-2); background: transparent; border-color: var(--wa-line-2); }

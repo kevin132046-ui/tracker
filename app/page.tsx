@@ -56,6 +56,8 @@ import RailFoot from '@/components/wafu/RailFoot';
 import { MetricsGrid, MonthlyHeatmap } from '@/components/wafu/PerfMetrics';
 import { VisualFieldPicker, defaultVisualFields, loadVisualFields, saveVisualFields, visualFields as visualFieldList } from '@/components/wafu/VisualFields';
 import type { VisualFieldId } from '@/components/wafu/VisualFields';
+import ManualQuotes from '@/components/wafu/ManualQuotes';
+import type { ManualQuoteRow } from '@/components/wafu/ManualQuotes';
 import { computeRiskMetrics, cumulativeOf, drawdownOf, monthlyGrid } from '@/lib/wafu/metrics';
 import HankoTile from '@/components/wafu/HankoTile';
 import ResearchDrawer from '@/components/wafu/ResearchDrawer';
@@ -1006,6 +1008,7 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [rangeMode, setRangeMode] = useState<RangeMode>('month');
   const [returnHoverIndex, setReturnHoverIndex] = useState<number | null>(null);
+  const [manualQuotesOpen, setManualQuotesOpen] = useState(false);
   const [returnView, setReturnView] = useState<'period' | 'cum' | 'dd' | 'heat'>('period');
   const [visualFieldSet, setVisualFieldSet] = useState<VisualFieldId[]>(defaultVisualFields);
   useEffect(() => { setVisualFieldSet(loadVisualFields()); }, []);
@@ -2835,6 +2838,40 @@ export default function Home() {
     }
   }
 
+  // 手動報價: the rows (options first, then manual stocks; auto stocks only on request) and the batch save.
+  const manualQuoteRows = useMemo<ManualQuoteRow[]>(() => {
+    if (!manualQuotesOpen) return [];
+    return trades.filter((trade) => trade.status === 'open' && !trade.derived && !isCashTrade(trade) && trade.ticker).map((trade) => {
+      const stock = trade.type === 'SDI' || trade.event === 'STOCK';
+      const right = optionRightOf(trade);
+      const option = optionRows.get(trade.id);
+      const yen = isJapaneseTicker(trade.ticker);
+      return {
+        id: trade.id,
+        ticker: trade.ticker!,
+        label: stock ? '股票' : right ? `${right.toUpperCase()} ${trade.strike ?? ''}`.trim() : trade.event,
+        sub: [trade.expiryDate ? `到期 ${trade.expiryDate}` : '', `成本 ${nativeMoney(trade.ticker, trade.entryPrice)}`, `${trade.quantity} ${stock ? '股' : '口'}`].filter(Boolean).join(' · '),
+        current: trade.currentPrice,
+        hint: option?.underlying ? `標的 ${nativeMoney(trade.ticker, option.underlying)}` : undefined,
+        auto: stock && trade.quoteMode === 'auto',
+        currency: yen ? '¥' as const : '$' as const,
+      };
+    }).sort((a, b) => Number(a.label === '股票') - Number(b.label === '股票') || a.ticker.localeCompare(b.ticker));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualQuotesOpen]);
+
+  async function saveManualQuotes(changes: Array<{ id: number; price: number }>) {
+    let saved = 0;
+    for (const change of changes) {
+      const trade = trades.find((item) => item.id === change.id);
+      if (!trade) continue;
+      try { await persistTrade({ ...trade, currentPrice: change.price, quoteMode: 'manual' }, 'PUT'); saved += 1; } catch { /* reported below */ }
+    }
+    notify(saved === changes.length ? `已更新 ${saved} 筆手動報價` : `已更新 ${saved} 筆，${changes.length - saved} 筆儲存失敗`);
+    if (saved !== changes.length) throw new Error('partial');
+    return saved;
+  }
+
   async function saveStockLot(trade: Trade, openDate: string, entryPrice: number) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(openDate)) return notify('請選擇有效的買入日期');
     if (!Number.isFinite(entryPrice) || entryPrice < 0) return notify('請輸入有效的買入均價');
@@ -3344,7 +3381,7 @@ export default function Home() {
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
             <div><p className="eyebrow">Active book</p><h2>交易與持倉</h2></div>
-            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" ref={importTriggerRef} className="toolbar-io-button" aria-haspopup="dialog" onClick={() => { void loadTradeImportDialog(); setImportOpen(true); }}>匯入</button><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
+            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" ref={importTriggerRef} className="toolbar-io-button" aria-haspopup="dialog" onClick={() => { void loadTradeImportDialog(); setImportOpen(true); }}>匯入</button><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button><button type="button" className="toolbar-io-button" aria-haspopup="dialog" title="一次輸入無法自動報價的價格" onClick={() => setManualQuotesOpen(true)}>✎ 手動報價</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
           </div>
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
           {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}
@@ -3592,6 +3629,7 @@ export default function Home() {
         </aside>
       </div>}
 
+      {manualQuotesOpen && <ManualQuotes rows={manualQuoteRows} onSave={saveManualQuotes} onClose={() => setManualQuotesOpen(false)} />}
       {editor && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditor(null); }}>
         <section className="trade-modal" role="dialog" aria-modal="true" aria-labelledby="trade-editor-title">
           <header><div><p className="eyebrow">Trade workspace</p><div className="editor-title-row"><h2 id="trade-editor-title">{editor.id ? '編輯交易' : '新增交易'}</h2><span>{editor.id ? `#${editor.id}` : 'New position'}</span></div></div><button className="close-button" onClick={() => setEditor(null)} aria-label="關閉">×</button></header>

@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { claudeExtras } from '@/lib/ai-models';
+import { claudeExtras, openAiReasoning } from '@/lib/ai-models';
 import type { AiProvider } from '@/lib/earnings';
 import type { FilingExchange, QuarterRow } from '@/lib/filings';
 
@@ -111,7 +111,7 @@ async function chatGptText(apiKey: string, model: string, document: string, prom
         model,
         instructions: systemPrompt,
         input: [{ role: 'user', content: [{ type: 'input_text', text: document }, { type: 'input_text', text: prompt }] }],
-        max_output_tokens: maxOutput,
+        ...openAiReasoning(model, maxOutput),
       }),
       signal: controller.signal,
     });

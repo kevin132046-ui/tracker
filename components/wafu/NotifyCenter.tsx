@@ -74,11 +74,21 @@ export default function NotifyCenter({ theme, items, openSignal = 0 }: {
 
   const shown = items.filter((item) => !dismissed.includes(item.id)).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const unread = read === null ? 0 : shown.filter((item) => !read.includes(item.id)).length;
+  // Wide screens: the button also rolls through the next few notices (every 6 s), as in the prototype.
+  const [roll, setRoll] = useState(0);
+  const rolling = shown.slice(0, 5);
+  useEffect(() => {
+    if (rolling.length < 2) return;
+    const timer = window.setInterval(() => setRoll((value) => value + 1), 6000);
+    return () => window.clearInterval(timer);
+  }, [rolling.length]);
+  const current = rolling.length ? rolling[roll % rolling.length] : null;
   const markRead = (ids: string[]) => setRead((current) => writeIds(readKey, [...(current ?? []), ...ids]));
   const dismiss = (id: string) => { setDismissed((current) => writeIds(dismissedKey, [...current, id])); markRead([id]); };
 
   return <div className={`wafu-notify${unread ? ' has-unread' : ''}`} ref={rootRef}>
     <button type="button" className="wafu-notify-toggle" aria-expanded={open} aria-haspopup="dialog" aria-label={unread ? `通知（${unread} 則未讀）` : '通知'} title="通知" onClick={() => setOpen((value) => !value)}>
+      {current && <span className="wafu-notify-roll" key={current.id} aria-hidden="true"><i className="wafu-notify-lamp" /><b>通知</b><em>{current.label}</em><span>{current.text}</span><small>{current.when}</small></span>}
       <ThemeIcon theme={theme} />
       {unread > 0 && <span className="wafu-notify-badge" aria-hidden="true">{unread > 9 ? '9+' : unread}</span>}
     </button>

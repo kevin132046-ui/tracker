@@ -96,3 +96,38 @@
 :root[data-wafu] .donut-svg-label { fill: var(--wa-bg); stroke: none; paint-order: normal; font-family: var(--wa-f-mono); font-weight: 500; }
 :root[data-wafu] .donut-svg-label.is-small { fill: var(--wa-ink-2); }
 :root[data-wafu] .donut-segment-outline { stroke: var(--wa-ink); }
+
+/* ---------- Top bar (prototype): date with the solar term, a centred notice pill, a lantern for the market ---------- */
+:root[data-wafu] .topbar { grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; }
+:root[data-wafu] .topbar-notice { display: flex; justify-content: center; min-width: 0; }
+:root[data-wafu] .brand-sekki { color: var(--wa-muted); font-size: .86em; font-weight: 400; }
+/* The notice pill: wide screens only; narrower ones keep the round bell. */
+.wafu-notify-roll { display: none; }
+@media (min-width: 1180px) {
+  :root[data-wafu] .topbar-notice .wafu-notify-toggle:has(.wafu-notify-roll) { display: flex; align-items: center; gap: 10px; width: min(560px, 100%); max-width: 560px; height: 36px; padding: 0 12px 0 14px; justify-content: space-between; border-radius: 999px; background: rgb(0 0 0 / .18); border-color: var(--wa-line); }
+  :root[data-wafu] .topbar-notice .wafu-notify:has(.wafu-notify-roll) { width: min(560px, 100%); }
+  .wafu-notify-roll { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; color: var(--wa-ink-2); font-size: 12.5px; text-align: left; animation: wafu-notice-in .55s cubic-bezier(.2, .8, .2, 1) backwards; }
+  .wafu-notify-roll b { color: var(--wa-muted); font-weight: 400; }
+  .wafu-notify-roll em { flex: none; padding: 1px 7px; color: var(--wa-accent); background: var(--wa-accent-soft); border-radius: 999px; font-size: 11px; font-style: normal; }
+  .wafu-notify-roll span { overflow: hidden; color: var(--wa-ink); white-space: nowrap; text-overflow: ellipsis; }
+  .wafu-notify-roll small { flex: none; color: var(--wa-muted); font-size: 11px; }
+  .wafu-notify-lamp { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--wa-gold); box-shadow: 0 0 8px var(--wa-gold); }
+}
+@keyframes wafu-notice-in { from { opacity: 0; transform: translateY(8px); } }
+/* 市場燈籠: lit (with a vacuum-tube flicker) while the US market trades. */
+:root[data-wafu] .market-pill { height: 30px; padding: 0 11px; gap: 7px; color: var(--wa-ink-2); border: 1px solid var(--wa-line); border-radius: 999px; font-size: 12px; }
+:root[data-wafu] .market-pill > span { width: 9px; height: 12px; border-radius: 45% 45% 40% 40%; background: none; border: 1px solid var(--wa-muted); box-shadow: none; }
+:root[data-wafu] .market-pill.is-open > span { background: var(--wa-seal, #d9483b); border-color: var(--wa-seal, #d9483b); box-shadow: 0 0 10px var(--wa-seal, #d9483b); animation: wafu-tube 2.4s infinite; }
+@keyframes wafu-tube { 0%, 100% { opacity: 1; } 45% { opacity: .8; } 50% { opacity: 1; } 70% { opacity: .88; } }
+/* Clock: the traditional 刻 beside the time; digits with a faint phosphor glow. */
+:root[data-wafu] .stacked-clock-card .clock-jikan { color: var(--wa-accent-2); font-family: var(--wa-f-display); font-size: 12px; font-style: normal; letter-spacing: .12em; }
+:root[data-wafu] .stacked-clock-card strong { text-shadow: 0 0 14px color-mix(in srgb, var(--wa-accent) 35%, transparent); }
+
+/* ---------- 復古未來 (light): instrument-plate labels with a small lamp, faint scanlines on panels ---------- */
+:root[data-wafu] .panel .eyebrow::before { content: ''; display: inline-block; width: 5px; height: 5px; margin: 0 7px 1px 0; vertical-align: middle; border-radius: 50%; background: var(--wa-accent); box-shadow: 0 0 6px var(--wa-accent); }
+:root[data-wafu] .panel { position: relative; }
+:root[data-wafu] .panel::after { content: ''; position: absolute; inset: 0; z-index: 0; border-radius: inherit; pointer-events: none; background: repeating-linear-gradient(0deg, rgb(255 255 255 / .014) 0 1px, transparent 1px 3px); }
+:root[data-wafu] .panel > * { position: relative; z-index: 1; }
+:root[data-perf='lite'] .panel::after { display: none; }
+:root[data-perf='lite'] .market-pill.is-open > span, :root[data-perf='lite'] .wafu-notify-roll { animation: none; }
+@media (prefers-reduced-motion: reduce) { :root[data-wafu] .market-pill.is-open > span, .wafu-notify-roll { animation: none; } }

@@ -5,7 +5,10 @@ import HaloParticles, { FORM_SECONDS, type HaloPhase } from './HaloParticles';
 import InkFluid, { type InkFluidHandle } from './InkFluid';
 import type { IntroLanguage } from '@/lib/wafu/intro';
 import { introLanguage, introLiteDetected, liftIntroVeil, loadIntroLiteAuto, markIntroSeen, setIntroLiteDetected } from '@/lib/wafu/intro';
+import { useWafuAssets } from '@/lib/wafu/assets';
 import { kikyoInner, kikyoOutline, kikyoStamen, snowCrystal, yukiwaOutline } from '@/lib/wafu/marks';
+import { setMediaPrefs, useMediaPrefs } from '@/lib/wafu/media';
+import { audioReady, playSfx, unlockAudio } from '@/lib/wafu/sfx';
 import type { WafuTheme } from '@/lib/wafu/theme';
 
 type Stage = 'loading' | 'form' | 'stamp' | 'opening' | 'gone';
@@ -24,6 +27,11 @@ const loaderSteps: Record<WafuTheme, Record<IntroLanguage, string[]>> = {
   },
 };
 const skipHints: Record<IntroLanguage, string> = { zh: '點擊畫面略過', ja: '画面をタップでスキップ', en: 'Tap anywhere to skip' };
+const soundLabels: Record<IntroLanguage, { name: string; on: string; off: string }> = {
+  zh: { name: '音效', on: '音效開啟', off: '開啟音效' },
+  ja: { name: '効果音', on: 'サウンド オン', off: 'サウンド' },
+  en: { name: 'Sound', on: 'Sound on', off: 'Sound' },
+};
 // Below ~40 fps the ink costs more than it adds.
 const slowFrameMs = 25;
 // Longest the last step waits for the trades before the doors open anyway.
@@ -35,6 +43,8 @@ const readyWaitMs = 3000;
  * the ink is pulled into a ring. 桔梗: shoji doors with a round window, an あやとり thread for the
  * progress, then the doors slide apart. 時雨: long noren in the snow steam, snow crystals for the
  * progress, then the noren swing aside. The last step waits (briefly) for the trades to load.
+ * An uploaded silhouette appears behind the shoji (sharper as loading completes) or dyed into the
+ * right noren; sound effects are synthesised and play once the sound button (or a tap) unlocks audio.
  */
 export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
   theme: WafuTheme;
@@ -50,6 +60,11 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
   const [stage, setStage] = useState<Stage>('loading');
   const [fading, setFading] = useState(false);
   const [inkOk, setInkOk] = useState(() => !(loadIntroLiteAuto() && introLiteDetected()));
+  const { assets } = useWafuAssets();
+  const silhouette = assets[`sil-${theme}`]?.url ?? null;
+  const prefs = useMediaPrefs();
+  const [unlocked, setUnlocked] = useState(audioReady);
+  const sound = prefs.sfx && unlocked;
   const crestRef = useRef<HTMLDivElement>(null);
   const inkRef = useRef<InkFluidHandle>(null);
   const doneRef = useRef(false);
@@ -66,12 +81,13 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
   useLayoutEffect(() => { liftIntroVeil(); markIntroSeen(); }, []);
   useEffect(() => { if (stage === 'opening') callbacks.current.onReveal?.(); }, [stage]);
 
-  const finish = useCallback(() => {
+  const finish = useCallback((gesture = false) => {
     if (doneRef.current) return;
     doneRef.current = true;
+    if (gesture && unlockAudio()) playSfx(theme === 'kikyo' ? 'slide' : 'swish', theme);
     setStage('gone');
     callbacks.current.onDone();
-  }, []);
+  }, [theme]);
 
   // Fonts and the trades load for real; each step also has a minimum time so the crest can draw.
   useEffect(() => {
@@ -144,7 +160,7 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' && event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
-      finish();
+      finish(true);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -157,17 +173,22 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
     return { x: box.left + box.width / 2, y: box.top + box.height / 2, r: box.width * 0.98 };
   }, []);
 
-  // Each finished step drops a little ink.
+  // Each finished step drops a little ink, with a koto note or a wind chime.
   useEffect(() => {
     if (step === 0) return;
     inkRef.current?.bloom(0.2 + Math.random() * 0.6, 0.25 + Math.random() * 0.5);
-  }, [step]);
-  // As the halo forms, the ink is drawn into a ring around it.
+    playSfx('tick', theme);
+    if (step === 1) playSfx('ink', theme);
+  }, [step, theme]);
+  // As the halo forms, the ink is drawn into a ring around it; then the stamp and the doors sound.
   useEffect(() => {
-    if (stage !== 'form') return;
-    const anchor = getAnchor();
-    if (anchor) inkRef.current?.swirl(anchor.x / window.innerWidth, anchor.y / window.innerHeight, (anchor.r * 1.25) / window.innerWidth);
-  }, [stage, getAnchor]);
+    if (stage === 'form') {
+      const anchor = getAnchor();
+      if (anchor) inkRef.current?.swirl(anchor.x / window.innerWidth, anchor.y / window.innerHeight, (anchor.r * 1.25) / window.innerWidth);
+      playSfx('halo', theme);
+    } else if (stage === 'stamp') playSfx('stamp', theme);
+    else if (stage === 'opening') playSfx(theme === 'kikyo' ? 'slide' : 'swish', theme);
+  }, [stage, theme, getAnchor]);
 
   if (stage === 'gone') return null;
   const pct = Math.round((step / steps.length) * 100);
@@ -182,15 +203,34 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
       aria-live="polite"
       aria-label={`${label} ${pct}% · ${skipHint}`}
       data-i18n-skip=""
-      onClick={finish}
+      onClick={() => finish(true)}
     >
-      {theme === 'kikyo' ? <ShojiDoors /> : <NorenCurtain />}
+      {theme === 'kikyo' ? <ShojiDoors silhouette={silhouette} near={step / steps.length} /> : <NorenCurtain silhouette={silhouette} />}
 
       {!reduced && inkOk && (
         <InkFluid ref={inkRef} theme={theme} active={stage === 'loading' || stage === 'form'} className="opening-ink" onFail={() => setInkOk(false)} />
       )}
 
       {!reduced && <HaloParticles phase={haloPhase} theme={theme} getAnchor={getAnchor} />}
+
+      <button
+        type="button"
+        className={`opening-sound${sound ? ' on' : ''}`}
+        aria-pressed={sound}
+        aria-label={soundLabels[language].name}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (sound) { setMediaPrefs({ sfx: false }); return; }
+          setMediaPrefs({ sfx: true });
+          if (unlockAudio()) { setUnlocked(true); playSfx('tick', theme); }
+        }}
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z" />
+          {sound ? <><path d="M15.5 9a4 4 0 0 1 0 6" /><path d="M18 6.5a7.5 7.5 0 0 1 0 11" /></> : <path d="M16 9.5l5 5M21 9.5l-5 5" />}
+        </svg>
+        <span>{sound ? soundLabels[language].on : soundLabels[language].off}</span>
+      </button>
 
       <div className="opening-center">
         <div className="opening-crest" ref={crestRef}>
@@ -228,13 +268,18 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
   );
 }
 
-function ShojiDoors() {
+/** The mask of an uploaded silhouette (a white PNG whose alpha is the figure). */
+const maskStyle = (url: string) => ({ maskImage: `url("${url}")`, WebkitMaskImage: `url("${url}")` });
+
+function ShojiDoors({ silhouette, near }: { silhouette: string | null; near: number }) {
   return (
     <div className="doors" aria-hidden="true">
       {(['l', 'r'] as const).map((side) => (
         <div key={side} className={`door door-${side}`}>
           <div className="shoji-paper" />
           <span className="maru" />
+          {/* 影繪: the figure behind the paper comes closer (sharper) as loading completes. */}
+          {side === 'r' && silhouette && <span className="kage" style={{ ...maskStyle(silhouette), ['--near' as string]: near }} />}
           <span className="hikite" />
         </div>
       ))}
@@ -247,7 +292,7 @@ const yukiwaPattern = (() => {
   return `url("data:image/svg+xml;utf8,${svg.replace(/#/g, '%23')}")`;
 })();
 
-function NorenCurtain() {
+function NorenCurtain({ silhouette }: { silhouette: string | null }) {
   return (
     <div className="noren" aria-hidden="true">
       <div className="noren-rod" />
@@ -255,6 +300,7 @@ function NorenCurtain() {
         <div key={i} className={`noren-strip noren-${i}`}>
           <div className="noren-print" style={{ backgroundImage: yukiwaPattern }} />
           {i === 0 && <span className="noren-text"><i>時</i><i>雨</i></span>}
+          {i === 2 && silhouette && <span className="noren-figure" style={maskStyle(silhouette)} />}
         </div>
       ))}
       <div className="steam"><i /><i /><i /><i /></div>

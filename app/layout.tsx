@@ -1,11 +1,10 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import './globals.css';
-import './wafu-palette.css';
 import './wafu.css';
 import './wafu-opening.css';
 import './wafu-media.css';
-import { wafuBootScript } from '@/lib/wafu/theme';
+import { wafuBootScript, wafuFontsHref } from '@/lib/wafu/theme';
 
 const title = 'OptionFlow — Visual Options Tracker';
 const description = '可編輯與儲存的選擇權持倉追蹤工具，包含股票報價更新、週月年收益、SPY／BOXX 比較與持倉圓餅圖。';
@@ -27,6 +26,6 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  // The boot script marks <html data-wafu> before the first paint, so React leaves that attribute alone.
-  return <html lang="zh-Hant" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: wafuBootScript }} /></head><body>{children}</body></html>;
+  // The server renders 桔梗; the boot script switches <html data-wafu> to the chosen theme before the first paint.
+  return <html lang="zh-Hant" data-wafu="kikyo" suppressHydrationWarning><head><link id="wafu-fonts" rel="stylesheet" href={wafuFontsHref} /><script dangerouslySetInnerHTML={{ __html: wafuBootScript }} /></head><body>{children}</body></html>;
 }

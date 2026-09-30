@@ -99,7 +99,8 @@ export async function prepareSilhouette(file: Blob) {
   let clear = 0;
   for (let i = 3; i < data.length; i += 4) if (data[i] < 200) clear++;
 
-  if (clear / total < 0.03) {
+  const cutOut = clear / total >= 0.03;
+  if (!cutOut) {
     // No cut-out: the median edge colour is the background.
     const edge: number[][] = [[], [], []];
     const sample = (x: number, y: number) => { const i = (y * width + x) * 4; for (let c = 0; c < 3; c++) edge[c].push(data[i + c]); };
@@ -119,7 +120,8 @@ export async function prepareSilhouette(file: Blob) {
     data[i] = 255; data[i + 1] = 255; data[i + 2] = 255;
   }
   if (right < 0) throw new Error('找不到圖中的人物輪廓，請改用去背 PNG。');
-  if ((right - left + 1) * (bottom - top + 1) > total * 0.97) throw new Error('背景和人物分不開，請改用去背 PNG 或背景單純的圖。');
+  // Only a picture cut out by edge colour can fail this way; a real cut-out may be cropped to the figure.
+  if (!cutOut && (right - left + 1) * (bottom - top + 1) > total * 0.97) throw new Error('背景和人物分不開，請改用去背 PNG 或背景單純的圖。');
   context.putImageData(pixels, 0, 0);
   const out = document.createElement('canvas');
   out.width = right - left + 1;

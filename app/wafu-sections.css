@@ -258,3 +258,10 @@
 .wafu-curve text { fill: var(--wa-ink); font-size: 5.5px; font-variant-numeric: tabular-nums; }
 .wafu-curve text.tenor { fill: var(--wa-muted); font-size: 5px; letter-spacing: .05em; }
 .wafu-curve-empty { margin: 14px 0 8px; color: var(--wa-muted); font-size: 11px; text-align: center; }
+
+/* Rail halo: more air between the halo and the current item's icon, and room above for it so it
+   does not touch the label of the item above. */
+@media (min-width: 1181px) {
+  :root[data-wafu] .side-nav a, :root[data-wafu] .side-nav .settings-nav-button, :root[data-wafu] .background-trigger { min-height: 78px; padding-top: 26px; }
+  :root[data-wafu] .wafu-nav-halo { bottom: calc(100% + 7px); }
+}

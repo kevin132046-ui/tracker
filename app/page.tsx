@@ -2918,15 +2918,6 @@ export default function Home() {
     window.requestAnimationFrame(() => document.getElementById(drilledTicker ? 'stock-analysis' : 'overview')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
   }
 
-  function toggleValuation(ticker?: string) {
-    const target = ticker || valuationTicker;
-    if (valuationOpen && target === valuationTicker) {
-      closeValuation();
-      return;
-    }
-    openValuation(target);
-  }
-
   function selectAllocationItem(item: { label: string; members: string[] }) {
     setAllocationPinnedLabel(item.label);
     if (item.members.length === 1) {

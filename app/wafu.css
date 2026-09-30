@@ -271,3 +271,5 @@
   .wafu-research-body { padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) { .wafu-research, .wafu-research-body > * { animation: none; } }
+
+:root[data-wafu] .company-logo img[hidden] { display: none !important; }

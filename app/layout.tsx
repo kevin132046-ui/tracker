@@ -6,6 +6,7 @@ import './wafu-opening.css';
 import './wafu-media.css';
 import './wafu-assistant.css';
 import './wafu-mobile.css';
+import './wafu-sections.css';
 import { wafuBootScript, wafuFontsHref } from '@/lib/wafu/theme';
 
 const title = 'OptionFlow — Visual Options Tracker';

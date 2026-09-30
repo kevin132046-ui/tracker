@@ -51,6 +51,7 @@ import WafuBackdrop from '@/components/wafu/Backdrop';
 import MusicDock from '@/components/wafu/MusicDock';
 import NotifyCenter from '@/components/wafu/NotifyCenter';
 import GuideBar from '@/components/wafu/GuideBar';
+import HankoTile from '@/components/wafu/HankoTile';
 import ResearchDrawer from '@/components/wafu/ResearchDrawer';
 import type { ResearchTab } from '@/components/wafu/ResearchDrawer';
 import HomeBar from '@/components/wafu/HomeBar';
@@ -206,7 +207,11 @@ const WafuOpening = lazy(loadWafuOpening);
 const loadAssistantPanel = () => import('@/components/wafu/AssistantPanel');
 const AssistantPanel = lazy(loadAssistantPanel);
 
-const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
+// Allocation colours per theme (from the prototype): soft inks that sit on the dark panels.
+const palettes: Record<WafuTheme, string[]> = {
+  kikyo: ['#7d9fe0', '#9a8ce0', '#6fb7a0', '#c9a45c', '#d9735c', '#a7a3b8', '#6d8aa8', '#b9a88a'],
+  shigure: ['#62d4d2', '#f0c24b', '#b69ae8', '#ec8f7f', '#86b6ea', '#a2d27e', '#d8b48a', '#8fa9ab'],
+};
 const companyNames: Record<string, string> = {
   AAPL: 'Apple', AMZN: 'Amazon', AXP: 'American Express', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
   CNC: 'Centene', META: 'Meta Platforms', MSFT: 'Microsoft', NVDA: 'NVIDIA', SPGI: 'S&P Global', SPY: 'SPDR S&P 500',
@@ -910,7 +915,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, ra
             if (event.key === 'Home') { event.preventDefault(); setPriceHoverIndex(0); }
             if (event.key === 'End') { event.preventDefault(); setPriceHoverIndex(points.length - 1); }
           }}
-        ><defs><linearGradient id={`price-fill-${symbol}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".25"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="93" y2="93" className="technical-grid-line"/>{overlays.boll && <><polygon points={technicalBandPolygon(bollUpper, bollLower, priceBounds.min, priceBounds.max)} className="technical-boll-band"/><polyline points={technicalPoints(bollUpper, priceBounds.min, priceBounds.max)} className="technical-boll-line"/><polyline points={technicalPoints(bollLower, priceBounds.min, priceBounds.max)} className="technical-boll-line"/></>}{priceChartMode === 'line' ? <><polygon points={`0,93 ${technicalPoints(closes, priceBounds.min, priceBounds.max)} 100,93`} fill={`url(#price-fill-${symbol})`}/><polyline points={technicalPoints(closes, priceBounds.min, priceBounds.max)} className="technical-price-line"/></> : <g className="technical-candles">{candles.map((point, index) => {
+        ><defs><linearGradient id={`price-fill-${symbol}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" style={{ stopColor: 'var(--wa-accent)' }} stopOpacity=".25"/><stop offset="100%" style={{ stopColor: 'var(--wa-accent)' }} stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="93" y2="93" className="technical-grid-line"/>{overlays.boll && <><polygon points={technicalBandPolygon(bollUpper, bollLower, priceBounds.min, priceBounds.max)} className="technical-boll-band"/><polyline points={technicalPoints(bollUpper, priceBounds.min, priceBounds.max)} className="technical-boll-line"/><polyline points={technicalPoints(bollLower, priceBounds.min, priceBounds.max)} className="technical-boll-line"/></>}{priceChartMode === 'line' ? <><polygon points={`0,93 ${technicalPoints(closes, priceBounds.min, priceBounds.max)} 100,93`} fill={`url(#price-fill-${symbol})`}/><polyline points={technicalPoints(closes, priceBounds.min, priceBounds.max)} className="technical-price-line"/></> : <g className="technical-candles">{candles.map((point, index) => {
           const x = candles.length === 1 ? 50 : index / (candles.length - 1) * 100;
           const width = Math.max(.28, Math.min(1.35, 62 / candles.length));
           const openY = technicalY(point.open, priceBounds.min, priceBounds.max);
@@ -2611,12 +2616,12 @@ export default function Home() {
       }), { label: '其他', value: 0, tradeCount: 0, estimated: false, members: [] as string[] }));
     }
     return {
-      items: top.map((item, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: palette[index % palette.length] })),
+      items: top.map((item, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: palettes[wafuTheme][index % palettes[wafuTheme].length] })),
       total,
       tradeCount: current ? openTrades.length : allocationHistory?.date === allocationDate ? allocationHistory.tradeCount : 0,
       estimatedTickers: current ? [] : allocationHistory?.date === allocationDate ? allocationHistory.estimatedTickers : [],
     };
-  }, [allocationDate, allocationHistory, currentAllocationDate, openTrades]);
+  }, [allocationDate, allocationHistory, currentAllocationDate, openTrades, wafuTheme]);
   const allocation = allocationSnapshot.items as AllocationItem[];
   // The quick sheet's 個股研究 opens the ticker in view, else the largest position.
   const researchTicker = drilledTicker ?? allocation.flatMap((item) => item.members).find((member) => member !== 'USD' && member !== 'JPY') ?? null;
@@ -3094,7 +3099,7 @@ export default function Home() {
             <div className="chart-shell">
               {chartTicks.map((tick) => <span key={`label-${tick.toFixed(4)}`} className="axis-label" style={{ top: `${chartY(tick)}%` }}>{tick > 0 ? '+' : ''}{Math.round(tick * 100)}%</span>)}
               <svg className="return-chart" viewBox="0 0 100 100" role="img" aria-label="日週月年收益率折線圖" preserveAspectRatio="none">
-                <defs><linearGradient id="returnFade" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".24"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs>
+                <defs><linearGradient id="returnFade" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" style={{ stopColor: 'var(--wa-accent)' }} stopOpacity=".24"/><stop offset="100%" style={{ stopColor: 'var(--wa-accent)' }} stopOpacity="0"/></linearGradient></defs>
                 {chartTicks.map((tick) => <line key={`grid-${tick.toFixed(4)}`} x1="0" x2="100" y1={chartY(tick)} y2={chartY(tick)} className={Math.abs(tick) < .0001 ? 'zero-line' : 'chart-grid-line'} />)}
                 {chartPoints && <><polygon points={`0,${chartY(0)} ${chartPoints} 100,${chartY(0)}`} fill="url(#returnFade)" /><polyline points={chartPoints} className="return-line portfolio-line" /></>}
                 {spyPoints && <polyline points={spyPoints} className="return-line spy-line" />}
@@ -3251,9 +3256,19 @@ export default function Home() {
                 : autoPosition ? snapshot ? `API · ${quoteSessionLabel(snapshot.session)}` : failedQuoteTickers.has(position.ticker) ? 'API 無法取得' : 'API 待更新'
                   : position.items.some((item) => item.trade.type === 'SDI') ? '手動價格' : '權利金手動';
               const positionStatusClass = cashPosition ? 'cash' : autoPosition ? snapshot ? 'live' : failedQuoteTickers.has(position.ticker) ? 'error' : 'pending' : 'manual';
+              const firstOpen = openPositionItems[0]?.trade ?? position.items[0]?.trade;
+              const optionRight = firstOpen ? optionRightOf(firstOpen) : null;
+              const hankoKind = cashPosition ? 'cash' : optionRight && position.stockQuantity === 0 ? 'option' : 'stock';
+              const hanko = <HankoTile
+                rank={index + 1}
+                ticker={position.ticker}
+                kind={hankoKind}
+                market={cashPosition ? '現' : hankoKind === 'option' ? (optionRight === 'put' ? 'P' : 'C') : isJapaneseTicker(position.ticker) ? 'JP' : 'US'}
+                label={cashPosition ? '現金' : hankoKind === 'option' ? `${(optionRight ?? '').toUpperCase()} ${firstOpen?.strike ?? ''}`.trim() : isJapaneseTicker(position.ticker) ? '日股' : '股票'}
+              />;
               return <article className="visual-position-row" key={position.ticker}>
                 <span className="position-rank">{String(index + 1).padStart(2, '0')}</span>
-                {cashPosition ? <div className="visual-asset"><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · 持倉數量 {nativeMoney(position.ticker, position.cashQuantity)}</small><em className={`position-data-status ${positionStatusClass}`}><i />{positionStatus}</em></span></div> : <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · 持倉數量 {quantityParts.join(' · ') || '0'} · {position.strategy}</small><em className={`position-data-status ${positionStatusClass}`}><i />{positionStatus}</em></span></button>}
+                {cashPosition ? <div className="visual-asset">{hanko}<span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · 持倉數量 {nativeMoney(position.ticker, position.cashQuantity)}</small><em className={`position-data-status ${positionStatusClass}`}><i />{positionStatus}</em></span></div> : <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}>{hanko}<span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · 持倉數量 {quantityParts.join(' · ') || '0'} · {position.strategy}</small><em className={`position-data-status ${positionStatusClass}`}><i />{positionStatus}</em></span></button>}
                 <div className="visual-value"><span>持倉市值</span><strong>{money.format(position.marketValue)}</strong></div>
                 {cashPosition ? <div className="visual-price-flow cash-price-flow"><div><span>原幣現金</span><strong>{nativeMoney(position.ticker, position.cashQuantity)}</strong></div><div><span>組合換算</span><strong>{money.format(position.marketValue)}</strong></div></div> : <div className="visual-price-flow"><div><span>{position.items.every((item) => item.trade.type === 'SDI' || item.trade.event === 'STOCK') ? '股票均價' : '成交均價'}</span><strong>{nativeMoney(position.ticker, position.entryPrice)}</strong></div><div><span>{currentPriceLabel}</span><strong>{nativeMoney(position.ticker, regularDisplayPrice)}</strong>{extendedDisplayPrice !== null && <small className={`after-hours-price ${extendedDisplayPrice >= regularDisplayPrice ? 'is-up' : 'is-down'}`}><em>{extendedSession === 'pre' ? '盤前' : '盤後'}</em>{nativeMoney(position.ticker, extendedDisplayPrice)}</small>}</div></div>}
                 {cashPosition ? <div className="visual-market-move neutral cash-market-move"><span className="cash-balance-icon">◎</span><div><span>資料來源</span><strong>不需報價</strong><small>{position.items.some((item) => item.trade.derived) ? '含稅後股息自動現金' : '手動現金餘額'}</small></div></div> : <div className={`visual-market-move ${marketChangePercent === null ? 'neutral' : marketChangePercent >= 0 ? 'positive' : 'negative'}`}><PriceSparkline ticker={position.ticker} values={snapshot?.sparkline ?? []} changePercent={marketChangePercent} /><div><span>{marketMoveLabel}</span><strong>{marketChangePercent === null ? '等待報價' : `${marketChangePercent >= 0 ? '+' : ''}${precisePercent.format(marketChangePercent)}`}</strong><small>{marketChange === null ? '—' : `${nativeMoney(position.ticker, marketDisplayPrice)} · ${marketChange >= 0 ? '+' : ''}${nativeMoney(position.ticker, marketChange)}`}</small></div></div>}

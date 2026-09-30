@@ -1,0 +1,98 @@
+/* 和風 sections, restyled after the prototype page (loaded last: overrides the older layout rules). */
+
+/* ---------- 印章式代號牌 ---------- */
+:root[data-wafu] .hanko { position: relative; flex: none; display: grid; place-items: center; width: 52px; height: 52px; color: var(--wa-ink); border: 1.5px solid color-mix(in srgb, var(--wa-accent) 70%, transparent); border-radius: var(--wa-r); background: color-mix(in srgb, var(--wa-accent) 8%, transparent); }
+:root[data-wafu='shigure'] .hanko { border-radius: 10px; }
+:root[data-wafu] .hanko.is-option { border-color: color-mix(in srgb, var(--wa-gold) 75%, transparent); background: color-mix(in srgb, var(--wa-gold) 9%, transparent); }
+:root[data-wafu] .hanko.is-cash { border-color: color-mix(in srgb, var(--wa-accent-2) 70%, transparent); background: color-mix(in srgb, var(--wa-accent-2) 9%, transparent); }
+:root[data-wafu] .hanko i { position: absolute; display: block; top: 3px; font-family: var(--wa-f-mono); font-size: 8.5px; font-style: normal; line-height: 1; color: var(--wa-muted); }
+:root[data-wafu] .hanko .hanko-rank { left: 5px; } .hanko .hanko-market { right: 5px; color: var(--wa-ink-2); }
+:root[data-wafu] .hanko b { display: block; margin: 3px 0 0; color: var(--wa-ink); font-family: var(--wa-f-display); font-size: 14px; font-weight: 700; letter-spacing: .02em; line-height: 1; }
+:root[data-wafu] .hanko b.is-long { font-size: 11.5px; }
+:root[data-wafu] .hanko small { position: absolute; display: block; margin: 0; bottom: 3px; left: 2px; right: 2px; overflow: hidden; color: var(--wa-muted); font-size: 8px; line-height: 1; text-align: center; white-space: nowrap; text-overflow: ellipsis; }
+
+/* ---------- 持倉列表 ---------- */
+:root[data-wafu] .visual-positions { background: none; border-top: 0; }
+:root[data-wafu] .visual-head, :root[data-wafu] .visual-position-row {
+  min-width: 980px; grid-template-columns: minmax(250px, 2.3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); gap: 14px;
+}
+:root[data-wafu] .visual-head { padding: 10px 8px; color: var(--wa-muted); background: none; border-bottom: 1px solid var(--wa-line); font-size: 11.5px; font-weight: 400; letter-spacing: .06em; }
+:root[data-wafu] .visual-head > :first-child, :root[data-wafu] .position-rank { display: none; }
+:root[data-wafu] .visual-position-row { min-height: 0; align-items: center; padding: 12px 8px; background: none; border-bottom: 1px solid var(--wa-line); transition: background .2s; }
+:root[data-wafu] .visual-position-row:hover { background: rgb(255 255 255 / .025); }
+:root[data-wafu] .visual-asset { gap: 12px; }
+:root[data-wafu] .visual-asset-copy { display: flex; flex-direction: column; min-width: 0; }
+:root[data-wafu] .visual-asset strong { font-family: var(--wa-f-display); font-size: 17px; font-weight: 700; letter-spacing: .04em; }
+:root[data-wafu] .visual-asset-copy > span { overflow: hidden; color: var(--wa-ink-2); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+:root[data-wafu] .visual-asset-copy > small { color: var(--wa-muted); font-size: 11px; }
+:root[data-wafu] .visual-asset-button:hover strong { color: var(--wa-accent); }
+:root[data-wafu] .position-data-status { width: fit-content; margin-top: 4px; padding: 1px 8px; color: var(--wa-ink-2); background: rgb(255 255 255 / .05); border: 0; border-radius: 999px; font-size: 10.5px; font-style: normal; font-weight: 400; }
+/* Figures in the monospaced face; the header row names the columns, so no labels inside the cells on wide screens. */
+:root[data-wafu] .visual-value > span, :root[data-wafu] .visual-price-flow span, :root[data-wafu] .visual-market-move > div > span, :root[data-wafu] .visual-weight span { display: none; }
+:root[data-wafu] .visual-value strong, :root[data-wafu] .visual-price-flow strong, :root[data-wafu] .visual-gain strong, :root[data-wafu] .visual-market-move strong, :root[data-wafu] .visual-weight strong { font-family: var(--wa-f-mono); font-size: 14px; font-weight: 500; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+:root[data-wafu] .visual-price-flow { display: flex; flex-direction: column-reverse; justify-content: center; align-items: flex-start; gap: 2px; text-align: left; padding: 0; background: none; border: 0; box-shadow: none; }
+:root[data-wafu] .visual-price-flow > div { padding: 0; background: none; border: 0; }
+:root[data-wafu] .visual-price-flow > div:first-child strong { color: var(--wa-muted); font-size: 12px; }
+:root[data-wafu] .visual-market-move { grid-template-columns: 70px auto; gap: 8px; padding: 0; background: none; }
+:root[data-wafu] .visual-market-move .price-sparkline { height: 26px; }
+:root[data-wafu] .visual-market-move strong { font-size: 12.5px; }
+:root[data-wafu] .visual-market-move small { display: none; }
+:root[data-wafu] .visual-gain span { margin-top: 2px; font-family: var(--wa-f-mono); font-size: 11.5px; font-weight: 400; }
+:root[data-wafu] .visual-weight { display: flex; flex-direction: column-reverse; gap: 4px; }
+:root[data-wafu] .visual-weight b { display: block; height: 6px; overflow: hidden; background: rgb(255 255 255 / .05); border-radius: 3px; }
+:root[data-wafu] .visual-weight b i { display: block; height: 100%; background: var(--wa-accent); border-radius: 3px; }
+:root[data-wafu] .visual-weight strong { font-size: 12px; color: var(--wa-ink-2); }
+/* Phones keep the stacked card with small labels. */
+@media (max-width: 720px) {
+  :root[data-wafu] .visual-position-row { min-width: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "asset asset" "value gain" "prices move" "weight weight"; padding: 14px 4px; }
+  :root[data-wafu] .visual-value > span, :root[data-wafu] .visual-price-flow > div:last-child span, :root[data-wafu] .visual-weight span { display: block; margin-bottom: 2px; color: var(--wa-muted); font-size: 10px; }
+  :root[data-wafu] .visual-positions { padding: 0; background: none; }
+}
+:root[data-wafu] .visual-value strong, :root[data-wafu] .visual-price-flow > div:last-child strong, :root[data-wafu] .visual-asset strong { color: var(--wa-ink); }
+:root[data-wafu] .visual-gain.positive strong, :root[data-wafu] .visual-gain.positive span, :root[data-wafu] .visual-market-move.positive strong { color: var(--wa-up); }
+:root[data-wafu] .visual-gain.negative strong, :root[data-wafu] .visual-gain.negative span, :root[data-wafu] .visual-market-move.negative strong { color: var(--wa-down); }
+
+/* ---------- 宏觀行情 cards ---------- */
+:root[data-wafu] .macro-market-grid { gap: 10px; }
+:root[data-wafu] .macro-market-card { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 12px 14px 8px; background: rgb(0 0 0 / .16); border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg); box-shadow: none; }
+:root[data-wafu] .macro-market-card > header { position: static; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin: 0; padding: 0; }
+:root[data-wafu] .macro-market-card > header > div { display: block; min-width: 0; }
+:root[data-wafu] .macro-market-card > header > div > span { display: none; }
+:root[data-wafu] .macro-market-card > header > div > div { display: flex; flex-direction: column; min-width: 0; }
+:root[data-wafu] .macro-market-card h4 { overflow: hidden; margin: 0; color: var(--wa-ink-2); font-family: var(--wa-f-body); font-size: 12.5px; font-weight: 500; letter-spacing: .02em; white-space: nowrap; text-overflow: ellipsis; }
+:root[data-wafu] .macro-market-card header small { color: var(--wa-muted); font-size: 10.5px; font-weight: 400; }
+:root[data-wafu] .macro-market-card > header > b { position: static; flex: none; padding: 0; color: var(--wa-muted); background: none; border: 0; font-family: var(--wa-f-mono); font-size: 10.5px; font-weight: 400; }
+:root[data-wafu] .macro-market-quote { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; margin-top: 4px; }
+:root[data-wafu] .macro-market-quote strong { color: var(--wa-ink); font-family: var(--wa-f-mono); font-size: 22px; font-weight: 500; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+:root[data-wafu] .macro-market-quote span { font-family: var(--wa-f-mono); font-size: 11.5px; font-weight: 400; }
+:root[data-wafu] .macro-market-card.positive .macro-market-quote span { color: var(--wa-up); }
+:root[data-wafu] .macro-market-card.negative .macro-market-quote span { color: var(--wa-down); }
+:root[data-wafu] .macro-history-chart { height: 40px; margin-top: 4px; background: none; border: 0; }
+:root[data-wafu] .macro-market-card > footer { display: flex; justify-content: space-between; margin-top: 2px; padding: 0; color: var(--wa-muted); background: none; border: 0; font-family: var(--wa-f-mono); font-size: 10px; }
+:root[data-wafu] .macro-market-card > footer b { display: none; }
+
+/* ---------- 持倉配置: legend as a quiet list (prototype), donut in the theme palette ---------- */
+:root[data-wafu] .legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 14px; }
+:root[data-wafu] .allocation-legend-item { grid-template-columns: 10px minmax(0, 1fr) auto auto; gap: 8px; padding: 6px; color: var(--wa-ink); background: none; border: 0; border-radius: var(--wa-r); font-size: 12.5px; box-shadow: none; }
+:root[data-wafu] .allocation-legend-item:hover, :root[data-wafu] .allocation-legend-item.is-selected, :root[data-wafu] .allocation-legend-item.is-active { background: rgb(255 255 255 / .05); border: 0; box-shadow: none; transform: none; }
+:root[data-wafu] .allocation-legend-item > :nth-child(3) { color: var(--wa-muted); font-family: var(--wa-f-mono); font-size: 11.5px; font-weight: 400; }
+:root[data-wafu] .allocation-legend-item > :nth-child(4) { min-width: 42px; color: var(--wa-ink); font-family: var(--wa-f-mono); font-size: 12px; font-weight: 500; text-align: right; }
+@media (max-width: 520px) { :root[data-wafu] .legend { grid-template-columns: 1fr; } }
+
+/* ---------- 收益分析: portfolio in the accent with a glow, SPY thin ink, BOXX dotted gold (prototype) ---------- */
+:root[data-wafu] .portfolio-line { stroke: var(--wa-accent); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--wa-accent) 45%, transparent)); }
+:root[data-wafu] .spy-line { stroke: var(--wa-ink-2); stroke-width: 1.5; stroke-dasharray: none; opacity: .75; }
+:root[data-wafu] .boxx-line { stroke: var(--wa-gold); stroke-width: 1.5; stroke-dasharray: 2 3; }
+:root[data-wafu] .portfolio-key { background: var(--wa-accent); }
+:root[data-wafu] .spy-key { background: var(--wa-ink-2); }
+:root[data-wafu] .boxx-key { background: repeating-linear-gradient(90deg, var(--wa-gold) 0 2px, transparent 2px 5px); }
+:root[data-wafu] .return-markers span { width: 7px; height: 7px; background: var(--wa-panel-solid); border: 2px solid var(--wa-accent); box-shadow: none; }
+:root[data-wafu] .chart-grid-line { stroke: var(--wa-line); }
+:root[data-wafu] .zero-line { stroke: var(--wa-line-2); stroke-dasharray: 4 4; }
+:root[data-wafu] .return-summary > strong { color: var(--wa-ink); }
+:root[data-wafu] .donut { box-shadow: none; }
+:root[data-wafu] .donut::after { background: var(--wa-panel-solid); box-shadow: 0 0 0 1px var(--wa-line); }
+:root[data-wafu] .donut-center strong { color: var(--wa-ink); font-family: var(--wa-f-display); font-weight: 700; letter-spacing: 0; }
+:root[data-wafu] .donut-svg-label { fill: var(--wa-bg); stroke: none; paint-order: normal; font-family: var(--wa-f-mono); font-weight: 500; }
+:root[data-wafu] .donut-svg-label.is-small { fill: var(--wa-ink-2); }
+:root[data-wafu] .donut-segment-outline { stroke: var(--wa-ink); }

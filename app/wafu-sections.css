@@ -226,3 +226,6 @@
 .wafu-mq > footer { display: flex; align-items: center; gap: 10px; }
 .wafu-mq > footer > span { margin-right: auto; color: var(--wa-muted); font-size: 12px; }
 @media (max-width: 560px) { .wafu-mq { padding: 16px; } .wafu-mq-row { grid-template-columns: minmax(0, 1fr) 112px; } .wafu-mq-hint { grid-column: 1; grid-row: 2; } }
+
+/* Option risk strip: room for 本年權利金 as a seventh cell. */
+:root[data-wafu] .option-risk-strip dl { grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); }

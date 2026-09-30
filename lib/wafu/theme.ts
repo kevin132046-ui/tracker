@@ -42,9 +42,13 @@ export function resolveWafu(preference: WafuPreference): WafuTheme {
   }
 }
 
-/** Marks <html> with the theme. */
+/** Status bar / browser chrome colour on phones (Android theme-color, iOS PWA). */
+export const wafuThemeColor: Record<WafuTheme, string> = { kikyo: '#0c0d11', shigure: '#07141a' };
+
+/** Marks <html> with the theme and tints the phone's status bar to match. */
 export function applyWafu(theme: WafuTheme) {
   document.documentElement.dataset.wafu = theme;
+  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((meta) => { meta.content = wafuThemeColor[theme]; });
 }
 
 /**

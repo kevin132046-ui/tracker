@@ -132,19 +132,6 @@
 :root[data-perf='lite'] .market-pill.is-open > span, :root[data-perf='lite'] .wafu-notify-roll { animation: none; }
 @media (prefers-reduced-motion: reduce) { :root[data-wafu] .market-pill.is-open > span, .wafu-notify-roll { animation: none; } }
 
-/* ---------- Side rail (wide screens): a full-height column like the prototype; the lower part holds light ---------- */
-.wafu-rail-foot { display: none; }
-@media (min-width: 1181px) {
-  :root[data-wafu] .side-nav { display: flex; flex-direction: column; height: calc(100vh - 124px); min-height: 520px; }
-  .wafu-rail-foot { position: relative; flex: 1; min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 8px; padding: 0 0 12px; overflow: hidden; color: var(--wa-accent); border-top: 1px solid var(--wa-line); }
-  .wafu-rail-motes { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--wa-accent); pointer-events: none; }
-  .wafu-rail-koyomi { position: relative; display: flex; gap: 4px; writing-mode: vertical-rl; color: var(--wa-muted); font-family: var(--wa-f-display); font-size: 11px; letter-spacing: .28em; }
-  .wafu-rail-koyomi span + span { color: var(--wa-accent-2); }
-  .wafu-rail-crest { position: relative; width: 34px; height: 34px; stroke: var(--wa-accent); opacity: .8; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--wa-accent) 55%, transparent)); animation: wafu-crest-breathe 6s ease-in-out infinite; }
-  @keyframes wafu-crest-breathe { 50% { opacity: .45; filter: drop-shadow(0 0 2px color-mix(in srgb, var(--wa-accent) 30%, transparent)); } }
-}
-:root[data-perf='lite'] .wafu-rail-crest { animation: none; }
-@media (prefers-reduced-motion: reduce) { .wafu-rail-crest { animation: none; } }
 
 /* ---------- 游標光暈: panels light up softly where the pointer is (prototype) ---------- */
 :root[data-wafu] .panel:hover, :root[data-wafu] .metric-card:hover { background-image: radial-gradient(520px circle at var(--mx, -999px) var(--my, -999px), color-mix(in srgb, var(--wa-accent) 7%, transparent), transparent 62%); }
@@ -264,3 +251,17 @@
 :root[data-wafu] .market-pill.is-pre > span, :root[data-wafu] .market-pill.is-post > span { background: #e0a84a; border-color: #e0a84a; box-shadow: 0 0 8px rgb(224 168 74 / .75); animation: wafu-tube 3s infinite; }
 :root[data-perf='lite'] .market-pill.is-pre > span, :root[data-perf='lite'] .market-pill.is-post > span { animation: none; }
 @media (prefers-reduced-motion: reduce) { :root[data-wafu] .market-pill.is-pre > span, :root[data-wafu] .market-pill.is-post > span { animation: none; } }
+
+/* Hero: the theme's line (from the prototype) set vertically beside the title. */
+:root[data-wafu] .wafu-hero-title { display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 12px; }
+:root[data-wafu] .wafu-hero-sub { margin: 6px 0 0; writing-mode: vertical-rl; color: var(--wa-ink-2, var(--wa-ink)); font-family: var(--wa-f-display); font-size: 13px; letter-spacing: .3em; opacity: .92; text-shadow: 0 1px 2px rgb(0 0 0 / .75); white-space: nowrap; }
+@media (max-width: 640px) { :root[data-wafu] .wafu-hero-sub { font-size: 11.5px; letter-spacing: .22em; } }
+
+/* Top-bar logo: the theme's crest in a badge (the character picture is no longer used here). */
+.brand-crest { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border: 1px solid var(--wa-line-2, var(--wa-line)); border-radius: 12px; background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--wa-accent) 16%, transparent), rgb(0 0 0 / .25) 70%); color: var(--wa-accent); }
+:root[data-wafu='shigure'] .brand-crest { border-radius: 50%; }
+.brand-crest svg { width: 28px; height: 28px; stroke: currentColor; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--wa-accent) 55%, transparent)); }
+@media (max-width: 640px) { .brand-crest { width: 36px; height: 36px; } .brand-crest svg { width: 23px; height: 23px; } }
+/* The empty notice bar reads quieter. */
+.wafu-notify-roll.is-empty span { color: var(--wa-muted); }
+.wafu-notify-roll.is-empty .wafu-notify-lamp { background: var(--wa-muted); box-shadow: none; }

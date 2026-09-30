@@ -27,7 +27,7 @@
 .header h2, .cardHeading h3, .manager h2, .manager h3, .confirm h2 { margin: 0; color: var(--ink); }
 .header h2 { margin-top: 3px; font-size: clamp(22px, 2vw, 31px); letter-spacing: -.04em; }
 .header > div:first-child > p:last-child { margin: 7px 0 0; color: var(--muted); font-size: 14px; font-weight: 700; }
-.eyebrow, .cardHeading p { margin: 0; color: #5a7fbd; font-size: 11px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+.eyebrow, .cardHeading p { margin: 0; color: #5a7fbd; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
 .headerActions { flex-wrap: wrap; justify-content: flex-end; }
 .saveState { color: var(--green); font-size: 12px; font-weight: 850; }
 .saveState::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #20bf8d; box-shadow: 0 0 0 4px rgba(32, 191, 141, .1); }
@@ -48,7 +48,7 @@
 }
 .currencySwitch > span { position: absolute; z-index: -1; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px); border-radius: 14px; background: #fff; box-shadow: 0 4px 12px rgba(26, 60, 110, .13); transition: transform .22s ease; }
 .currencySwitch > .switchRight { transform: translateX(100%); }
-.currencySwitch button { min-height: 34px; border: 0; background: transparent; color: #7c8ca5; font: inherit; font-size: 12px; font-weight: 900; cursor: pointer; }
+.currencySwitch button { min-height: 34px; border: 0; background: transparent; color: #7c8ca5; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .currencySwitch button[aria-pressed='true'] { color: var(--blue); }
 .manageButton, .planButton, .addRow button, .positionDraft button, .manager footer button, .confirm div button:last-child {
   border: 0;
@@ -63,19 +63,19 @@
 .manageButton:hover, .planButton:hover { background: #162840; transform: translateY(-1px); }
 
 .fxNote { display: flex; align-items: center; gap: 8px; margin-top: -6px; color: #7789a4; font-size: 12px; font-weight: 700; }
-.fxNote span { padding: 5px 9px; border-radius: 999px; background: #e6f8f1; color: #0b8c66; font-size: 10px; font-weight: 900; letter-spacing: .05em; }
+.fxNote span { padding: 5px 9px; border-radius: 999px; background: #e6f8f1; color: #0b8c66; font-size: 10px; font-weight: 700; letter-spacing: .05em; }
 .fxEstimated { color: #9b6a19; }
 .fxEstimated span { color: #a36906; background: #fff1d7; }
 
 .capsuleBar { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 10px; scrollbar-width: thin; }
 .capsuleBar > button { flex: 0 0 auto; min-height: 62px; border: 1px solid #dce5f2; background: #f5f8fc; color: #62728c; font: inherit; cursor: pointer; }
-.capsuleBar > button:first-child { padding: 0 15px; border-radius: 17px; font-size: 12px; font-weight: 900; }
+.capsuleBar > button:first-child { padding: 0 15px; border-radius: 17px; font-size: 12px; font-weight: 700; }
 .capsuleBar > .allSelected { border-color: #94b8f7; background: #eaf2ff; color: var(--blue); }
 .brokerCapsule { --broker-color: #2f73ed; flex: 0 0 auto; display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 7px; min-width: 245px; padding: 7px 9px; border: 1px solid #dce5f2; border-radius: 18px; background: #f5f8fc; color: #62728c; text-align: left; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
 .brokerCapsule:hover { transform: translateY(-2px); }
 .capsuleToggle, .capsuleMain { min-width: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .capsuleToggle { width: 29px; height: 29px; display: grid; place-items: center; padding: 0; border-radius: 10px; }
-.capsuleToggle > i { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 9px; border: 1px solid #cbd7e8; color: #fff; font-style: normal; font-size: 12px; font-weight: 900; }
+.capsuleToggle > i { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 9px; border: 1px solid #cbd7e8; color: #fff; font-style: normal; font-size: 12px; font-weight: 700; }
 .capsuleMain { display: grid; grid-template-columns: minmax(100px, 1fr) auto; align-items: center; gap: 10px; padding: 2px 4px; text-align: left; }
 .brokerCapsule.selected { border-color: color-mix(in srgb, var(--broker-color) 48%, white); background: color-mix(in srgb, var(--broker-color) 8%, white); color: var(--ink); box-shadow: inset 3px 0 var(--broker-color); }
 .brokerCapsule.selected .capsuleToggle > i { border-color: var(--broker-color); background: var(--broker-color); }
@@ -106,7 +106,7 @@
 .healthRing::before { content: ''; width: 104px; aspect-ratio: 1; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1px #edf2f8; }
 .healthRing span { position: absolute; display: flex; align-items: baseline; gap: 3px; }
 .healthRing strong { font-size: 35px; letter-spacing: -.06em; }
-.healthRing small { color: #8291a8; font-size: 11px; font-weight: 800; }
+.healthRing small { color: #8291a8; font-size: 11px; font-weight: 600; }
 .warningList { display: flex; flex-wrap: wrap; align-content: center; gap: 7px; }
 .warningList b { padding: 7px 9px; border-radius: 10px; font-size: 11px; }
 .warningList > small { flex-basis: 100%; margin-top: 5px; color: #8492a8; font-size: 10px; font-weight: 750; }
@@ -117,7 +117,7 @@
 .cashInput { display: grid; gap: 7px; margin-top: 22px; }
 .cashInput > span { color: #70819b; font-size: 11px; font-weight: 850; }
 .cashInput > strong { display: flex; align-items: center; gap: 6px; color: #7c8ca4; font-size: 20px; }
-.cashInput input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 32px; font-weight: 900; letter-spacing: -.045em; }
+.cashInput input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 32px; font-weight: 700; letter-spacing: -.045em; }
 .cashSlider { width: 100%; margin: 15px 0 12px; accent-color: var(--blue); cursor: ew-resize; }
 .cashStats { align-items: stretch; }
 .cashStats span { flex: 1; display: grid; gap: 4px; padding: 9px 10px; border-radius: 12px; background: rgba(237, 243, 251, .75); }
@@ -127,7 +127,7 @@
 
 .allocationRows { display: grid; gap: 16px; margin-top: 23px; }
 .allocationRow { display: grid; grid-template-columns: 72px minmax(80px, 1fr) 118px; align-items: center; gap: 10px; }
-.allocationRow > span { display: flex; align-items: center; gap: 7px; color: #52647f; font-size: 11px; font-weight: 900; }
+.allocationRow > span { display: flex; align-items: center; gap: 7px; color: #52647f; font-size: 11px; font-weight: 700; }
 .allocationRow > span i { width: 8px; height: 8px; border-radius: 50%; }
 .allocationRow > div { position: relative; height: 8px; border-radius: 999px; background: #e7edf5; }
 .allocationRow > div b { display: block; height: 100%; border-radius: inherit; background: #bdcde3; }
@@ -136,7 +136,7 @@
 
 .checklist { display: grid; gap: 8px; margin-top: 18px; max-height: 224px; overflow-y: auto; }
 .checklist button { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 10px; border: 1px solid #e0e8f3; border-radius: 14px; background: #f8fafd; color: var(--ink); text-align: left; font: inherit; cursor: pointer; }
-.checklist button > i { display: grid; place-items: center; width: 27px; height: 27px; border: 1px solid #bfccdd; border-radius: 9px; color: #fff; font-style: normal; font-weight: 900; }
+.checklist button > i { display: grid; place-items: center; width: 27px; height: 27px; border: 1px solid #bfccdd; border-radius: 9px; color: #fff; font-style: normal; font-weight: 700; }
 .checklist button > span { display: grid; gap: 3px; }
 .checklist button strong { font-size: 11px; }
 .checklist button small { color: #8090a8; font-size: 9px; font-weight: 750; }
@@ -151,7 +151,7 @@
 .assetCard { overflow: hidden; }
 .assetCard > .cardHeading { padding: 20px 22px; }
 .assetHeader, .assetRow { display: grid; grid-template-columns: minmax(210px, 1.1fr) minmax(180px, .85fr) minmax(150px, .72fr) 110px; align-items: center; gap: 14px; }
-.assetHeader { min-height: 38px; padding: 0 22px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #f5f8fd; color: #8291a7; font-size: 9px; font-weight: 900; letter-spacing: .05em; }
+.assetHeader { min-height: 38px; padding: 0 22px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #f5f8fd; color: #8291a7; font-size: 9px; font-weight: 700; letter-spacing: .05em; }
 .assetRows > div + div { border-top: 1px solid var(--line); }
 .assetRow { width: 100%; min-height: 88px; padding: 13px 22px; background: transparent; color: var(--ink); text-align: left; transition: background .18s ease; }
 .assetRow:hover, .assetExpanded { background: #f8faff; }
@@ -169,7 +169,7 @@
 .driftAlert { color: #d28b13 !important; }
 .fxMissing { color: #b47918 !important; }
 .targetField { display: flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid #dbe5f2; border-radius: 10px; background: #fff; }
-.targetField input { width: 62px; border: 0; outline: 0; color: var(--ink); font: inherit; font-size: 12px; font-weight: 900; }
+.targetField input { width: 62px; border: 0; outline: 0; color: var(--ink); font: inherit; font-size: 12px; font-weight: 700; }
 .targetField b { color: #8291a7; font-size: 10px; }
 .assetDetail { padding: 16px 22px 21px; background: linear-gradient(180deg, #f8faff, #fff); box-shadow: inset 0 1px #edf2f8; }
 .assetDetailSummary { justify-content: flex-start; margin-bottom: 14px; }
@@ -179,7 +179,7 @@
 .brokerStacks { display: flex; gap: 11px; overflow-x: auto; padding: 3px 0 8px; }
 .brokerStacks section { --broker-color: #2f73ed; position: relative; flex: 0 0 220px; display: grid; gap: 5px; padding: 13px 15px; border: 1px solid #dfe7f2; border-radius: 16px; background: rgba(255,255,255,.78); box-shadow: 0 8px 20px rgba(34, 62, 104, .07); overflow: hidden; }
 .brokerStacks section::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--broker-color); }
-.brokerStacks span { color: #6b7d98; font-size: 9px; font-weight: 900; }
+.brokerStacks span { color: #6b7d98; font-size: 9px; font-weight: 700; }
 .brokerStacks strong { font-size: 14px; }
 .brokerStacks small { color: #7d8da5; font-size: 9px; font-weight: 700; }
 .brokerStacks b { margin-top: 3px; font-size: 11px; }

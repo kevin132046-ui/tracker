@@ -10,7 +10,7 @@ export type WafuTheme = 'kikyo' | 'shigure';
 export const wafuPreferenceKey = 'optionflow-wafu-theme';
 const sessionPickKey = 'optionflow-wafu-random';
 export const defaultWafuPreference: WafuPreference = 'kikyo';
-export const wafuFontsHref = 'https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@500;700;800&family=Kaisei+Decol:wght@400;700&family=Yuji+Syuku&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap';
+export const wafuFontsHref = 'https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Shippori+Mincho+B1:wght@500;700;800&family=Kaisei+Decol:wght@400;700&family=Yuji+Syuku&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap';
 
 // A saved 'classic' (the old light page, now removed) falls back to the default.
 export const isWafuPreference = (value: unknown): value is WafuPreference => value === 'kikyo' || value === 'shigure' || value === 'random';

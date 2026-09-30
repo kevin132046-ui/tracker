@@ -4,6 +4,7 @@ import './globals.css';
 import './wafu-palette.css';
 import './wafu.css';
 import './wafu-opening.css';
+import './wafu-media.css';
 import { wafuBootScript } from '@/lib/wafu/theme';
 
 const title = 'OptionFlow — Visual Options Tracker';

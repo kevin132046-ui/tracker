@@ -47,6 +47,10 @@ import HaloIcon from '@/components/wafu/HaloIcon';
 import NavIcon from '@/components/wafu/NavIcon';
 import type { WafuNavIconName } from '@/components/wafu/NavIcon';
 import WafuThemeCard from '@/components/wafu/WafuThemeCard';
+import WafuBackdrop from '@/components/wafu/Backdrop';
+import MusicDock from '@/components/wafu/MusicDock';
+import WafuMediaCard from '@/components/wafu/WafuMediaCard';
+import { useMediaPrefs } from '@/lib/wafu/media';
 import type { WafuPreference, WafuTheme } from '@/lib/wafu/theme';
 import { applyWafu, defaultWafuPreference, loadWafuPreference, resolveWafu, saveWafuPreference } from '@/lib/wafu/theme';
 import type { WafuIntroPreference } from '@/lib/wafu/intro';
@@ -988,6 +992,7 @@ export default function Home() {
   const [introLiteAuto, setIntroLiteAuto] = useState(true);
   // The opening playing now (on load, or previewed from the settings).
   const [intro, setIntro] = useState<{ theme: WafuTheme; reduced: boolean } | null>(null);
+  const wafuMedia = useMediaPrefs();
   const [aiLookups, setAiLookups] = useState<Record<string, { loading: boolean; suggestion?: AiEarningsSuggestion; error?: string }>>({});
   const [yahooEarnings, setYahooEarnings] = useState<{ key: string; events: Record<string, EarningsEvent>; failed: string[] } | null>(null);
   const [brokerHubEnabled, setBrokerHubEnabled] = useState(false);
@@ -2833,6 +2838,7 @@ export default function Home() {
         </div>
         <div className="header-actions">
           <LanguageSwitcher />
+          {wafuTheme && wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
           <span className={`market-pill ${marketOpen ? 'is-open' : ''}`}><span />{marketOpen ? '美股交易中' : '非交易時段'}</span>
           <button className="secondary-button" type="button" onClick={() => refreshQuotes()} disabled={refreshing}>{refreshing ? '更新中…' : '↻ 更新報價'}</button>
           <button className="primary-button" type="button" onClick={() => setEditor(blankTrade())}>＋新增交易</button>
@@ -3085,6 +3091,7 @@ export default function Home() {
           <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title">設定</h2><span>選擇要啟用的擴充工作區。</span></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
           <div className="settings-body">
             <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
+            {wafuTheme && <WafuMediaCard theme={wafuTheme} />}
             <section className={`settings-feature-card ${brokerHubEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon" aria-hidden="true">◎</span><div><p>Optional module</p><h3>跨券商資產追蹤與再平衡</h3></div><span className="settings-feature-status">{brokerHubLoading ? '讀取中' : brokerHubEnabled ? '已開啟' : '預設關閉'}</span></div>
               <p>把不同券商的手動部位聚合成單一全景，提供 USD／JPY 平抑檢視、偏離診斷、只買不賣試算與跨券商待辦清單。</p>
@@ -3354,6 +3361,7 @@ export default function Home() {
         </section>
       </div>}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
+      {wafuTheme && <WafuBackdrop theme={wafuTheme} paused={Boolean(intro)} />}
       {intro && createPortal(<Suspense fallback={null}><WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} /></Suspense>, document.body)}
     </main>
   );

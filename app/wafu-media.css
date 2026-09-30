@@ -1,0 +1,114 @@
+/* 和風 backdrop, music and opening extras (Phase ④c). Only 和風 components use these classes. */
+
+/* ---------- Backdrop ---------- */
+:root[data-wafu-backdrop] .shell { background: transparent; }
+.wafu-bd { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--wa-shell-bg); }
+.wafu-bd-photo {
+  position: absolute; inset: -4%;
+  background-size: cover; background-position: 40% 28%;
+  scale: 1.02; translate: 0 calc(var(--sy, 0px) * -0.05);
+  animation: wafu-bd-in 2.8s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+@keyframes wafu-bd-in { from { scale: 1.13; opacity: 0.35; } to { scale: 1.02; opacity: 1; } }
+/* Warm, dimmed pictures read as lamplight behind the panels. */
+.wafu-bd-kikyo .wafu-bd-photo { filter: brightness(0.66) contrast(1.06) saturate(0.85) sepia(0.12); }
+.wafu-bd-shigure .wafu-bd-photo { background-position: 46% 44%; filter: brightness(0.62) saturate(0.9) contrast(1.04) sepia(0.2) hue-rotate(-6deg); }
+.wafu-bd-shade { position: absolute; inset: 0; }
+.wafu-bd.has-photo .wafu-bd-shade {
+  background:
+    radial-gradient(120% 90% at 45% 20%, rgb(var(--wa-bg-rgb) / 0) 30%, rgb(var(--wa-bg-rgb) / .55) 75%),
+    linear-gradient(180deg, rgb(var(--wa-bg-rgb) / .05) 0%, rgb(var(--wa-bg-rgb) / .35) 35%, rgb(var(--wa-bg-rgb) / .78) 62%, rgb(var(--wa-bg-rgb) / .92) 100%);
+}
+.wafu-bd-shade::after { content: ""; position: absolute; inset: 0; }
+.wafu-bd-kikyo .wafu-bd-shade::after { background: radial-gradient(55% 45% at 85% 95%, rgba(226, 178, 110, 0.12), transparent 70%); }
+.wafu-bd-shigure .wafu-bd-shade::after { background: radial-gradient(60% 45% at 12% 100%, rgba(241, 162, 92, 0.16), transparent 70%), radial-gradient(40% 35% at 92% 8%, rgba(241, 183, 124, 0.08), transparent 70%); }
+.wafu-bd-beam {
+  position: absolute; inset: 0;
+  background: linear-gradient(118deg, transparent 18%, rgba(255, 246, 226, 0.08) 30%, rgba(255, 246, 226, 0.02) 40%, transparent 48%);
+  will-change: transform, opacity;
+  animation: wafu-beam 10s ease-in-out infinite alternate;
+}
+@keyframes wafu-beam { from { opacity: 0.45; transform: translateX(-1.5%); } to { opacity: 1; transform: translateX(1.5%); } }
+.wafu-bd-lantern {
+  position: absolute; right: 6%; bottom: -8%; width: 40vmax; height: 40vmax; border-radius: 50%;
+  background: radial-gradient(circle, rgba(240, 194, 75, 0.14), rgba(240, 194, 75, 0) 62%);
+  animation: wafu-lantern 6s ease-in-out infinite alternate;
+}
+@keyframes wafu-lantern { from { opacity: 0.7; } to { opacity: 1; } }
+.wafu-bd-snow { position: absolute; inset: 0; }
+@media (max-width: 760px) { .wafu-bd-shigure .wafu-bd-photo { background-size: 128% auto; background-position: 74% 44%; } }
+@media (prefers-reduced-motion: reduce) { .wafu-bd-photo, .wafu-bd-beam, .wafu-bd-lantern { animation: none; } }
+
+/* ---------- Music button and panel ---------- */
+.wafu-music { position: relative; }
+.wafu-music-toggle {
+  width: 36px; height: 36px; display: grid; place-items: center; padding: 0; cursor: pointer;
+  color: var(--wa-ink-2); background: rgb(var(--wa-raise-rgb) / .04); border: 1px solid var(--wa-line-2); border-radius: var(--wa-r);
+}
+.wafu-music-toggle:hover, .wafu-music.is-playing .wafu-music-toggle { color: var(--wa-accent); border-color: var(--wa-accent); }
+.wafu-music-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; width: min(320px, calc(100vw - 32px));
+  display: grid; gap: 10px; padding: 12px;
+  color: var(--wa-ink); background: var(--wa-panel-hi); border: 1px solid var(--wa-line-2); border-radius: var(--wa-r-lg);
+  box-shadow: 0 18px 40px rgb(0 0 0 / .45); backdrop-filter: blur(10px);
+}
+.wafu-music-now { display: flex; align-items: center; gap: 10px; }
+.wafu-music-now > div { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.wafu-music-now b { font-family: var(--wa-f-display); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wafu-music-now small { color: var(--wa-muted); font-size: 11.5px; }
+.wafu-music-play, .wafu-music-next { flex: none; width: 36px; height: 36px; display: grid; place-items: center; padding: 0; font-size: 12px; cursor: pointer; border-radius: 999px; }
+.wafu-music-play { color: var(--wa-on-accent); background: var(--wa-accent); border: 1px solid var(--wa-accent); }
+.wafu-music-play:disabled { opacity: .45; cursor: default; }
+.wafu-music-next { color: var(--wa-ink-2); background: transparent; border: 1px solid var(--wa-line-2); }
+.wafu-music-volume { display: flex; align-items: center; gap: 10px; color: var(--wa-muted); font-size: 12.5px; }
+.wafu-music-volume input { flex: 1; accent-color: var(--wa-accent); }
+.wafu-eq { display: flex; align-items: flex-end; gap: 2px; width: 16px; height: 16px; flex: none; }
+.wafu-eq i { flex: 1; height: 30%; border-radius: 1px; background: var(--wa-accent); opacity: .5; }
+.wafu-music.is-playing .wafu-eq i { opacity: 1; animation: wafu-eq .9s ease-in-out infinite alternate; }
+.wafu-music.is-playing .wafu-eq i:nth-child(2) { animation-delay: -.3s; }
+.wafu-music.is-playing .wafu-eq i:nth-child(3) { animation-delay: -.6s; }
+.wafu-music.is-playing .wafu-eq i:nth-child(4) { animation-delay: -.15s; }
+@keyframes wafu-eq { from { height: 20%; } to { height: 100%; } }
+@media (prefers-reduced-motion: reduce) { .wafu-music.is-playing .wafu-eq i { animation: none; height: 70%; } }
+
+/* ---------- Settings card ---------- */
+.wafu-media-toggles { display: grid; gap: 8px; margin-top: 12px; }
+.wafu-media-toggles label { display: flex; align-items: center; gap: 8px; color: var(--wa-ink-2); font-size: 13px; cursor: pointer; }
+.wafu-media-toggles input { accent-color: var(--wa-accent); }
+.wafu-media-theme { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--wa-line); }
+.wafu-media-theme h4 { margin: 0 0 8px; font-family: var(--wa-f-display); font-size: 14px; color: var(--wa-ink); }
+.wafu-media-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.wafu-media-thumb { width: 52px; height: 38px; flex: none; display: grid; place-items: center; overflow: hidden; color: var(--wa-muted); background: rgb(var(--wa-raise-rgb) / .05); border: 1px solid var(--wa-line); border-radius: var(--wa-r); }
+.wafu-media-thumb > span { width: 100%; height: 100%; display: grid; place-items: center; background-size: cover; background-position: center; }
+.wafu-media-thumb.is-sil { background: #d9cfb7; }
+.wafu-media-thumb.is-sil > span[style] { background: #1c1712; mask-size: contain; mask-position: center; mask-repeat: no-repeat; -webkit-mask-size: contain; -webkit-mask-position: center; -webkit-mask-repeat: no-repeat; }
+.wafu-media-info { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.wafu-media-info b { font-size: 13px; color: var(--wa-ink); }
+.wafu-media-info small { color: var(--wa-muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wafu-media-row button { flex: none; padding: 5px 11px; font-size: 12.5px; color: var(--wa-accent); background: transparent; border: 1px solid var(--wa-accent); border-radius: var(--wa-r); cursor: pointer; }
+.wafu-media-row button.is-quiet { color: var(--wa-muted); border-color: var(--wa-line-2); }
+.wafu-media-row button:disabled { opacity: .5; cursor: default; }
+.wafu-media-note { margin: 10px 0 0; color: var(--wa-up); font-size: 12.5px; }
+.wafu-media-note.is-error { color: var(--wa-down); }
+
+/* ---------- Opening: sound button and uploaded silhouettes ---------- */
+.opening-kikyo { --o-line: rgba(23, 19, 15, 0.3); --o-btn: rgba(244, 236, 216, 0.7); }
+.opening-shigure { --o-line: rgba(238, 252, 251, 0.3); --o-btn: rgba(7, 20, 26, 0.5); }
+.opening-sound {
+  position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 6; display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--o-line); background: var(--o-btn); color: var(--o-ink);
+  font-size: 12px; letter-spacing: 0.06em; backdrop-filter: blur(6px); cursor: pointer; opacity: 0.85;
+}
+.opening-sound.on { opacity: 1; }
+.stage-opening .opening-sound { opacity: 0; transition: opacity .4s ease; }
+@media (max-width: 640px) { .opening-sound span { display: none; } .opening-sound { padding: 0 9px; } }
+.kage, .noren-figure { position: absolute; mask-size: contain; mask-repeat: no-repeat; mask-position: 50% 100%; -webkit-mask-size: contain; -webkit-mask-repeat: no-repeat; -webkit-mask-position: 50% 100%; pointer-events: none; }
+.kage {
+  right: 6%; bottom: 12px; width: 70%; height: min(52vh, 460px);
+  background: rgba(12, 10, 9, 0.76);
+  filter: blur(calc(6px - 4.6px * var(--near, 0)));
+  opacity: calc(0.35 + 0.65 * var(--near, 0));
+  transform: scale(calc(0.95 + 0.05 * var(--near, 0))); transform-origin: 50% 100%;
+  transition: filter 0.6s ease, opacity 0.6s ease, transform 0.6s ease;
+}
+.noren-figure { left: 50%; bottom: 6%; translate: -50% 0; width: 78%; height: 64%; background: rgba(236, 252, 250, 0.85); }

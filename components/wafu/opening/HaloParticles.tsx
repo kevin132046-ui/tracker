@@ -92,7 +92,7 @@ export default function HaloParticles({ phase, theme, getAnchor }: Props) {
     const coreB = paper ? sprite("64,170,235", [[0, 0.9], [0.3, 0.45], [0.65, 0.06], [1, 0]], 32) : sprite("200,244,255", [[0, 1], [0.22, 0.5], [0.6, 0.05], [1, 0]], 32);
     const aura = paper ? sprite("90,170,255", [[0, 0.16], [1, 0]], 64) : sprite("214,200,255", [[0, 0.14], [1, 0]], 64);
 
-    const N = w < 640 ? 320 : 560;
+    const N = w < 640 ? 280 : 440;
     const targets = sampleHalo(theme, N);
     // 打亂對應，讓粒子從四面八方匯聚
     for (let i = targets.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [targets[i], targets[j]] = [targets[j], targets[i]]; }
@@ -156,20 +156,27 @@ export default function HaloParticles({ phase, theme, getAnchor }: Props) {
           ctx.lineDashOffset = 0;
           ctx.lineWidth = Math.max(0.8, s.width * R * (paper ? 1 : 0.8));
           let col: string;
+          // A soft glow is a wide faint stroke under the line (shadowBlur costs far more per frame).
+          let glow: string | null;
           if (paper) {
             col = s.kind === "glint" ? "rgba(64,196,255,0.9)" : s.kind === "inner" ? "rgba(120,200,255,0.55)" : "rgba(26,40,74,0.88)";
-            ctx.shadowColor = s.kind === "glint" ? "rgba(80,200,255,0.8)" : "transparent";
-            ctx.shadowBlur = s.kind === "glint" ? R * 0.12 : 0;
+            glow = s.kind === "glint" ? "rgba(80,200,255,0.22)" : null;
           } else {
             const gr = ctx.createLinearGradient(cx - R, cy - R, cx + R, cy + R);
             gr.addColorStop(0, "rgba(217,200,255,0.78)");
             gr.addColorStop(1, "rgba(184,240,255,0.78)");
             col = gr as unknown as string;
-            ctx.shadowColor = "rgba(200,190,255,0.55)";
-            ctx.shadowBlur = R * 0.06;
+            glow = "rgba(200,190,255,0.16)";
+          }
+          ctx.globalAlpha = clamp(reveal * 6);
+          if (glow) {
+            const width = ctx.lineWidth;
+            ctx.strokeStyle = glow;
+            ctx.lineWidth = width * 4;
+            ctx.stroke();
+            ctx.lineWidth = width;
           }
           ctx.strokeStyle = col;
-          ctx.globalAlpha = clamp(reveal * 6);
           ctx.stroke();
           if (s.kind === "pupil" && reveal > 0.85) {
             ctx.setLineDash([]);

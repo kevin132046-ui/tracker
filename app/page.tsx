@@ -50,6 +50,7 @@ import WafuThemeCard from '@/components/wafu/WafuThemeCard';
 import WafuBackdrop from '@/components/wafu/Backdrop';
 import MusicDock from '@/components/wafu/MusicDock';
 import NotifyCenter from '@/components/wafu/NotifyCenter';
+import HomeBar from '@/components/wafu/HomeBar';
 import type { NoticeItem } from '@/components/wafu/NotifyCenter';
 import WafuMediaCard from '@/components/wafu/WafuMediaCard';
 import { useMediaPrefs } from '@/lib/wafu/media';
@@ -219,6 +220,7 @@ const usdJpyRateKey = 'optionflow-usdjpy-rate';
 const holidayNoticeKey = 'optionflow-holiday-notice';
 const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
 const notifyCenterKey = 'optionflow-notify-center';
+const homeBarKey = 'optionflow-home-bar';
 const earningsReminderKey = 'optionflow-earnings-reminder';
 const manualEarningsKey = 'optionflow-earnings-manual';
 const openAiModelKey = 'optionflow-openai-model';
@@ -982,6 +984,10 @@ export default function Home() {
   // The notification center gathers the header notice line and more; off → the line as before.
   const [notifyEnabled, setNotifyEnabled] = useState(true);
   const [noticeNow, setNoticeNow] = useState<number | null>(null);
+  // Phones: the main menu as a bar along the bottom instead of the top strip.
+  const [homeBarEnabled, setHomeBarEnabled] = useState(true);
+  // Android Chrome offers installing the site as an app; the event is kept for the settings button.
+  const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
   const [earningsEnabled, setEarningsEnabled] = useState(true);
   const [manualEarnings, setManualEarnings] = useState<Record<string, string>>({});
   const [aiStatus, setAiStatus] = useState<AiStatus>(null);
@@ -1213,6 +1219,7 @@ export default function Home() {
     try {
       if (window.localStorage.getItem(holidayNoticeKey) === 'off') queueMicrotask(() => setHolidayNoticeEnabled(false));
       if (window.localStorage.getItem(notifyCenterKey) === 'off') queueMicrotask(() => setNotifyEnabled(false));
+      if (window.localStorage.getItem(homeBarKey) === 'off') queueMicrotask(() => setHomeBarEnabled(false));
     } catch { /* storage unavailable: keep the default */ }
   }, []);
 
@@ -1374,6 +1381,30 @@ export default function Home() {
   // A provider is usable with a key typed into this browser or one set on the server.
   const aiProviderReady = useCallback((provider: AiProvider) => Boolean(aiKeys[provider].trim()) || (aiStatus?.state === 'ok' && aiStatus.providers[provider]), [aiKeys, aiStatus]);
 
+  const toggleHomeBar = useCallback(() => {
+    setHomeBarEnabled((current) => {
+      try { window.localStorage.setItem(homeBarKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
+  }, []);
+  useEffect(() => {
+    const offer = (event: Event) => { event.preventDefault(); setInstallPrompt(event as Event & { prompt: () => Promise<void> }); };
+    const installed = () => setInstallPrompt(null);
+    window.addEventListener('beforeinstallprompt', offer);
+    window.addEventListener('appinstalled', installed);
+    return () => { window.removeEventListener('beforeinstallprompt', offer); window.removeEventListener('appinstalled', installed); };
+  }, []);
+  // wafu-mobile.css keys the phone layout off <html data-home-bar>.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (homeBarEnabled) root.dataset.homeBar = '1';
+    else delete root.dataset.homeBar;
+  }, [homeBarEnabled]);
+  const goToSection = useCallback((section: 'overview' | 'positions' | 'returns') => {
+    setActiveSection(section);
+    window.history.replaceState(null, '', `#${section}`);
+    document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' });
+  }, []);
   const toggleNotifyCenter = useCallback(() => {
     setNotifyEnabled((current) => {
       try { window.localStorage.setItem(notifyCenterKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
@@ -3227,6 +3258,19 @@ export default function Home() {
                 <button type="button" className={`settings-toggle ${assistantPrefs.enabled ? 'is-on' : ''}`} role="switch" aria-checked={assistantPrefs.enabled} onClick={() => updateAssistantPrefs({ enabled: !assistantPrefs.enabled })}><i /><b>{assistantPrefs.enabled ? '開啟' : '關閉'}</b></button>
               </div>
             </section>
+            <section className={`settings-feature-card home-bar-settings-card ${homeBarEnabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帖</span><div><p>Phone menu</p><h3>手機底部選單</h3></div><span className="settings-feature-status">{homeBarEnabled ? '已開啟' : '已關閉'}</span></div>
+              <p>手機上把主選單放到畫面底部（總覽、持倉、收益、AI、設定、更多），目前所在的項目浮著角色光環；估值與背景在「更多」裡。</p>
+              <div className="settings-feature-actions">
+                <span>關閉後改回頁面上方的選單列；電腦版不受影響。</span>
+                <button type="button" className={`settings-toggle ${homeBarEnabled ? 'is-on' : ''}`} role="switch" aria-checked={homeBarEnabled} onClick={toggleHomeBar}><i /><b>{homeBarEnabled ? '開啟' : '關閉'}</b></button>
+              </div>
+              <div className="app-install-hint">
+                <b>安裝成手機 App</b>
+                <span>iPhone／iPad：用 Safari 開啟 → 分享 → 加入主畫面。Android：Chrome 選單 → 安裝應用程式（或加到主畫面）。安裝後全螢幕開啟，資料與網頁版相同。</span>
+                {installPrompt && <button type="button" onClick={() => { void installPrompt.prompt().finally(() => setInstallPrompt(null)); }}>安裝 App</button>}
+              </div>
+            </section>
             <section className={`settings-feature-card notify-settings-card ${notifyEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">報</span><div><p>Notifications</p><h3>通知中心</h3></div><span className="settings-feature-status">{notifyEnabled ? '已開啟' : '已關閉'}</span></div>
               <p>頂欄的通知集中顯示財報公布、財報日、美日休市、7 天內到期的選擇權與股息入帳，可逐則關閉或全部標為已讀。</p>
@@ -3505,6 +3549,16 @@ export default function Home() {
       </div>}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
       <WafuBackdrop theme={wafuTheme} paused={Boolean(intro)} />
+      {homeBarEnabled && <HomeBar
+        theme={wafuTheme}
+        active={activeSection}
+        settingsOpen={settingsOpen}
+        assistant={assistantPrefs.enabled ? { open: assistantOpen, toggle: () => setAssistantOpen((open) => !open) } : null}
+        onSection={goToSection}
+        onSettings={() => setSettingsOpen(true)}
+        onValuation={() => openValuation(drilledTicker ?? valuationTicker)}
+        background={{ label: backgroundSaving ? '保存中' : backgroundImage ? '換背景圖片' : '背景圖片', busy: backgroundSaving, pick: () => backgroundInputRef.current?.click() }}
+      />}
       {assistantOpen && assistantPrefs.enabled && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={importAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}
       {intro && createPortal(<Suspense fallback={null}><WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} /></Suspense>, document.body)}
     </main>

@@ -274,3 +274,9 @@
 :root[data-wafu] .visual-market-move.neutral > div strong { color: var(--wa-muted); background: none; }
 /* Figures a touch bolder, as in the prototype list. */
 :root[data-wafu] .visual-value strong, :root[data-wafu] .visual-price-flow > div:last-child strong, :root[data-wafu] .visual-gain strong { font-weight: 600; }
+
+/* Very wide screens: the page stays centred (max 1760px) but the rail keeps to the left edge
+   of the window instead of floating inward with the page. */
+@media (min-width: 1800px) {
+  :root[data-wafu] .side-nav { translate: calc((1760px - 100vw) / 2 + 12px) 0; }
+}

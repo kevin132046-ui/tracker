@@ -50,6 +50,7 @@ import WafuThemeCard from '@/components/wafu/WafuThemeCard';
 import WafuBackdrop from '@/components/wafu/Backdrop';
 import MusicDock from '@/components/wafu/MusicDock';
 import NotifyCenter from '@/components/wafu/NotifyCenter';
+import GuideBar from '@/components/wafu/GuideBar';
 import HomeBar from '@/components/wafu/HomeBar';
 import type { NoticeItem } from '@/components/wafu/NotifyCenter';
 import WafuMediaCard from '@/components/wafu/WafuMediaCard';
@@ -222,7 +223,10 @@ const holidayNoticeKey = 'optionflow-holiday-notice';
 const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
 const aiEnabledKey = 'optionflow-ai-enabled';
 const notifyCenterKey = 'optionflow-notify-center';
-const homeBarKey = 'optionflow-home-bar';
+const bottomNavKey = 'optionflow-bottom-nav';
+// The page's sections, in page order, for the guide bar's swipes.
+const guideSections = [{ id: 'overview', label: '總覽' }, { id: 'returns', label: '收益' }, { id: 'positions', label: '持倉' }, { id: 'valuation', label: '估值' }];
+type BottomNav = 'guide' | 'menu' | 'off';
 const earningsReminderKey = 'optionflow-earnings-reminder';
 const manualEarningsKey = 'optionflow-earnings-manual';
 const openAiModelKey = 'optionflow-openai-model';
@@ -987,7 +991,10 @@ export default function Home() {
   const [notifyEnabled, setNotifyEnabled] = useState(true);
   const [noticeNow, setNoticeNow] = useState<number | null>(null);
   // Phones: the main menu as a bar along the bottom instead of the top strip.
-  const [homeBarEnabled, setHomeBarEnabled] = useState(true);
+  // Bottom navigation: the guide bar (every screen, default), the phone menu bar, or nothing.
+  const [bottomNav, setBottomNav] = useState<BottomNav>('guide');
+  const homeBarEnabled = bottomNav === 'menu';
+  const [notifySignal, setNotifySignal] = useState(0);
   // Android Chrome offers installing the site as an app; the event is kept for the settings button.
   const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
   const [earningsEnabled, setEarningsEnabled] = useState(true);
@@ -1224,7 +1231,8 @@ export default function Home() {
     try {
       if (window.localStorage.getItem(holidayNoticeKey) === 'off') queueMicrotask(() => setHolidayNoticeEnabled(false));
       if (window.localStorage.getItem(notifyCenterKey) === 'off') queueMicrotask(() => setNotifyEnabled(false));
-      if (window.localStorage.getItem(homeBarKey) === 'off') queueMicrotask(() => setHomeBarEnabled(false));
+      const storedNav = window.localStorage.getItem(bottomNavKey);
+      if (storedNav === 'menu' || storedNav === 'off') queueMicrotask(() => setBottomNav(storedNav));
     } catch { /* storage unavailable: keep the default */ }
   }, []);
 
@@ -1401,11 +1409,9 @@ export default function Home() {
   // A provider is usable with a key typed into this browser or one set on the server.
   const aiProviderReady = useCallback((provider: AiProvider) => Boolean(aiKeys[provider].trim()) || (aiStatus?.state === 'ok' && aiStatus.providers[provider]), [aiKeys, aiStatus]);
 
-  const toggleHomeBar = useCallback(() => {
-    setHomeBarEnabled((current) => {
-      try { window.localStorage.setItem(homeBarKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
-      return !current;
-    });
+  const updateBottomNav = useCallback((nav: BottomNav) => {
+    setBottomNav(nav);
+    try { window.localStorage.setItem(bottomNavKey, nav); } catch { /* storage unavailable */ }
   }, []);
   useEffect(() => {
     const offer = (event: Event) => { event.preventDefault(); setInstallPrompt(event as Event & { prompt: () => Promise<void> }); };
@@ -1419,7 +1425,9 @@ export default function Home() {
     const root = document.documentElement;
     if (homeBarEnabled) root.dataset.homeBar = '1';
     else delete root.dataset.homeBar;
-  }, [homeBarEnabled]);
+    if (bottomNav === 'guide') root.dataset.guideBar = '1';
+    else delete root.dataset.guideBar;
+  }, [bottomNav, homeBarEnabled]);
   const goToSection = useCallback((section: 'overview' | 'positions' | 'returns') => {
     setActiveSection(section);
     window.history.replaceState(null, '', `#${section}`);
@@ -2599,6 +2607,8 @@ export default function Home() {
     };
   }, [allocationDate, allocationHistory, currentAllocationDate, openTrades]);
   const allocation = allocationSnapshot.items as AllocationItem[];
+  // The quick sheet's 個股研究 opens the ticker in view, else the largest position.
+  const researchTicker = drilledTicker ?? allocation.flatMap((item) => item.members).find((member) => member !== 'USD' && member !== 'JPY') ?? null;
   const allocationFallbackLabel = allocationGroupSelection?.label ?? allocation.find((item) => drilledTicker && item.members.includes(drilledTicker))?.label ?? null;
   const activeAllocationLabel = allocationHoveredLabel ?? allocationPinnedLabel ?? allocationFallbackLabel;
   const activeAllocationItem = allocation.find((item) => item.label === activeAllocationLabel) ?? null;
@@ -3007,7 +3017,7 @@ export default function Home() {
         </div>
         <div className="header-actions">
           <LanguageSwitcher />
-          {notifyEnabled && <NotifyCenter theme={wafuTheme} items={noticeItems} />}
+          {notifyEnabled && <NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} />}
           {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
           <span className={`market-pill ${marketOpen ? 'is-open' : ''}`}><span />{marketOpen ? '美股交易中' : '非交易時段'}</span>
           <button className="secondary-button" type="button" onClick={() => refreshQuotes()} disabled={refreshing}>{refreshing ? '更新中…' : '↻ 更新報價'}</button>
@@ -3278,12 +3288,14 @@ export default function Home() {
                 <button type="button" className={`settings-toggle ${assistantPrefs.enabled ? 'is-on' : ''}`} role="switch" aria-checked={assistantPrefs.enabled} onClick={() => updateAssistantPrefs({ enabled: !assistantPrefs.enabled })}><i /><b>{assistantPrefs.enabled ? '開啟' : '關閉'}</b></button>
               </div>
             </section>
-            <section className={`settings-feature-card home-bar-settings-card ${homeBarEnabled ? 'is-enabled' : ''}`}>
-              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帖</span><div><p>Phone menu</p><h3>手機底部選單</h3></div><span className="settings-feature-status">{homeBarEnabled ? '已開啟' : '已關閉'}</span></div>
-              <p>手機上把主選單放到畫面底部（總覽、持倉、收益、AI、設定、更多），目前所在的項目浮著角色光環；估值與背景在「更多」裡。</p>
-              <div className="settings-feature-actions">
-                <span>關閉後改回頁面上方的選單列；電腦版不受影響。</span>
-                <button type="button" className={`settings-toggle ${homeBarEnabled ? 'is-on' : ''}`} role="switch" aria-checked={homeBarEnabled} onClick={toggleHomeBar}><i /><b>{homeBarEnabled ? '開啟' : '關閉'}</b></button>
+            <section className={`settings-feature-card home-bar-settings-card ${bottomNav !== 'off' ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帖</span><div><p>Bottom navigation</p><h3>底部導覽</h3></div><span className="settings-feature-status">{bottomNav === 'guide' ? '引導條' : bottomNav === 'menu' ? '選單列' : '已關閉'}</span></div>
+              <p>引導條：畫面下方一條細線，左右滑切換區塊、點一下回頂部、往上滑或長按開啟快捷面板（新增交易、匯入、AI、個股研究、通知、設定、音樂）；鍵盤可用 ← → 與 Enter。選單列：手機上把總覽、持倉、收益、AI、設定、更多放在底部，直接點選。</p>
+              <div className="wafu-intro-row bottom-nav-row">
+                <span id="bottom-nav-label">樣式</span>
+                <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="bottom-nav-label">
+                  {([['guide', '引導條（預設）'], ['menu', '選單列（手機）'], ['off', '關閉']] as const).map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={bottomNav === value} className={bottomNav === value ? 'active' : ''} onClick={() => updateBottomNav(value)}>{label}</button>)}
+                </div>
               </div>
               <div className="app-install-hint">
                 <b>安裝成手機 App</b>
@@ -3569,6 +3581,20 @@ export default function Home() {
       </div>}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
       <WafuBackdrop theme={wafuTheme} paused={Boolean(intro)} />
+      {bottomNav === 'guide' && <GuideBar
+        theme={wafuTheme}
+        sections={guideSections}
+        current={activeSection}
+        onGo={(id) => { if (id === 'valuation') openValuation(drilledTicker ?? valuationTicker); else if (id === 'overview' || id === 'positions' || id === 'returns') goToSection(id); }}
+        actions={[
+          { id: 'add', label: '新增交易', icon: '＋', run: () => setEditor(blankTrade()) },
+          { id: 'import', label: '匯入 CSV／截圖', icon: '⇪', run: () => { void loadTradeImportDialog(); setImportOpen(true); } },
+          ...(assistantOn ? [{ id: 'ai', label: 'AI 助手', icon: '✦', run: () => setAssistantOpen(true) }] : []),
+          ...(researchTicker ? [{ id: 'research', label: '個股研究', icon: '◎', run: () => openTickerDetails(researchTicker) }] : []),
+          ...(notifyEnabled ? [{ id: 'notify', label: '通知與休市', icon: '◔', run: () => setNotifySignal((value) => value + 1) }] : []),
+          { id: 'settings', label: '設定', icon: '⚙', run: () => setSettingsOpen(true) },
+        ]}
+      />}
       {homeBarEnabled && <HomeBar
         theme={wafuTheme}
         active={activeSection}

@@ -54,6 +54,8 @@ import NotifyCenter from '@/components/wafu/NotifyCenter';
 import GuideBar from '@/components/wafu/GuideBar';
 import RailFoot from '@/components/wafu/RailFoot';
 import { MetricsGrid, MonthlyHeatmap } from '@/components/wafu/PerfMetrics';
+import { VisualFieldPicker, defaultVisualFields, loadVisualFields, saveVisualFields, visualFields as visualFieldList } from '@/components/wafu/VisualFields';
+import type { VisualFieldId } from '@/components/wafu/VisualFields';
 import { computeRiskMetrics, cumulativeOf, drawdownOf, monthlyGrid } from '@/lib/wafu/metrics';
 import HankoTile from '@/components/wafu/HankoTile';
 import ResearchDrawer from '@/components/wafu/ResearchDrawer';
@@ -108,7 +110,7 @@ type PositionViewMode = 'visual' | 'details';
 type AllocationChartMode = 'donut' | 'bars';
 type SymbolSuggestion = { symbol: string; name: string; exchange: string; type: string };
 type QuoteSession = 'pre' | 'regular' | 'post' | 'closed';
-type LiveQuote = { ticker: string; price: number; marketTime: number | null; session: QuoteSession; currency: string; regularPrice: number; extendedPrice: number | null; previousClose: number | null; regularChange: number | null; regularChangePercent: number | null; extendedChange: number | null; extendedChangePercent: number | null; change: number | null; changePercent: number | null; sparkline: number[] };
+type LiveQuote = { ticker: string; price: number; marketTime: number | null; session: QuoteSession; currency: string; regularPrice: number; extendedPrice: number | null; previousClose: number | null; regularChange: number | null; regularChangePercent: number | null; extendedChange: number | null; extendedChangePercent: number | null; change: number | null; changePercent: number | null; sparkline: number[]; yearHigh?: number | null; yearLow?: number | null };
 type UnderlyingQuote = { price: number; session: QuoteSession; marketTime: number | null; fetchedAt: number };
 type OptionRowAnalytics = { right: OptionRight; direction: 1 | -1; strike: number | null; dte: number | null; underlying: number | null; analytics: OptionPositionAnalytics | null };
 type AllocationHistory = {
@@ -983,6 +985,19 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, ra
   && previous.lotSavingId === next.lotSavingId
   && previous.valuationOpen === next.valuationOpen);
 
+/** The 欄位 strip under a visual position; a field without a value for this position is left out. */
+function VisualFieldStrip({ fields, values }: { fields: VisualFieldId[]; values: Partial<Record<VisualFieldId, { text: string; tone?: 'positive' | 'negative'; range?: number; title?: string }>> }) {
+  const shown = visualFieldList.filter((field) => fields.includes(field.id) && values[field.id]);
+  if (!shown.length) return null;
+  return <div className="wafu-vstrip">{shown.map((field) => {
+    const value = values[field.id]!;
+    return <span key={field.id} className={value.tone ?? ''} title={field.hint}>
+      <small>{field.label}</small>
+      {value.range !== undefined ? <><i className="wafu-vrange"><em style={{ left: `${value.range * 100}%` }} /></i><b>{value.text}</b></> : <b>{value.text}</b>}
+    </span>;
+  })}</div>;
+}
+
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
@@ -992,6 +1007,9 @@ export default function Home() {
   const [rangeMode, setRangeMode] = useState<RangeMode>('month');
   const [returnHoverIndex, setReturnHoverIndex] = useState<number | null>(null);
   const [returnView, setReturnView] = useState<'period' | 'cum' | 'dd' | 'heat'>('period');
+  const [visualFieldSet, setVisualFieldSet] = useState<VisualFieldId[]>(defaultVisualFields);
+  useEffect(() => { setVisualFieldSet(loadVisualFields()); }, []);
+  const updateVisualFields = useCallback((next: VisualFieldId[]) => { setVisualFieldSet(next); saveVisualFields(next); }, []);
   const [macroRangeMode, setMacroRangeMode] = useState<RangeMode>('month');
   const [macroMarketGroup, setMacroMarketGroup] = useState<MacroMarketGroup>('rates');
   const [macroDeckDirection, setMacroDeckDirection] = useState<'up' | 'down'>('up');
@@ -3003,6 +3021,40 @@ export default function Home() {
     writeStoredTradeColumns(next);
   }, []);
 
+  // 欄位 values for one visual position: options are summed or take the nearest / riskiest leg.
+  function visualFieldValues(position: (typeof visualPositions)[number], openItems: typeof filteredTrades, snapshot: LiveQuote | undefined, price: number): Partial<Record<VisualFieldId, { text: string; tone?: 'positive' | 'negative'; range?: number; title?: string }>> {
+    const values: Partial<Record<VisualFieldId, { text: string; tone?: 'positive' | 'negative'; range?: number; title?: string }>> = {};
+    const signed = (value: number) => value >= 0 ? 'positive' as const : 'negative' as const;
+    const firstOpen = openItems.reduce((earliest, item) => !earliest || item.trade.openDate < earliest ? item.trade.openDate : earliest, '');
+    const held = firstOpen ? Math.max(1, calendarDaysBetween(firstOpen, todayKey) ?? 1) : null;
+    if (held !== null) values.held = { text: `${held} 天` };
+    if (held !== null && position.capital > 0) { const annual = position.roc * 365 / held; values.annual = { text: cappedAnnualized(annual), tone: signed(annual) }; }
+    const high = snapshot?.yearHigh ?? null, low = snapshot?.yearLow ?? null;
+    if (high !== null && low !== null && high > low) values.range = { text: `${nativeMoney(position.ticker, low)} – ${nativeMoney(position.ticker, high)}`, range: Math.max(0, Math.min(1, (price - low) / (high - low))) };
+    let delta = 0, theta = 0, hasGreeks = false, dte: number | null = null, otm: number | null = null, assign: number | null = null;
+    for (const { trade } of openItems) {
+      const option = optionRows.get(trade.id);
+      if (!option) {
+        if (trade.type === 'SDI' || trade.event === 'STOCK') { delta += Math.abs(trade.quantity) * (trade.type.toLowerCase() === 'sell' ? -1 : 1); hasGreeks = true; }
+        continue;
+      }
+      if (option.dte !== null && (dte === null || option.dte < dte)) dte = option.dte;
+      const analytics = option.analytics;
+      if (analytics?.positionDelta != null) { delta += analytics.positionDelta; hasGreeks = true; }
+      if (analytics?.positionTheta != null) theta += analytics.positionTheta;
+      if (analytics?.otmPercent != null && (otm === null || analytics.otmPercent < otm)) otm = analytics.otmPercent;
+      if (analytics?.greeks && (assign === null || analytics.greeks.probabilityItm > assign)) assign = analytics.greeks.probabilityItm;
+    }
+    if (dte !== null) values.dte = { text: `${dte} 天` };
+    if (hasGreeks) values.delta = { text: `${signedDecimal(delta)} 股` };
+    if (theta) values.theta = { text: signedMoney(theta), tone: signed(theta) };
+    if (otm !== null) values.moneyness = { text: signedPercent(otm), tone: signed(otm) };
+    if (assign !== null) values.assign = { text: percent.format(assign) };
+    const openCapital = openItems.reduce((sum, item) => sum + investedCapitalUsd(item.trade, usdJpyRate), 0);
+    if (openCapital > 0 && capitalAtRisk > 0) values.capital = { text: percent.format(openCapital / capitalAtRisk) };
+    return values;
+  }
+
   // One details-table cell. The original eleven columns render exactly as before; the optional
   // columns show "—" wherever a value does not apply (stock, cash, closed or unpriced options).
   function renderTradeCell(columnId: TradeColumnId, { trade, pnl, roc, days }: (typeof filteredTrades)[number]) {
@@ -3296,7 +3348,7 @@ export default function Home() {
           </div>
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
           {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}
-          <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['cash', '現金'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? portfolioTrades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : portfolioTrades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : mode === 'cash' ? isCashTrade(trade) : trade.type !== 'SDI' && !isCashTrade(trade)).length}</span></button>)}{positionView === 'details' && <TradeColumnPicker columns={tradeColumnSet} onChange={updateTradeColumns} />}</div>
+          <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['cash', '現金'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? portfolioTrades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : portfolioTrades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : mode === 'cash' ? isCashTrade(trade) : trade.type !== 'SDI' && !isCashTrade(trade)).length}</span></button>)}{positionView === 'details' && <TradeColumnPicker columns={tradeColumnSet} onChange={updateTradeColumns} />}{positionView === 'visual' && <VisualFieldPicker fields={visualFieldSet} onChange={updateVisualFields} />}</div>
           {optionRisk && <OptionRiskStrip risk={optionRisk} />}
           {positionView === 'visual' ? <div className="visual-positions">
             <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>成本均價／現價</span><span>標的價格波動／今日漲跌</span><span>損益／報酬率</span><span>組合占比</span></div>
@@ -3339,6 +3391,7 @@ export default function Home() {
                 {cashPosition ? <div className="visual-market-move neutral cash-market-move"><span className="cash-balance-icon">◎</span><div><span>資料來源</span><strong>不需報價</strong><small>{position.items.some((item) => item.trade.derived) ? '含稅後股息自動現金' : '手動現金餘額'}</small></div></div> : <div className={`visual-market-move ${marketChangePercent === null ? 'neutral' : marketChangePercent >= 0 ? 'positive' : 'negative'}`}><PriceSparkline ticker={position.ticker} values={snapshot?.sparkline ?? []} changePercent={marketChangePercent} /><div><span>{marketMoveLabel}</span><strong>{marketChangePercent === null ? '等待報價' : `${marketChangePercent >= 0 ? '+' : ''}${precisePercent.format(marketChangePercent)}`}</strong><small>{marketChange === null ? '—' : `${nativeMoney(position.ticker, marketDisplayPrice)} · ${marketChange >= 0 ? '+' : ''}${nativeMoney(position.ticker, marketChange)}`}</small></div></div>}
                 <div className={`visual-gain ${cashPosition ? 'neutral' : position.pnl >= 0 ? 'positive' : 'negative'}`}><strong>{cashPosition ? money.format(0) : `${position.pnl >= 0 ? '+' : ''}${money.format(position.pnl)}`}</strong><span>{cashPosition ? '現金部位' : `${position.roc >= 0 ? '▲' : '▼'} ${percent.format(Math.abs(position.roc))}`}</span></div>
                 <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%` }} /></b></div>
+                {!cashPosition && visualFieldSet.length > 0 && <VisualFieldStrip fields={visualFieldSet} values={visualFieldValues(position, openPositionItems, snapshot, regularDisplayPrice)} />}
               </article>;
             })}
           </div> : <div className="table-wrap">

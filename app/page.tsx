@@ -54,6 +54,7 @@ import HomeBar from '@/components/wafu/HomeBar';
 import type { NoticeItem } from '@/components/wafu/NotifyCenter';
 import WafuMediaCard from '@/components/wafu/WafuMediaCard';
 import { useMediaPrefs } from '@/lib/wafu/media';
+import { applyPerf, probeFramesOnce } from '@/lib/wafu/perf';
 import type { AssistantPrefs, PortfolioSnapshot, SnapshotPosition } from '@/lib/ai-assistant';
 import { defaultAssistantPrefs, loadAssistantPrefs, saveAssistantPrefs } from '@/lib/ai-assistant';
 import type { WafuPreference, WafuTheme } from '@/lib/wafu/theme';
@@ -1272,6 +1273,14 @@ export default function Home() {
       });
     } catch { liftIntroVeil(); /* storage unavailable: keep the defaults */ }
   }, []);
+
+  // 效能模式: the boot script already set it; this adds the device check, and measures once after
+  // the page settles when nothing has measured this device yet (the opening does it when it plays).
+  useEffect(() => {
+    applyPerf();
+    if (intro) return;
+    return probeFramesOnce();
+  }, [intro]);
 
   const toggleEarnings = useCallback(() => {
     setEarningsEnabled((current) => {

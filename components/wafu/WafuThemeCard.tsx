@@ -3,12 +3,19 @@
 import { useState } from 'react';
 import type { WafuIntroPreference } from '@/lib/wafu/intro';
 import { introLiteDetected, setIntroLiteDetected } from '@/lib/wafu/intro';
+import type { PerfPreference } from '@/lib/wafu/perf';
+import { resetSlowDevice, savePerfPreference, usePerfLite, usePerfPreference } from '@/lib/wafu/perf';
 import type { WafuPreference } from '@/lib/wafu/theme';
 
 const options: ReadonlyArray<{ id: WafuPreference; label: string; note: string; mark: string }> = [
   { id: 'kikyo', label: '桔梗', note: '夜的書齋 · 紺與金', mark: '桔' },
   { id: 'shigure', label: '時雨', note: '雪夜湯宿 · 青與琥珀', mark: '雨' },
   { id: 'random', label: '隨機', note: '每次開啟時選一個', mark: '？' },
+];
+const perfOptions: ReadonlyArray<{ id: PerfPreference; label: string }> = [
+  { id: 'auto', label: '自動' },
+  { id: 'on', label: '開啟' },
+  { id: 'off', label: '關閉' },
 ];
 const introOptions: ReadonlyArray<{ id: WafuIntroPreference; label: string }> = [
   { id: 'always', label: '每次開啟' },
@@ -29,6 +36,8 @@ export default function WafuThemeCard({ preference, onChange, intro, onIntroChan
   const current = options.find((option) => option.id === preference) ?? options[0];
   // The card only renders inside the open settings panel, so storage is safe to read here.
   const [liteDetected, setLiteDetected] = useState(introLiteDetected);
+  const perf = usePerfPreference();
+  const perfLite = usePerfLite();
   return <section className="settings-feature-card wafu-settings-card is-enabled">
     <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">和</span><div><p>Interface theme</p><h3>和風介面</h3></div><span className="settings-feature-status">{current.label}</span></div>
     <p>桔梗與時雨兩個主題：明朝字體、角色光環與和紙質感。兩者只差外觀，資料與功能完全相同；選擇保存在這個瀏覽器。</p>
@@ -47,7 +56,14 @@ export default function WafuThemeCard({ preference, onChange, intro, onIntroChan
         <button type="button" className="wafu-intro-preview" onClick={onPreviewIntro}>預覽開場</button>
       </div>
       <label className="wafu-intro-lite"><input type="checkbox" checked={liteAuto} onChange={(event) => onLiteAutoChange(event.target.checked)} /><span>裝置較慢時自動改用輕量開場（不顯示水墨）</span></label>
-      {liteAuto && liteDetected && <p className="wafu-intro-note">這台裝置已改用輕量開場。<button type="button" onClick={() => { setIntroLiteDetected(false); setLiteDetected(false); }}>重新偵測</button></p>}
+      {liteAuto && liteDetected && <p className="wafu-intro-note">這台裝置已改用輕量開場。<button type="button" onClick={() => { setIntroLiteDetected(false); setLiteDetected(false); resetSlowDevice(); }}>重新偵測</button></p>}
+      <div className="wafu-intro-row">
+        <span id="wafu-perf-label">效能模式</span>
+        <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="wafu-perf-label">
+          {perfOptions.map((option) => <button key={option.id} type="button" role="radio" aria-checked={perf === option.id} className={perf === option.id ? 'active' : ''} onClick={() => savePerfPreference(option.id)}>{option.label}</button>)}
+        </div>
+      </div>
+      <p className="wafu-intro-note">{perfLite ? '效能模式開啟中：' : '效能模式關閉中：'}開啟時停用光束、雪、背景視差與光環漂浮，頂列不做模糊；數字、圖表與所有按鈕不變。「自動」會在裝置較慢時開啟。</p>
     </div>
   </section>;
 }

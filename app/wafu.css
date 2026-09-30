@@ -4,7 +4,7 @@
  */
 :root[data-wafu='kikyo'] {
   --wa-bg: #0c0d11; --wa-bg-rgb: 12 13 17;
-  --wa-panel: rgb(17 19 26 / .84); --wa-panel-solid: #14161d; --wa-panel-hi: rgb(30 33 43 / .96);
+  --wa-panel: rgb(17 19 26 / .88); --wa-panel-solid: #14161d; --wa-panel-hi: rgb(30 33 43 / .96);
   --wa-raise: rgb(255 255 255 / .035); --wa-raise-rgb: 255 255 255;
   --wa-line: rgb(206 214 232 / .1); --wa-line-2: rgb(206 214 232 / .2); --wa-line-2-rgb: 206 214 232;
   --wa-ink: #ece8df; --wa-ink-rgb: 236 232 223; --wa-ink-2: #c9c5bc; --wa-ink-2-rgb: 201 197 188;
@@ -27,7 +27,7 @@
 }
 :root[data-wafu='shigure'] {
   --wa-bg: #07141a; --wa-bg-rgb: 7 20 26;
-  --wa-panel: rgb(11 30 38 / .8); --wa-panel-solid: #0e222a; --wa-panel-hi: rgb(20 46 55 / .96);
+  --wa-panel: rgb(11 30 38 / .86); --wa-panel-solid: #0e222a; --wa-panel-hi: rgb(20 46 55 / .96);
   --wa-raise: rgb(190 235 235 / .04); --wa-raise-rgb: 190 235 235;
   --wa-line: rgb(190 235 235 / .11); --wa-line-2: rgb(190 235 235 / .22); --wa-line-2-rgb: 190 235 235;
   --wa-ink: #eef7f6; --wa-ink-rgb: 238 247 246; --wa-ink-2: #cfe0df; --wa-ink-2-rgb: 207 224 223;
@@ -146,7 +146,7 @@
 :root[data-wafu] .hero-title-editor input { color: var(--wa-ink); background: var(--wa-panel-solid); border-color: var(--wa-accent); border-radius: var(--wa-r); box-shadow: none; font-family: var(--wa-f-title); letter-spacing: .06em; }
 
 /* ---------- Cards ---------- */
-:root[data-wafu] .metric-card, :root[data-wafu] .panel { background: var(--wa-panel); border: 1px solid var(--wa-line); box-shadow: inset 0 1px 0 rgb(255 255 255 / .04), 0 20px 50px -30px rgb(0 0 0 / .8); backdrop-filter: blur(14px) saturate(1.1); -webkit-backdrop-filter: blur(14px) saturate(1.1); }
+:root[data-wafu] .metric-card, :root[data-wafu] .panel { background: var(--wa-panel); border: 1px solid var(--wa-line); box-shadow: inset 0 1px 0 rgb(255 255 255 / .04), 0 20px 50px -30px rgb(0 0 0 / .8); }
 :root[data-wafu] .metric-card { border-radius: var(--wa-r-lg); }
 :root[data-wafu] .panel { border-radius: var(--wa-r-lg); }
 :root[data-wafu] .metric-card:before { display: none; }

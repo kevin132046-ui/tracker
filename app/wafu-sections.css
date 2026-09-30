@@ -149,3 +149,32 @@
 /* ---------- 游標光暈: panels light up softly where the pointer is (prototype) ---------- */
 :root[data-wafu] .panel:hover, :root[data-wafu] .metric-card:hover { background-image: radial-gradient(520px circle at var(--mx, -999px) var(--my, -999px), color-mix(in srgb, var(--wa-accent) 7%, transparent), transparent 62%); }
 :root[data-perf='lite'] .panel:hover, :root[data-perf='lite'] .metric-card:hover { background-image: none; }
+
+/* ---- 收益分析 views + 績效與風險指標 (from the prototype) ---- */
+:root[data-wafu] .wafu-return-views { margin: 14px 0 0; width: max-content; max-width: 100%; }
+:root[data-wafu] .wafu-return-views button { min-width: 52px; }
+.wafu-kpis { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--wa-line); }
+.wafu-kpis-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin-bottom: 10px; }
+.wafu-kpis-head h3 { margin: 0; font: 600 14px/1.3 var(--wa-f-display, serif); color: var(--wa-ink); letter-spacing: .04em; }
+.wafu-kpis-head span { color: var(--wa-muted); font-size: 11px; }
+.wafu-kpis-head button { margin-left: auto; border: 1px solid var(--wa-line); background: transparent; color: var(--wa-accent); border-radius: 999px; padding: 3px 11px; font-size: 11px; cursor: pointer; }
+.wafu-kpis-head button:hover { border-color: var(--wa-accent); }
+.wafu-kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.wafu-kpi { position: relative; display: grid; gap: 2px; padding: 9px 10px 8px 12px; border: 1px solid var(--wa-line); border-radius: 8px; background: color-mix(in srgb, var(--wa-raise) 70%, transparent); cursor: help; }
+.wafu-kpi::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 2px; border-radius: 2px; background: var(--wa-line); }
+.wafu-kpi.tone-good::before { background: var(--wa-up); }
+.wafu-kpi.tone-mid::before { background: var(--wa-gold); }
+.wafu-kpi.tone-weak::before { background: var(--wa-down); }
+.wafu-kpi > span { color: var(--wa-muted); font-size: 10.5px; letter-spacing: .03em; }
+.wafu-kpi > strong { color: var(--wa-ink); font: 600 17px/1.2 var(--wa-f-display, serif); font-variant-numeric: tabular-nums; }
+.wafu-kpi > small { color: var(--wa-muted); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wafu-heat-wrap { margin-top: 16px; overflow-x: auto; }
+.wafu-heat { width: 100%; min-width: 560px; border-collapse: separate; border-spacing: 3px; font-variant-numeric: tabular-nums; font-size: 11px; }
+.wafu-heat th { color: var(--wa-muted); font-weight: 500; padding: 2px 4px; }
+.wafu-heat tbody th { text-align: left; color: var(--wa-ink); font-family: var(--wa-f-display, serif); }
+.wafu-heat td { text-align: center; padding: 7px 2px; border-radius: 4px; color: var(--wa-ink); background: color-mix(in srgb, var(--wa-raise) 50%, transparent); }
+.wafu-heat td.wafu-heat-total { background: transparent; font-weight: 600; }
+.wafu-heat td.positive { color: var(--wa-up); }
+.wafu-heat td.negative { color: var(--wa-down); }
+.wafu-heat-empty { margin: 30px 0; text-align: center; color: var(--wa-muted); font-size: 12px; }
+@media (max-width: 640px) { .wafu-kpi-grid { grid-template-columns: repeat(2, 1fr); } .wafu-kpis-head button { margin-left: 0; } }

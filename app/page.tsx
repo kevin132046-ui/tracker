@@ -20,6 +20,7 @@ import {
   priceSymbolFor,
   rangeBuckets,
   timeWeightedReturnSeries,
+  dailyTimeWeightedReturns,
 } from '@/lib/performance';
 import type { AnnualRocSummary, CapitalBasis, PriceHistorySeries, RangeMode } from '@/lib/performance';
 import { addDaysToKey, dateKey, japaneseHolidays, parseDateKey, upcomingClosures, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
@@ -52,6 +53,8 @@ import MusicDock from '@/components/wafu/MusicDock';
 import NotifyCenter from '@/components/wafu/NotifyCenter';
 import GuideBar from '@/components/wafu/GuideBar';
 import RailFoot from '@/components/wafu/RailFoot';
+import { MetricsGrid, MonthlyHeatmap } from '@/components/wafu/PerfMetrics';
+import { computeRiskMetrics, cumulativeOf, drawdownOf, monthlyGrid } from '@/lib/wafu/metrics';
 import HankoTile from '@/components/wafu/HankoTile';
 import ResearchDrawer from '@/components/wafu/ResearchDrawer';
 import type { ResearchTab } from '@/components/wafu/ResearchDrawer';
@@ -988,6 +991,7 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [rangeMode, setRangeMode] = useState<RangeMode>('month');
   const [returnHoverIndex, setReturnHoverIndex] = useState<number | null>(null);
+  const [returnView, setReturnView] = useState<'period' | 'cum' | 'dd' | 'heat'>('period');
   const [macroRangeMode, setMacroRangeMode] = useState<RangeMode>('month');
   const [macroMarketGroup, setMacroMarketGroup] = useState<MacroMarketGroup>('rates');
   const [macroDeckDirection, setMacroDeckDirection] = useState<'up' | 'down'>('up');
@@ -2574,20 +2578,51 @@ export default function Home() {
     : estimatedReturnTickers.length
       ? `（估算：${estimatedReturnTickers.slice(0, 6).join('、')}${estimatedReturnTickers.length > 6 ? ` 等 ${estimatedReturnTickers.length} 檔` : ''}）`
       : '';
-  const chartStep = .05;
-  const chartValues = [...returnSeries.map((item) => item.value), ...activeBenchmarks.SPY, ...activeBenchmarks.BOXX].filter(Number.isFinite);
-  const chartStepCount = Math.max(1, Math.ceil(Math.max(0, ...chartValues.map(Math.abs)) / chartStep));
+  // 單期 / 累積 / 回撤 views of the same buckets; 回撤 has no BOXX line.
+  const viewValues = useMemo(() => {
+    const mine = returnSeries.map((item) => item.value);
+    if (returnView === 'cum') return { mine: cumulativeOf(mine), SPY: cumulativeOf(activeBenchmarks.SPY), BOXX: cumulativeOf(activeBenchmarks.BOXX) };
+    if (returnView === 'dd') return { mine: drawdownOf(mine), SPY: drawdownOf(activeBenchmarks.SPY), BOXX: [] as number[] };
+    return { mine, SPY: activeBenchmarks.SPY, BOXX: activeBenchmarks.BOXX };
+  }, [activeBenchmarks, returnSeries, returnView]);
+  // Metrics use trading periods only: weekends and the stretch before the first position are left out.
+  const riskMetrics = useMemo(() => {
+    const first = returnSeries.findIndex((item) => item.capital > 0);
+    if (first < 0) return null;
+    const rows = returnSeries.map((item, index) => ({ item, index })).filter(({ item, index }) => index >= first && (rangeMode !== 'day' || ![0, 6].includes(new Date(`${item.key}T00:00:00Z`).getUTCDay())));
+    if (rows.length < 2) return null;
+    return computeRiskMetrics({
+      labels: rows.map(({ item }) => item.label),
+      mine: rows.map(({ item }) => item.value),
+      spy: rows.map(({ index }) => activeBenchmarks.SPY[index] ?? 0),
+      boxx: rows.map(({ index }) => activeBenchmarks.BOXX[index] ?? 0),
+    }, rangeMode);
+  }, [activeBenchmarks, rangeMode, returnSeries]);
+  // 月曆 needs every day since the first trade, so it is only computed while that view is open.
+  const heatGrid = useMemo(() => {
+    if (returnView !== 'heat') return [];
+    const from = trades.reduce((earliest, trade) => trade.openDate && /^\d{4}-\d{2}-\d{2}$/.test(trade.openDate) && (!earliest || trade.openDate < earliest) ? trade.openDate : earliest, '');
+    if (!from) return [];
+    const daily = dailyTimeWeightedReturns(trades, { startDate: from, endDate: today(), usdJpyRate, prices: activePriceHistory?.series ?? null });
+    return monthlyGrid(daily.days);
+  }, [activePriceHistory, returnView, trades, usdJpyRate]);
+  const chartValues = [...viewValues.mine, ...viewValues.SPY, ...viewValues.BOXX].filter(Number.isFinite);
+  const chartPeak = Math.max(0, ...chartValues.map(Math.abs));
+  // Ticks stay at whole percents, at most five a side; 回撤 only draws the side below zero.
+  const chartStep = [.01, .02, .05, .1, .2, .5, 1].find((step) => chartPeak / step <= 5) ?? 1;
+  const chartStepCount = Math.max(1, Math.ceil(chartPeak / chartStep));
   const maxAbsReturn = chartStepCount * chartStep;
-  const chartY = (value: number) => 50 - (value / maxAbsReturn) * 50;
-  const chartTicks = Array.from({ length: chartStepCount * 2 + 1 }, (_, index) => (chartStepCount - index) * chartStep);
+  const chartTop = returnView === 'dd' ? 0 : maxAbsReturn;
+  const chartY = (value: number) => ((chartTop - value) / (chartTop + maxAbsReturn)) * 100;
+  const chartTicks = Array.from({ length: (returnView === 'dd' ? 0 : chartStepCount) + chartStepCount + 1 }, (_, index) => chartTop - index * chartStep);
   const pointsFor = (values: number[]) => values.map((value, index) => {
     const x = values.length === 1 ? 50 : (index / (values.length - 1)) * 100;
     const y = chartY(value);
     return `${x},${y}`;
   }).join(' ');
-  const chartPoints = pointsFor(returnSeries.map((item) => item.value));
-  const spyPoints = pointsFor(activeBenchmarks.SPY);
-  const boxxPoints = pointsFor(activeBenchmarks.BOXX);
+  const chartPoints = pointsFor(viewValues.mine);
+  const spyPoints = pointsFor(viewValues.SPY);
+  const boxxPoints = pointsFor(viewValues.BOXX);
   const rangeModeLabel = rangeMode === 'day' ? '日' : rangeMode === 'week' ? '週' : rangeMode === 'month' ? '月' : '年';
   const macroRangeModeLabel = macroRangeMode === 'day' ? '日' : macroRangeMode === 'week' ? '週' : macroRangeMode === 'month' ? '月' : '年';
   const macroTimeline = useMemo(() => rangeBuckets(macroRangeMode, today()), [macroRangeMode]);
@@ -3117,7 +3152,11 @@ export default function Home() {
                 {([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={rangeMode === mode ? 'selected' : ''} aria-pressed={rangeMode === mode} onClick={() => setRangeMode(mode)}>{label}</button>)}
               </div>
             </div>
-            <div className="return-summary"><strong>{percent.format(returnSeries.at(-1)?.value ?? 0)}</strong><span>最近一期報酬率</span><span className="return-cumulative">區間累積 <b className={returnAnalytics.cumulative >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(returnAnalytics.cumulative)}</b>（SPY {spyCumulative === null ? '—' : signedPrecisePercent(spyCumulative)}）</span><div className="benchmark-legend"><span><i className="portfolio-key" />我的組合</span><span><i className="spy-key" />SPY</span><span><i className="boxx-key" />BOXX</span></div></div>
+            <div className="return-summary"><strong>{percent.format(returnSeries.at(-1)?.value ?? 0)}</strong><span>最近一期報酬率</span><span className="return-cumulative">區間累積 <b className={returnAnalytics.cumulative >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(returnAnalytics.cumulative)}</b>（SPY {spyCumulative === null ? '—' : signedPrecisePercent(spyCumulative)}）</span><div className="benchmark-legend"><span><i className="portfolio-key" />我的組合</span><span><i className="spy-key" />SPY</span>{returnView !== 'dd' && <span><i className="boxx-key" />BOXX</span>}</div></div>
+            <div className="segmented wafu-return-views" role="group" aria-label="收益圖表檢視">
+              {([['period', '單期'], ['cum', '累積'], ['dd', '回撤'], ['heat', '月曆']] as const).map(([view, label]) => <button type="button" key={view} className={returnView === view ? 'selected' : ''} aria-pressed={returnView === view} onClick={() => { setReturnView(view); setReturnHoverIndex(null); }}>{label}</button>)}
+            </div>
+            {returnView === 'heat' ? <MonthlyHeatmap grid={heatGrid} loading={priceHistoryPending} /> : <>
             <div className="chart-shell">
               {chartTicks.map((tick) => <span key={`label-${tick.toFixed(4)}`} className="axis-label" style={{ top: `${chartY(tick)}%` }}>{tick > 0 ? '+' : ''}{Math.round(tick * 100)}%</span>)}
               <svg className="return-chart" viewBox="0 0 100 100" role="img" aria-label="日週月年收益率折線圖" preserveAspectRatio="none">
@@ -3129,15 +3168,17 @@ export default function Home() {
               </svg>
               <div className="return-markers" aria-hidden="true">{returnSeries.map((item, index) => {
                 const x = returnSeries.length === 1 ? 50 : (index / (returnSeries.length - 1)) * 100;
-                const y = chartY(item.value);
-                return <span key={item.key} className={item.value >= 0 ? 'point-positive' : 'point-negative'} style={{ left: `${x}%`, top: `${y}%` }} title={`${item.label}: ${percent.format(item.value)}`} />;
+                const value = viewValues.mine[index] ?? 0;
+                const y = chartY(value);
+                return <span key={item.key} className={value >= 0 && returnView !== 'dd' ? 'point-positive' : 'point-negative'} style={{ left: `${x}%`, top: `${y}%` }} title={`${item.label}: ${percent.format(value)}`} />;
               })}</div>
               {activeReturnHoverIndex !== null && (() => {
                 const item = returnSeries[activeReturnHoverIndex];
                 const x = returnSeries.length === 1 ? 50 : activeReturnHoverIndex / (returnSeries.length - 1) * 100;
-                const spyValue = activeBenchmarks.SPY[activeReturnHoverIndex] ?? 0;
-                const boxxValue = activeBenchmarks.BOXX[activeReturnHoverIndex] ?? 0;
-                return <><span className="return-hover-line" style={{ left: `${x}%` }} aria-hidden="true" /><div className={`return-chart-tooltip ${x < 18 ? 'align-left' : x > 82 ? 'align-right' : ''}`} style={{ left: `${x}%` }} role="status"><strong>{item.label}</strong><span><i className="portfolio-key" />我的組合 <b>{signedPrecisePercent(item.value)}</b></span><span><i className="spy-key" />SPY <b>{signedPrecisePercent(spyValue)}</b></span><span><i className="boxx-key" />BOXX <b>{signedPrecisePercent(boxxValue)}</b></span></div></>;
+                const mineValue = viewValues.mine[activeReturnHoverIndex] ?? 0;
+                const spyValue = viewValues.SPY[activeReturnHoverIndex] ?? 0;
+                const boxxValue = viewValues.BOXX[activeReturnHoverIndex];
+                return <><span className="return-hover-line" style={{ left: `${x}%` }} aria-hidden="true" /><div className={`return-chart-tooltip ${x < 18 ? 'align-left' : x > 82 ? 'align-right' : ''}`} style={{ left: `${x}%` }} role="status"><strong>{item.label}</strong><span><i className="portfolio-key" />我的組合 <b>{signedPrecisePercent(mineValue)}</b></span><span><i className="spy-key" />SPY <b>{signedPrecisePercent(spyValue)}</b></span>{boxxValue !== undefined && <span><i className="boxx-key" />BOXX <b>{signedPrecisePercent(boxxValue)}</b></span>}</div></>;
               })()}
               <div className="return-hover-zones" onMouseLeave={() => setReturnHoverIndex(null)}>{returnSeries.map((item, index) => {
                 const pointX = returnSeries.length === 1 ? 50 : index / (returnSeries.length - 1) * 100;
@@ -3145,10 +3186,12 @@ export default function Home() {
                 const nextX = index === returnSeries.length - 1 ? 100 : (index + 1) / (returnSeries.length - 1) * 100;
                 const left = index === 0 ? 0 : (previousX + pointX) / 2;
                 const right = index === returnSeries.length - 1 ? 100 : (pointX + nextX) / 2;
-                return <button type="button" key={`hover-${item.key}`} style={{ left: `${left}%`, width: `${right - left}%` }} aria-label={`${item.label}：我的組合 ${signedPrecisePercent(item.value)}，SPY ${signedPrecisePercent(activeBenchmarks.SPY[index] ?? 0)}，BOXX ${signedPrecisePercent(activeBenchmarks.BOXX[index] ?? 0)}`} onMouseEnter={() => setReturnHoverIndex(index)} onFocus={() => setReturnHoverIndex(index)} onBlur={() => setReturnHoverIndex(null)} onClick={() => setReturnHoverIndex(index)} />;
+                return <button type="button" key={`hover-${item.key}`} style={{ left: `${left}%`, width: `${right - left}%` }} aria-label={`${item.label}：我的組合 ${signedPrecisePercent(viewValues.mine[index] ?? 0)}，SPY ${signedPrecisePercent(viewValues.SPY[index] ?? 0)}${viewValues.BOXX[index] === undefined ? '' : `，BOXX ${signedPrecisePercent(viewValues.BOXX[index])}`}`} onMouseEnter={() => setReturnHoverIndex(index)} onFocus={() => setReturnHoverIndex(index)} onBlur={() => setReturnHoverIndex(null)} onClick={() => setReturnHoverIndex(index)} />;
               })}</div>
             </div>
             <div className="chart-dates">{returnSeries.map((item, index) => <span key={item.key} className={index !== 0 && index !== returnSeries.length - 1 && index % chartDateStep !== 0 ? 'hide-small-label' : ''}>{item.label}</span>)}</div>
+            </>}
+            {riskMetrics && <MetricsGrid m={riskMetrics} mode={rangeMode} />}
             <p className="return-method-note">時間加權報酬：每日損益 ÷ 當日占用資本；股票用 Yahoo 含息調整收盤，選擇權以進出場價線性估算{returnEstimateNote}</p>
             <section className="macro-market-section" aria-labelledby="macro-market-title">
               <div className="macro-market-heading"><div><p className="eyebrow">Macro price monitor</p><h3 id="macro-market-title">{macroMarketGroup === 'rates' ? '匯率與美債殖利率' : '黃金與原油期貨'}</h3></div><div className="macro-market-actions"><button type="button" className="macro-deck-toggle" onClick={() => showMacroMarketGroup(macroMarketGroup === 'rates' ? 'commodities' : 'rates', macroMarketGroup === 'rates' ? 'up' : 'down')} aria-label={macroMarketGroup === 'rates' ? '向上切換至黃金與原油期貨' : '向下切換至匯率與美債殖利率'}><span aria-hidden="true">{macroMarketGroup === 'rates' ? '↑' : '↓'}</span><b>{macroMarketGroup === 'rates' ? '黃金／原油' : '美元／美債'}</b><i aria-hidden="true"><em className={macroMarketGroup === 'rates' ? 'active' : ''} /><em className={macroMarketGroup === 'commodities' ? 'active' : ''} /></i></button><div className="segmented macro-range-switch" role="group" aria-label="宏觀歷史期間">{([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={macroRangeMode === mode ? 'selected' : ''} aria-pressed={macroRangeMode === mode} onClick={() => setMacroRangeMode(mode)}>{label}</button>)}</div><button type="button" className="macro-refresh-button" disabled={macroLoading} onClick={() => { macroRefreshRequestedRef.current = true; setMacroRefreshKey((current) => current + 1); }}>↻ 更新</button><span>美東 {macroUpdatedLabel} · 每 60 秒</span></div></div>

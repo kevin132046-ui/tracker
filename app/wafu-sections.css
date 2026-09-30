@@ -258,3 +258,9 @@
 .wafu-curve text { fill: var(--wa-ink); font-size: 5.5px; font-variant-numeric: tabular-nums; }
 .wafu-curve text.tenor { fill: var(--wa-muted); font-size: 5px; letter-spacing: .05em; }
 .wafu-curve-empty { margin: 14px 0 8px; color: var(--wa-muted); font-size: 11px; text-align: center; }
+
+/* Market pill: 盤前 / 盤後 light the lamp amber (a quieter glow than the red of the open session). */
+:root[data-wafu] .market-pill.is-pre, :root[data-wafu] .market-pill.is-post { color: var(--wa-ink); border-color: color-mix(in srgb, #e0a84a 35%, var(--wa-line)); background: rgb(0 0 0 / .22); }
+:root[data-wafu] .market-pill.is-pre > span, :root[data-wafu] .market-pill.is-post > span { background: #e0a84a; border-color: #e0a84a; box-shadow: 0 0 8px rgb(224 168 74 / .75); animation: wafu-tube 3s infinite; }
+:root[data-perf='lite'] .market-pill.is-pre > span, :root[data-perf='lite'] .market-pill.is-post > span { animation: none; }
+@media (prefers-reduced-motion: reduce) { :root[data-wafu] .market-pill.is-pre > span, :root[data-wafu] .market-pill.is-post > span { animation: none; } }

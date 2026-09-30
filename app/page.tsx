@@ -53,6 +53,8 @@ import NotifyCenter from '@/components/wafu/NotifyCenter';
 import type { NoticeItem } from '@/components/wafu/NotifyCenter';
 import WafuMediaCard from '@/components/wafu/WafuMediaCard';
 import { useMediaPrefs } from '@/lib/wafu/media';
+import type { AssistantPrefs, PortfolioSnapshot, SnapshotPosition } from '@/lib/ai-assistant';
+import { defaultAssistantPrefs, loadAssistantPrefs, saveAssistantPrefs } from '@/lib/ai-assistant';
 import type { WafuPreference, WafuTheme } from '@/lib/wafu/theme';
 import { applyWafu, defaultWafuPreference, loadWafuPreference, resolveWafu, saveWafuPreference } from '@/lib/wafu/theme';
 import type { WafuIntroPreference } from '@/lib/wafu/intro';
@@ -195,6 +197,9 @@ const DcfCalculator = lazy(loadDcfCalculator);
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
 const TradeImportDialog = lazy(loadTradeImportDialog);
 const WafuOpening = lazy(loadWafuOpening);
+// The AI assistant panel is only fetched when it is opened.
+const loadAssistantPanel = () => import('@/components/wafu/AssistantPanel');
+const AssistantPanel = lazy(loadAssistantPanel);
 
 const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
 const companyNames: Record<string, string> = {
@@ -1000,6 +1005,8 @@ export default function Home() {
   // The opening playing now (on load, or previewed from the settings).
   const [intro, setIntro] = useState<{ theme: WafuTheme; reduced: boolean } | null>(null);
   const wafuMedia = useMediaPrefs();
+  const [assistantPrefs, setAssistantPrefs] = useState<AssistantPrefs>(defaultAssistantPrefs);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [aiLookups, setAiLookups] = useState<Record<string, { loading: boolean; suggestion?: AiEarningsSuggestion; error?: string }>>({});
   const [yahooEarnings, setYahooEarnings] = useState<{ key: string; events: Record<string, EarningsEvent>; failed: string[] } | null>(null);
   const [brokerHubEnabled, setBrokerHubEnabled] = useState(false);
@@ -1224,6 +1231,7 @@ export default function Home() {
       const wafu = loadWafuPreference();
       const wafuShown = resolveWafu(wafu);
       const introPreference = loadWafuIntro();
+      const assistant = loadAssistantPrefs();
       const liteAuto = loadIntroLiteAuto();
       // The boot script veiled the page when the opening should play; otherwise lift any veil now.
       const playIntro = introPending() ? { theme: wafuShown, reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches } : null;
@@ -1243,6 +1251,7 @@ export default function Home() {
         setWafuTheme(wafuShown);
         applyWafu(wafuShown);
         setWafuIntro(introPreference);
+        setAssistantPrefs(assistant);
         setIntroLiteAuto(liteAuto);
         setIntro(playIntro);
         setAnalysisQuestions(questions);
@@ -1330,6 +1339,15 @@ export default function Home() {
     setWafuTheme(theme);
     applyWafu(theme);
   }, []);
+  const updateAssistantPrefs = useCallback((change: Partial<AssistantPrefs>) => {
+    setAssistantPrefs((current) => {
+      const next = { ...current, ...change };
+      saveAssistantPrefs(next);
+      if (!next.enabled) setAssistantOpen(false);
+      return next;
+    });
+  }, []);
+  const closeAssistant = useCallback(() => setAssistantOpen(false), []);
   const updateWafuIntro = useCallback((preference: WafuIntroPreference) => { setWafuIntro(preference); saveWafuIntro(preference); }, []);
   const updateIntroLiteAuto = useCallback((on: boolean) => { setIntroLiteAuto(on); saveIntroLiteAuto(on); }, []);
   const previewIntro = useCallback(() => {
@@ -2391,6 +2409,47 @@ export default function Home() {
   const currentRocYear = Number(today().slice(0, 4));
   const annualRocSummary = useMemo(() => buildAnnualRocSummary(closedTrades, currentRocYear, usdJpyRate), [closedTrades, currentRocYear, usdJpyRate]);
 
+  // What the AI assistant sees: the open positions and totals this page shows (no notes or names).
+  const buildAssistantSnapshot = useCallback((): PortfolioSnapshot => {
+    const round = (value: number, digits = 2) => Number(value.toFixed(digits));
+    const positions = openTrades.map(({ trade, pnl, marketValue }): SnapshotPosition => {
+      const right = optionRightOf(trade);
+      const row = right ? optionRows.get(trade.id) : undefined;
+      return {
+        ticker: trade.ticker || (isCashTrade(trade) ? 'USD' : '—'),
+        kind: isCashTrade(trade) ? 'cash' : right === 'put' ? 'put' : right === 'call' ? 'call' : isStockTrade(trade) || isYenTrade(trade) ? 'stock' : 'other',
+        side: isShortTrade(trade) ? 'short' : 'long',
+        quantity: trade.quantity,
+        strike: right ? trade.strike : null,
+        expiry: right ? trade.expiryDate : null,
+        daysToExpiry: row?.dte ?? null,
+        entryPrice: trade.entryPrice,
+        currentPrice: trade.currentPrice,
+        underlyingPrice: row?.underlying ?? null,
+        marketValueUsd: round(marketValue),
+        pnlUsd: round(pnl),
+        currency: isYenTrade(trade) ? 'JPY' : 'USD',
+      };
+    });
+    const year = currentRocYear;
+    return {
+      asOf: todayKey,
+      usdJpy: usdJpyRate > 0 ? round(usdJpyRate, 3) : null,
+      totals: { marketValueUsd: round(trackedValue), openPnlUsd: round(openPnl), capitalUsd: round(capitalAtRisk) },
+      positions,
+      closed: {
+        count: closedTrades.length,
+        realizedUsd: round(closedTrades.reduce((sum, item) => sum + item.pnl, 0)),
+        yearRealizedUsd: round(closedTrades.filter((item) => item.trade.closeDate?.startsWith(String(year))).reduce((sum, item) => sum + item.pnl, 0)),
+        year,
+      },
+      dividends: dividendSettings.enabled ? {
+        usdNet: round(dividendCash.USD.net), jpyNet: round(dividendCash.JPY.net, 0),
+        usdPending: round(dividendPending?.USD.net ?? 0), jpyPending: round(dividendPending?.JPY.net ?? 0, 0),
+      } : null,
+    };
+  }, [capitalAtRisk, closedTrades, currentRocYear, dividendCash, dividendPending, dividendSettings.enabled, openPnl, openTrades, optionRows, todayKey, trackedValue, usdJpyRate]);
+
   const activePriceHistory = priceHistory && priceHistory.key === priceHistoryKey ? priceHistory : null;
   const priceHistoryPending = Boolean(priceHistoryKey) && !activePriceHistory;
   const returnAnalytics = useMemo(() => timeWeightedReturnSeries(trades, rangeMode, {
@@ -2911,6 +2970,7 @@ export default function Home() {
           <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}>{navGlyph('settings', settingsOpen)}<span>設定</span></button>
           {([['overview', '總覽'], ['positions', '持倉'], ['returns', '收益']] as const).map(([section, label]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}>{navGlyph(section, activeSection === section)}<span>{label}</span></a>)}
           <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}>{navGlyph('valuation', activeSection === 'valuation')}<span>估值</span></button>
+          {assistantPrefs.enabled && <button type="button" className={`settings-nav-button wafu-nav-ai ${assistantOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}><i className="wafu-nav-glyph"><HaloIcon theme={wafuTheme} size={24} spin={assistantOpen} minStrokePx={1} /></i><span>AI</span></button>}
           <div className="background-control">
             <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}>{navGlyph(backgroundSaving ? 'saving' : 'background', false)}<span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
             {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" disabled={backgroundSaving} className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" disabled={backgroundSaving} className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
@@ -3152,6 +3212,21 @@ export default function Home() {
           <div className="settings-body">
             <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
             <WafuMediaCard theme={wafuTheme} />
+            <section className={`settings-feature-card assistant-settings-card ${assistantPrefs.enabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">談</span><div><p>AI assistant</p><h3>AI 助理</h3></div><span className="settings-feature-status">{assistantPrefs.enabled ? '已開啟' : '已關閉'}</span></div>
+              <p>側欄的「AI」可以問關於自己持倉的問題：到期、風險、損益。送出時附上持倉摘要（代號、數量、價格與總額，不含備註），使用「AI 設定」中的金鑰與模型；只提供分析，不會更動交易。</p>
+              <div className="wafu-intro-row assistant-voice-row">
+                <span id="assistant-voice-label">口吻</span>
+                <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="assistant-voice-label">
+                  <button type="button" role="radio" aria-checked={assistantPrefs.voice === 'character'} className={assistantPrefs.voice === 'character' ? 'active' : ''} onClick={() => updateAssistantPrefs({ voice: 'character' })}>角色（桔梗／時雨）</button>
+                  <button type="button" role="radio" aria-checked={assistantPrefs.voice === 'neutral'} className={assistantPrefs.voice === 'neutral' ? 'active' : ''} onClick={() => updateAssistantPrefs({ voice: 'neutral' })}>中性</button>
+                </div>
+              </div>
+              <div className="settings-feature-actions">
+                <span>關閉後側欄不顯示 AI，也不載入這部分的程式。</span>
+                <button type="button" className={`settings-toggle ${assistantPrefs.enabled ? 'is-on' : ''}`} role="switch" aria-checked={assistantPrefs.enabled} onClick={() => updateAssistantPrefs({ enabled: !assistantPrefs.enabled })}><i /><b>{assistantPrefs.enabled ? '開啟' : '關閉'}</b></button>
+              </div>
+            </section>
             <section className={`settings-feature-card notify-settings-card ${notifyEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">報</span><div><p>Notifications</p><h3>通知中心</h3></div><span className="settings-feature-status">{notifyEnabled ? '已開啟' : '已關閉'}</span></div>
               <p>頂欄的通知集中顯示財報公布、財報日、美日休市、7 天內到期的選擇權與股息入帳，可逐則關閉或全部標為已讀。</p>
@@ -3430,6 +3505,7 @@ export default function Home() {
       </div>}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
       <WafuBackdrop theme={wafuTheme} paused={Boolean(intro)} />
+      {assistantOpen && assistantPrefs.enabled && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={importAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}
       {intro && createPortal(<Suspense fallback={null}><WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} /></Suspense>, document.body)}
     </main>
   );

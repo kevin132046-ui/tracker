@@ -1,0 +1,218 @@
+/*
+ * 和風介面 (桔梗・時雨): the hand-tuned layer over globals.css (whose colours are the theme tokens). Everything here is scoped to
+ * <html data-wafu>, so the classic page is untouched when no theme is chosen.
+ */
+:root[data-wafu='kikyo'] {
+  --wa-bg: #0c0d11; --wa-bg-rgb: 12 13 17;
+  --wa-panel: rgb(17 19 26 / .84); --wa-panel-solid: #14161d; --wa-panel-hi: rgb(30 33 43 / .96);
+  --wa-raise: rgb(255 255 255 / .035); --wa-raise-rgb: 255 255 255;
+  --wa-line: rgb(206 214 232 / .1); --wa-line-2: rgb(206 214 232 / .2); --wa-line-2-rgb: 206 214 232;
+  --wa-ink: #ece8df; --wa-ink-rgb: 236 232 223; --wa-ink-2: #c9c5bc; --wa-ink-2-rgb: 201 197 188;
+  --wa-muted: #8e93a3; --wa-muted-rgb: 142 147 163;
+  --wa-accent: #9dbcf0; --wa-accent-rgb: 157 188 240; --wa-accent-strong: #7fa2e8; --wa-accent-soft: rgb(127 162 232 / .14); --wa-on-accent: #0b0f18;
+  --wa-accent-2: #b3a5f0; --wa-accent-2-rgb: 179 165 240; --wa-accent-2-soft: rgb(179 165 240 / .14);
+  --wa-gold: #c9a45c; --wa-gold-rgb: 201 164 92; --wa-gold-soft: rgb(201 164 92 / .14);
+  --wa-up: #6cc4a1; --wa-up-rgb: 108 196 161; --wa-up-soft: rgb(108 196 161 / .13);
+  --wa-down: #ec7a72; --wa-down-rgb: 236 122 114; --wa-down-soft: rgb(236 122 114 / .13);
+  --wa-seal: #d9483b;
+  --wa-r: 2px; --wa-r-lg: 3px;
+  --wa-f-display: 'Shippori Mincho B1', 'Noto Serif TC', 'Songti TC', serif;
+  --wa-f-title: 'Shippori Mincho B1', 'Noto Serif TC', serif;
+  --wa-f-body: 'Noto Sans TC', 'Hiragino Sans', system-ui, sans-serif;
+  --wa-f-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --wa-shell-bg:
+    radial-gradient(90% 60% at 72% -12%, rgb(127 162 232 / .13), transparent 62%),
+    radial-gradient(60% 45% at 6% 108%, rgb(201 164 92 / .07), transparent 70%),
+    linear-gradient(180deg, #0e0f14 0%, #0b0c10 60%, #09090d 100%);
+}
+:root[data-wafu='shigure'] {
+  --wa-bg: #07141a; --wa-bg-rgb: 7 20 26;
+  --wa-panel: rgb(11 30 38 / .8); --wa-panel-solid: #0e222a; --wa-panel-hi: rgb(20 46 55 / .96);
+  --wa-raise: rgb(190 235 235 / .04); --wa-raise-rgb: 190 235 235;
+  --wa-line: rgb(190 235 235 / .11); --wa-line-2: rgb(190 235 235 / .22); --wa-line-2-rgb: 190 235 235;
+  --wa-ink: #eef7f6; --wa-ink-rgb: 238 247 246; --wa-ink-2: #cfe0df; --wa-ink-2-rgb: 207 224 223;
+  --wa-muted: #86a4a6; --wa-muted-rgb: 134 164 166;
+  --wa-accent: #62d4d2; --wa-accent-rgb: 98 212 210; --wa-accent-strong: #3fc0bf; --wa-accent-soft: rgb(98 212 210 / .14); --wa-on-accent: #03191b;
+  --wa-accent-2: #b69ae8; --wa-accent-2-rgb: 182 154 232; --wa-accent-2-soft: rgb(182 154 232 / .14);
+  --wa-gold: #f0c24b; --wa-gold-rgb: 240 194 75; --wa-gold-soft: rgb(240 194 75 / .13);
+  --wa-up: #7ed3a8; --wa-up-rgb: 126 211 168; --wa-up-soft: rgb(126 211 168 / .13);
+  --wa-down: #f08a86; --wa-down-rgb: 240 138 134; --wa-down-soft: rgb(240 138 134 / .13);
+  --wa-seal: #ec8f7f;
+  --wa-r: 12px; --wa-r-lg: 18px;
+  --wa-f-display: 'Kaisei Decol', 'Noto Serif TC', serif;
+  --wa-f-title: 'Yuji Syuku', 'Kaisei Decol', 'Noto Serif TC', serif;
+  --wa-f-body: 'Noto Sans TC', 'Hiragino Sans', system-ui, sans-serif;
+  --wa-f-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --wa-shell-bg:
+    radial-gradient(90% 60% at 70% -10%, #17414b 0%, rgb(23 65 75 / 0) 60%),
+    radial-gradient(60% 40% at 90% 105%, rgb(240 180 90 / .14), rgb(240 180 90 / 0) 70%),
+    linear-gradient(180deg, #0b1f27 0%, #07141a 60%, #061015 100%);
+}
+
+/* ---------- Page ---------- */
+:root[data-wafu] { color-scheme: dark; }
+:root[data-wafu] body { color: var(--wa-ink); background: var(--wa-bg); font-family: var(--wa-f-body); -webkit-font-smoothing: antialiased; }
+:root[data-wafu] .shell { background: var(--wa-shell-bg); background-attachment: fixed; }
+:root[data-wafu] .shell.has-custom-background:before { background-color: var(--wa-bg); background-image: linear-gradient(180deg, rgb(var(--wa-bg-rgb) / .35) 0%, rgb(var(--wa-bg-rgb) / .72) 45%, rgb(var(--wa-bg-rgb) / .9) 100%), var(--custom-background); }
+:root[data-wafu] ::selection { color: var(--wa-on-accent); background: var(--wa-accent); }
+:root[data-wafu] button:focus-visible, :root[data-wafu] a:focus-visible, :root[data-wafu] input:focus-visible, :root[data-wafu] select:focus-visible, :root[data-wafu] textarea:focus-visible { outline: 2px solid var(--wa-accent); outline-offset: 2px; }
+:root[data-wafu] .hero h1, :root[data-wafu] .panel h2, :root[data-wafu] .trade-modal h2, :root[data-wafu] .settings-panel h2, :root[data-wafu] .settings-feature-heading h3,
+:root[data-wafu] .editor-summary h3, :root[data-wafu] .import-modal h2, :root[data-wafu] .filing-modal h2, :root[data-wafu] .technical-title h2 { font-family: var(--wa-f-display); font-weight: 700; letter-spacing: .05em; }
+:root[data-wafu] .metric-card strong, :root[data-wafu] .return-summary > strong, :root[data-wafu] .donut-center strong, :root[data-wafu] .summary-result strong { font-family: var(--wa-f-display); letter-spacing: .01em; font-variant-numeric: tabular-nums; }
+:root[data-wafu] .eyebrow { color: var(--wa-accent); letter-spacing: .22em; font-weight: 600; }
+
+/* ---------- Top bar ---------- */
+:root[data-wafu] .topbar { color: var(--wa-ink); background: rgb(var(--wa-bg-rgb) / .72); border-bottom: 1px solid var(--wa-line); box-shadow: none; backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2); }
+:root[data-wafu] .brand { color: var(--wa-ink); }
+:root[data-wafu] .brand > span { font-family: var(--wa-f-display); font-weight: 800; letter-spacing: .24em; }
+:root[data-wafu] .brand-logo { border: 1px solid var(--wa-line-2); border-radius: var(--wa-r); box-shadow: none; }
+:root[data-wafu='shigure'] .brand-logo { border-radius: 50%; }
+:root[data-wafu] .brand-calendar { border-left-color: var(--wa-line); }
+:root[data-wafu] .brand-calendar > strong { color: var(--wa-ink-2); font-weight: 600; letter-spacing: .04em; }
+:root[data-wafu] .market-calendar-tags em { color: var(--wa-ink-2); background: rgb(255 255 255 / .04); border-color: var(--wa-line); }
+:root[data-wafu] .market-pill { color: var(--wa-ink-2); }
+:root[data-wafu] .market-pill.is-open > span { background: var(--wa-seal); box-shadow: 0 0 10px var(--wa-seal); }
+:root[data-wafu] .secondary-button { color: var(--wa-ink-2); background: transparent; border: 1px solid var(--wa-line-2); border-radius: var(--wa-r); }
+:root[data-wafu] .secondary-button:hover { color: var(--wa-ink); background: var(--wa-accent-soft); border-color: var(--wa-accent); }
+:root[data-wafu] .primary-button, :root[data-wafu] .topbar .primary-button { color: var(--wa-on-accent); background: var(--wa-accent); border-radius: var(--wa-r); box-shadow: none; font-weight: 800; }
+:root[data-wafu] .primary-button:hover, :root[data-wafu] .topbar .primary-button:hover { background: var(--wa-accent-strong); transform: none; }
+:root[data-wafu='shigure'] .secondary-button, :root[data-wafu='shigure'] .primary-button { border-radius: 999px; }
+:root[data-wafu] .language-picker-toggle { color: var(--wa-ink-2); background: transparent; border-color: var(--wa-line-2); }
+:root[data-wafu] .language-picker-menu { color: var(--wa-ink); background: var(--wa-panel-hi); border-color: var(--wa-line-2); }
+:root[data-wafu] .language-picker-menu button + button { box-shadow: inset 0 1px 0 var(--wa-line); }
+:root[data-wafu] .language-picker-menu button:hover, :root[data-wafu] .language-picker-menu button:focus-visible { background: var(--wa-accent-soft); }
+:root[data-wafu] .language-picker-menu button[aria-checked='true'] { color: var(--wa-accent); }
+
+/* ---------- Side navigation: a quiet rail, the current item under the character's halo ---------- */
+:root[data-wafu] .side-nav { gap: 3px; padding: 8px 6px; background: linear-gradient(180deg, rgb(var(--wa-bg-rgb) / .55), rgb(var(--wa-bg-rgb) / .25)); border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg); box-shadow: none; }
+:root[data-wafu] .side-nav a, :root[data-wafu] .side-nav .settings-nav-button, :root[data-wafu] .background-trigger { color: var(--wa-muted); background: transparent; border-radius: var(--wa-r); box-shadow: none; }
+/* The vertical rail leaves room above each icon for the halo. */
+@media (min-width: 1181px) {
+  :root[data-wafu] .side-nav a, :root[data-wafu] .side-nav .settings-nav-button, :root[data-wafu] .background-trigger { min-height: 70px; padding-top: 18px; }
+}
+/* Tablets and phones: the rail becomes a row; the current item is underlined instead of haloed. */
+@media (max-width: 1180px) {
+  :root[data-wafu] .side-nav { background: rgb(var(--wa-bg-rgb) / .82); }
+  :root[data-wafu] .side-nav span, :root[data-wafu] .background-trigger span { letter-spacing: .04em; white-space: nowrap; }
+  :root[data-wafu] .wafu-nav-halo { display: none; }
+  :root[data-wafu] .side-nav a.active, :root[data-wafu] .side-nav .settings-nav-button.active { box-shadow: inset 0 -2px 0 var(--wa-accent); }
+}
+:root[data-wafu] .side-nav a:hover, :root[data-wafu] .side-nav .settings-nav-button:hover, :root[data-wafu] .background-trigger:hover { color: var(--wa-ink); background: rgb(255 255 255 / .035); transform: none; }
+:root[data-wafu] .side-nav a.active, :root[data-wafu] .side-nav .settings-nav-button.active { color: var(--wa-accent); background: transparent; box-shadow: none; }
+:root[data-wafu] .side-nav span, :root[data-wafu] .background-trigger span { font-weight: 600; letter-spacing: .1em; }
+:root[data-wafu] .wafu-nav-glyph { position: relative; width: 22px; height: 22px; display: grid; place-items: center; }
+:root[data-wafu] .wafu-nav-icon { display: block; }
+:root[data-wafu] .wafu-nav-halo { position: absolute; left: 50%; bottom: calc(100% + 1px); translate: -50% 0; pointer-events: none; will-change: translate; animation: wafuHaloFloat 3.8s ease-in-out infinite; }
+:root[data-wafu] .wafu-nav-halo .halo-ico { display: block; filter: drop-shadow(0 0 2px rgb(var(--wa-accent-rgb) / .5)); }
+@keyframes wafuHaloFloat { 50% { translate: -50% -2px; } }
+
+/* Halo icon strokes (shared with the settings card and, later, the AI button). */
+:root[data-wafu] .halo-ico { overflow: visible; }
+:root[data-wafu] .halo-ico .halo-rot { transform-box: view-box; animation: wafuHaloTurn 16s linear infinite; }
+@keyframes wafuHaloTurn { to { transform: rotate(360deg); } }
+:root[data-wafu] .halo-kikyo.tone-dark .h-ring { stroke: #7fa6e6; fill: none; opacity: .85; }
+:root[data-wafu] .halo-kikyo.tone-dark .h-inner { stroke: #bfe3ff; fill: none; opacity: .55; }
+:root[data-wafu] .halo-kikyo.tone-dark .h-glint { stroke: #8fe3ff; fill: none; }
+:root[data-wafu] .halo-kikyo.tone-dark .h-eye { stroke: #dbe8ff; fill: rgb(143 227 255 / .08); }
+:root[data-wafu] .halo-kikyo.tone-dark .h-pupil { stroke: #9fc4ff; color: #9fc4ff; }
+@media (prefers-reduced-motion: reduce) { :root[data-wafu] .halo-ico .halo-rot, :root[data-wafu] .wafu-nav-halo { animation: none; } }
+
+/* ---------- Hero: the title set vertically, like a hanging scroll ---------- */
+:root[data-wafu] .hero { display: flex; flex-direction: row-reverse; justify-content: flex-start; align-items: flex-end; gap: clamp(14px, 2vw, 26px); }
+:root[data-wafu] .hero .as-of { flex: 0 1 330px; min-width: 0; }
+:root[data-wafu] .stacked-clock-card span, :root[data-wafu] .stacked-clock-card b { white-space: nowrap; }
+@media (max-width: 460px) { :root[data-wafu] .stacked-clock-card { gap: 6px; padding: 12px 12px; } :root[data-wafu] .stacked-clock-card strong { font-size: 21px; } }
+:root[data-wafu] .hero > div:first-child { align-self: flex-start; }
+:root[data-wafu] .editable-hero-title { max-width: none; writing-mode: vertical-rl; text-orientation: upright; }
+:root[data-wafu] .hero h1 { color: var(--wa-ink); font-family: var(--wa-f-title); font-size: clamp(40px, 4.6vw, 70px); line-height: 1.1; letter-spacing: .08em; text-shadow: 0 2px 24px rgb(0 0 0 / .55); }
+/* Each character is a fixed box set horizontally inside, stacked by the vertical line: the title stays
+   even on devices whose fallback font has no vertical metrics. */
+:root[data-wafu] .wafu-title-ch { display: inline-block; width: 1em; height: 1.08em; font-style: normal; line-height: 1.08em; text-align: center; writing-mode: horizontal-tb; }
+:root[data-wafu='shigure'] .hero h1 { font-weight: 400; }
+:root[data-wafu] .hero .hero-title-accent { color: var(--wa-accent-2); }
+:root[data-wafu='shigure'] .hero .hero-title-accent { color: var(--wa-accent); }
+/* Buttons default to horizontal text, so the title button takes the vertical mode itself. */
+:root[data-wafu] .hero-title-display { position: relative; display: inline-block; writing-mode: vertical-rl; text-orientation: upright; cursor: pointer; }
+/* The pencil waits beside the scroll until the title is pointed at. */
+:root[data-wafu] .hero-title-edit-icon { position: absolute; left: -40px; bottom: 0; margin: 0; color: var(--wa-muted); background: rgb(var(--wa-bg-rgb) / .6); border-color: var(--wa-line-2); border-radius: var(--wa-r); writing-mode: horizontal-tb; opacity: 0; transform: none; }
+:root[data-wafu] .hero-title-display:hover .hero-title-edit-icon, :root[data-wafu] .hero-title-display:focus-visible .hero-title-edit-icon { color: var(--wa-accent); opacity: 1; box-shadow: none; }
+
+/* Market clocks: solid cards, so the card behind never shows through. */
+:root[data-wafu] .as-of { color: var(--wa-muted); border-right-color: var(--wa-accent); }
+:root[data-wafu] .stacked-clock-card { background: var(--wa-panel-solid); border: 1px solid var(--wa-line-2); border-radius: var(--wa-r-lg); box-shadow: 0 16px 40px -20px rgb(0 0 0 / .8); }
+:root[data-wafu] .stacked-clock-card.is-behind { opacity: .3; }
+:root[data-wafu] .stacked-clock-card span { color: var(--wa-accent); font-weight: 600; letter-spacing: .08em; }
+:root[data-wafu] .stacked-clock-card strong { color: var(--wa-ink); font-family: var(--wa-f-mono); font-weight: 500; letter-spacing: .02em; }
+:root[data-wafu] .stacked-clock-card b { color: var(--wa-accent); letter-spacing: .1em; }
+:root[data-wafu] .hero-title-editor { writing-mode: horizontal-tb; }
+:root[data-wafu] .hero-title-editor input { color: var(--wa-ink); background: var(--wa-panel-solid); border-color: var(--wa-accent); border-radius: var(--wa-r); box-shadow: none; font-family: var(--wa-f-title); letter-spacing: .06em; }
+
+/* ---------- Cards ---------- */
+:root[data-wafu] .metric-card, :root[data-wafu] .panel { background: var(--wa-panel); border: 1px solid var(--wa-line); box-shadow: inset 0 1px 0 rgb(255 255 255 / .04), 0 20px 50px -30px rgb(0 0 0 / .8); backdrop-filter: blur(14px) saturate(1.1); -webkit-backdrop-filter: blur(14px) saturate(1.1); }
+:root[data-wafu] .metric-card { border-radius: var(--wa-r-lg); }
+:root[data-wafu] .panel { border-radius: var(--wa-r-lg); }
+:root[data-wafu] .metric-card:before { display: none; }
+:root[data-wafu] .metric-card p { color: var(--wa-muted); letter-spacing: .08em; font-weight: 500; }
+:root[data-wafu] .metric-card strong { color: var(--wa-ink); font-weight: 700; }
+:root[data-wafu] .metric-card > span { color: var(--wa-muted); }
+/* 桔梗: gold corner marks on the first card; 時雨: a soft top glow. */
+:root[data-wafu='kikyo'] .metric-card.featured { background: linear-gradient(160deg, rgb(127 162 232 / .12), var(--wa-panel) 55%); }
+:root[data-wafu='kikyo'] .metric-card.featured:after { content: ''; position: absolute; inset: 5px; pointer-events: none; background:
+  linear-gradient(var(--wa-gold), var(--wa-gold)) top left / 14px 1.5px no-repeat, linear-gradient(var(--wa-gold), var(--wa-gold)) top left / 1.5px 14px no-repeat,
+  linear-gradient(var(--wa-gold), var(--wa-gold)) bottom right / 14px 1.5px no-repeat, linear-gradient(var(--wa-gold), var(--wa-gold)) bottom right / 1.5px 14px no-repeat; opacity: .85; }
+:root[data-wafu='shigure'] .metric-card.featured { background: radial-gradient(120% 90% at 20% 0%, rgb(98 212 210 / .14), transparent 60%), var(--wa-panel); }
+
+/* ---------- Switches: 桔梗 underlines the choice, 時雨 fills a pill ---------- */
+:root[data-wafu='kikyo'] .segmented, :root[data-wafu='kikyo'] .view-switch, :root[data-wafu='kikyo'] .allocation-chart-switch, :root[data-wafu='kikyo'] .clock-zone-switch { gap: 4px; padding: 0; background: transparent; border-bottom: 1px solid var(--wa-line); border-radius: 0; }
+:root[data-wafu='kikyo'] .segmented button, :root[data-wafu='kikyo'] .view-switch button, :root[data-wafu='kikyo'] .allocation-chart-switch button, :root[data-wafu='kikyo'] .clock-zone-switch button { position: relative; color: var(--wa-muted); background: transparent; border-radius: 0; box-shadow: none; }
+:root[data-wafu='kikyo'] .segmented button.selected, :root[data-wafu='kikyo'] .view-switch button.active, :root[data-wafu='kikyo'] .allocation-chart-switch button.active, :root[data-wafu='kikyo'] .clock-zone-switch button.active { color: var(--wa-ink); background: transparent; box-shadow: inset 0 -2px 0 var(--wa-accent); }
+:root[data-wafu='shigure'] .segmented, :root[data-wafu='shigure'] .view-switch, :root[data-wafu='shigure'] .allocation-chart-switch, :root[data-wafu='shigure'] .clock-zone-switch { background: rgb(0 0 0 / .18); border: 1px solid var(--wa-line); border-radius: 999px; }
+:root[data-wafu='shigure'] .segmented button, :root[data-wafu='shigure'] .view-switch button, :root[data-wafu='shigure'] .allocation-chart-switch button, :root[data-wafu='shigure'] .clock-zone-switch button { border-radius: 999px; }
+:root[data-wafu='shigure'] .segmented button.selected, :root[data-wafu='shigure'] .view-switch button.active, :root[data-wafu='shigure'] .allocation-chart-switch button.active, :root[data-wafu='shigure'] .clock-zone-switch button.active { color: var(--wa-on-accent); background: var(--wa-accent); box-shadow: none; }
+:root[data-wafu] .filter-row button { border-radius: var(--wa-r); }
+:root[data-wafu='shigure'] .filter-row button { border-radius: 999px; }
+
+/* ---------- Tables and lists ---------- */
+:root[data-wafu] th { color: var(--wa-muted); background: rgb(0 0 0 / .18); letter-spacing: .08em; font-weight: 500; }
+:root[data-wafu] td { border-color: var(--wa-line); }
+:root[data-wafu] tbody tr:hover td { background: rgb(255 255 255 / .025); }
+:root[data-wafu] .visual-positions, :root[data-wafu] .table-wrap { scrollbar-color: rgb(var(--wa-line-2-rgb) / .4) transparent; }
+
+/* ---------- Dialogs and the settings panel ---------- */
+:root[data-wafu] .trade-modal, :root[data-wafu] .import-modal, :root[data-wafu] .filing-modal, :root[data-wafu] .roc-breakdown-modal, :root[data-wafu] .confirm-dialog { background: var(--wa-panel-solid); border-color: var(--wa-line-2); border-radius: var(--wa-r-lg); }
+:root[data-wafu] .settings-panel { background: var(--wa-panel-solid); border-color: var(--wa-line-2); }
+:root[data-wafu] .settings-feature-card { background: rgb(255 255 255 / .025); border-color: var(--wa-line); border-radius: var(--wa-r-lg); box-shadow: none; }
+:root[data-wafu] .settings-feature-card.is-enabled { border-color: rgb(var(--wa-accent-rgb) / .35); }
+:root[data-wafu] .settings-feature-icon { color: var(--wa-on-accent); background: var(--wa-accent); border-radius: var(--wa-r); box-shadow: none; font-family: var(--wa-f-display); }
+:root[data-wafu] input, :root[data-wafu] select, :root[data-wafu] textarea { color-scheme: dark; }
+
+/* ---------- Theme card ---------- */
+.wafu-theme-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.wafu-theme-option { min-width: 0; display: flex; align-items: center; gap: 11px; padding: 10px 12px; text-align: left; border: 1px solid; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.wafu-theme-option b, .wafu-theme-option small { display: block; }
+.wafu-theme-option b { font-size: 13.5px; }
+.wafu-theme-option small { margin-top: 2px; font-size: 11px; }
+.wafu-swatch { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; font-family: 'Shippori Mincho B1', 'Noto Serif TC', serif; font-size: 16px; font-weight: 700; }
+.wafu-swatch.is-kikyo { color: #9dbcf0; background: #0c0d11; border: 1px solid rgb(157 188 240 / .4); border-radius: 2px; }
+.wafu-swatch.is-shigure { color: #62d4d2; background: #07141a; border: 1px solid rgb(98 212 210 / .4); border-radius: 50%; }
+.wafu-swatch.is-random { color: #ece8df; background: linear-gradient(135deg, #0c0d11 50%, #07141a 50%); border: 1px solid #c9d3e2; }
+.settings-feature-icon.wafu { background: linear-gradient(145deg, #4a5a86, #262d45); box-shadow: 0 8px 18px rgba(38,45,69,.2); font-family: 'Shippori Mincho B1', 'Noto Serif TC', serif; font-size: 20px; }
+:root[data-wafu] .wafu-theme-option { color: var(--wa-ink); background: rgb(255 255 255 / .03); border-color: var(--wa-line); border-radius: var(--wa-r); }
+:root[data-wafu] .wafu-theme-option:hover { border-color: var(--wa-line-2); }
+:root[data-wafu] .wafu-theme-option.active { background: var(--wa-accent-soft); border-color: var(--wa-accent); }
+:root[data-wafu] .wafu-theme-option small { color: var(--wa-muted); }
+@media (max-width: 560px) { .wafu-theme-options { grid-template-columns: minmax(0, 1fr); } }
+/* Opening settings */
+:root[data-wafu] .wafu-intro-settings { display: grid; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--wa-line); }
+:root[data-wafu] .wafu-intro-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+:root[data-wafu] .wafu-intro-row > span { color: var(--wa-ink-2); font-size: 13px; font-weight: 700; }
+:root[data-wafu] .wafu-intro-choices { display: inline-flex; padding: 2px; border: 1px solid var(--wa-line); border-radius: var(--wa-r); }
+:root[data-wafu] .wafu-intro-choices button { padding: 5px 11px; color: var(--wa-muted); font-size: 12.5px; background: transparent; border: 0; border-radius: calc(var(--wa-r) - 1px); cursor: pointer; }
+:root[data-wafu] .wafu-intro-choices button.active { color: var(--wa-on-accent); background: var(--wa-accent); }
+:root[data-wafu] .wafu-intro-preview, :root[data-wafu] .wafu-intro-note button { padding: 5px 12px; color: var(--wa-accent); font-size: 12.5px; background: transparent; border: 1px solid var(--wa-accent); border-radius: var(--wa-r); cursor: pointer; }
+:root[data-wafu] .wafu-intro-preview { margin-left: auto; }
+:root[data-wafu] .wafu-intro-lite { display: flex; align-items: center; gap: 8px; color: var(--wa-muted); font-size: 12.5px; cursor: pointer; }
+:root[data-wafu] .wafu-intro-lite input { accent-color: var(--wa-accent); }
+:root[data-wafu] .wafu-intro-note { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--wa-muted); font-size: 12px; }
+:root[data-wafu] .wafu-intro-note button { padding: 3px 10px; font-size: 12px; }
+@media (max-width: 560px) { :root[data-wafu] .wafu-intro-preview { margin-left: 0; } }

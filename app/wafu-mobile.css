@@ -1,0 +1,65 @@
+/* Phones (Phase ④f): the bottom main menu, safe areas for notches and home indicators, and app-like
+   behaviour when installed to the home screen (Android and iOS). */
+
+/* The page runs under the status bar when installed (viewport-fit=cover); the top bar pads itself. */
+.topbar { padding-top: env(safe-area-inset-top, 0px); height: calc(86px + env(safe-area-inset-top, 0px)); }
+@media (max-width: 720px) { .topbar { height: auto; padding-top: calc(10px + env(safe-area-inset-top, 0px)); } }
+.topbar { padding-left: max(clamp(20px, 4vw, 62px), env(safe-area-inset-left, 0px)); padding-right: max(clamp(20px, 4vw, 62px), env(safe-area-inset-right, 0px)); }
+@media (max-width: 720px) { .topbar { padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(14px, env(safe-area-inset-right, 0px)); } }
+
+/* Installed: no pull-to-refresh bounce, no text-size adjustment on rotate. */
+@media (display-mode: standalone) { html, body { overscroll-behavior-y: none; } }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+/* iOS Safari zooms into fields smaller than 16px; keep them at 16px on phones. */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 640px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select, textarea { font-size: max(16px, 1em); }
+  }
+}
+
+/* ---------- Bottom main menu ---------- */
+.wafu-homebar { display: none; }
+@media (max-width: 640px) {
+  :root[data-home-bar] .side-nav { display: none; }
+  :root[data-home-bar] body { padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px)); }
+  :root[data-home-bar] .toast { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  :root[data-home-bar] .wafu-homebar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+    display: flex; align-items: stretch; justify-content: space-around;
+    padding: 4px max(6px, env(safe-area-inset-left, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-right, 0px));
+    background: rgb(var(--wa-bg-rgb) / .9); border-top: 1px solid var(--wa-line-2);
+    backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    transition: transform .2s ease;
+  }
+  /* Out of the way while typing (the keyboard would push it up over the field). */
+  :root[data-home-bar]:has(:is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select):focus) .wafu-homebar { transform: translateY(120%); }
+}
+.wafu-homebar-item, .wafu-homebar-more { flex: 1 1 0; min-width: 0; }
+.wafu-homebar-more { position: relative; display: flex; }
+.wafu-homebar-item {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px;
+  min-height: 56px; padding: 12px 2px 4px; color: var(--wa-muted); background: transparent; border: 0; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.wafu-homebar-item.is-current { color: var(--wa-accent); }
+.wafu-homebar-icon { position: relative; display: grid; place-items: center; width: 24px; height: 24px; }
+.wafu-homebar-icon .wafu-nav-icon { width: 22px; height: 22px; }
+.wafu-homebar-label { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; white-space: nowrap; }
+.wafu-homebar-halo { position: absolute; left: 50%; bottom: calc(100% - 3px); translate: -50% 0; pointer-events: none; animation: wafuHaloFloat 3.8s ease-in-out infinite; }
+.wafu-homebar-halo .halo-ico { display: block; filter: drop-shadow(0 0 2px rgb(var(--wa-accent-rgb) / .5)); }
+.wafu-homebar-item .halo-ico { opacity: .85; }
+.wafu-homebar-item.is-current .halo-ico { opacity: 1; filter: drop-shadow(0 0 3px rgb(var(--wa-accent-rgb) / .6)); }
+.wafu-homebar-menu {
+  position: absolute; right: 4px; bottom: calc(100% + 8px); z-index: 1; min-width: 168px; display: grid; padding: 6px;
+  background: var(--wa-panel-hi); border: 1px solid var(--wa-line-2); border-radius: var(--wa-r-lg); box-shadow: 0 -12px 34px rgb(0 0 0 / .45);
+}
+.wafu-homebar-menu button { display: flex; align-items: center; gap: 10px; padding: 11px 10px; color: var(--wa-ink); font-size: 14px; text-align: left; background: transparent; border: 0; border-radius: var(--wa-r); cursor: pointer; }
+.wafu-homebar-menu button:hover, .wafu-homebar-menu button:focus-visible { background: rgb(var(--wa-raise-rgb) / .06); }
+.wafu-homebar-menu button:disabled { opacity: .5; }
+@media (prefers-reduced-motion: reduce) { .wafu-homebar-halo { animation: none; } .wafu-homebar { transition: none; } }
+
+/* Settings: how to install the site as a phone app. */
+.app-install-hint { display: grid; gap: 4px; margin-top: 12px; padding: 10px 12px; font-size: 12.5px; color: var(--wa-muted); background: rgb(var(--wa-raise-rgb) / .04); border: 1px dashed var(--wa-line-2); border-radius: var(--wa-r); }
+.app-install-hint b { color: var(--wa-ink); font-size: 13px; }
+.app-install-hint button { justify-self: start; margin-top: 4px; padding: 6px 14px; font-weight: 700; color: var(--wa-on-accent); background: var(--wa-accent); border: 1px solid var(--wa-accent); border-radius: var(--wa-r); cursor: pointer; }

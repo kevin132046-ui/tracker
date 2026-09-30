@@ -36,3 +36,9 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# personal data: broker statements, exported trade files, private assets
+*.pdf
+optionflow-trades-*.csv
+optionflow-import-*.csv
+/private/

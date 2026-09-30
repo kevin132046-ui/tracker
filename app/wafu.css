@@ -214,3 +214,28 @@
 :root[data-wafu] .wafu-intro-note { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--wa-muted); font-size: 12px; }
 :root[data-wafu] .wafu-intro-note button { padding: 3px 10px; font-size: 12px; }
 @media (max-width: 560px) { :root[data-wafu] .wafu-intro-preview { margin-left: 0; } }
+
+/* ---------- Settings as a tabbed drawer (外觀／音樂／AI／模組／資料), from the prototype ---------- */
+:root[data-wafu] .settings-panel { animation: wafu-settings-in .46s cubic-bezier(.22, 1.2, .36, 1) both; }
+@keyframes wafu-settings-in { from { transform: translateX(100%); } }
+:root[data-wafu] .settings-panel > header { padding-bottom: 14px; border-bottom: 0; }
+:root[data-wafu] .settings-panel > header h2 { display: flex; align-items: center; gap: 10px; letter-spacing: .06em; }
+.settings-tabs { position: relative; display: flex; gap: 4px; margin: 0 32px; padding: 4px; background: rgb(0 0 0 / .18); border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg); }
+:root[data-wafu='shigure'] .settings-tabs { border-radius: 999px; }
+.settings-tabs button { flex: 1; min-height: 34px; padding: 0 8px; color: var(--wa-muted); background: transparent; border: 0; border-radius: calc(var(--wa-r-lg) - 1px); font-size: 13px; cursor: pointer; transition: color .2s, background .2s; }
+:root[data-wafu='shigure'] .settings-tabs button { border-radius: 999px; }
+.settings-tabs button:hover { color: var(--wa-ink); }
+.settings-tabs button.on { color: var(--wa-on-accent); background: var(--wa-accent); font-weight: 600; }
+:root[data-wafu='kikyo'] .settings-tabs { padding: 0; background: none; border: 0; border-bottom: 1px solid var(--wa-line); border-radius: 0; }
+:root[data-wafu='kikyo'] .settings-tabs button { position: relative; border-radius: 0; }
+:root[data-wafu='kikyo'] .settings-tabs button.on { color: var(--wa-ink); background: none; }
+:root[data-wafu='kikyo'] .settings-tabs button.on::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--wa-accent); }
+/* Cards float in one after another when a tab opens. */
+.settings-body > * { animation: wafu-settings-rise .4s cubic-bezier(.2, .8, .2, 1) backwards; }
+.settings-body > :nth-child(2) { animation-delay: .05s; } .settings-body > :nth-child(3) { animation-delay: .1s; } .settings-body > :nth-child(4) { animation-delay: .15s; } .settings-body > :nth-child(n+5) { animation-delay: .2s; }
+@keyframes wafu-settings-rise { from { opacity: 0; transform: translateY(14px); } }
+.settings-data-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.settings-data-actions button { flex: 1 1 180px; min-height: 40px; }
+@media (max-width: 720px) { .settings-tabs { margin: 0 18px; } :root[data-wafu] .settings-panel { animation-name: wafu-settings-up; } }
+@keyframes wafu-settings-up { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { :root[data-wafu] .settings-panel, .settings-body > * { animation: none; } }

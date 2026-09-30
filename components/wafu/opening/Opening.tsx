@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import HaloParticles, { FORM_SECONDS, type HaloPhase } from './HaloParticles';
 import InkFluid, { type InkFluidHandle } from './InkFluid';
+import { BrewGauges, KikyoScene, ShigureScene } from './Scenes';
 import type { IntroLanguage } from '@/lib/wafu/intro';
 import { introLanguage, introLiteDetected, liftIntroVeil, loadIntroLiteAuto, markIntroSeen, setIntroLiteDetected } from '@/lib/wafu/intro';
 import { useWafuAssets } from '@/lib/wafu/assets';
@@ -68,6 +69,15 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
   const sound = prefs.sfx && unlocked;
   const crestRef = useRef<HTMLDivElement>(null);
   const inkRef = useRef<InkFluidHandle>(null);
+  const anchorRef = useRef<{ x: number; y: number; r: number } | null>(null);
+  const pctRef = useRef<HTMLSpanElement>(null);
+  const barRef = useRef<HTMLSpanElement>(null);
+  // The ink engine (WebGL) starts a moment after the first frames, not in the same frame as the page.
+  const [inkMounted, setInkMounted] = useState(false);
+  useEffect(() => {
+    let raf = requestAnimationFrame(() => { raf = requestAnimationFrame(() => setInkMounted(true)); });
+    return () => cancelAnimationFrame(raf);
+  }, []);
   const doneRef = useRef(false);
   const callbacks = useRef({ onDone, onReveal });
   const readyRef = useRef(ready);
@@ -168,12 +178,44 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
     return () => window.removeEventListener('keydown', onKey);
   }, [finish]);
 
-  const getAnchor = useCallback(() => {
+  // The halo reads the crest's place every frame; it is measured once (and on resize) instead of
+  // forcing a layout per frame, and so the stamp's press does not wobble the halo.
+  const measureAnchor = useCallback(() => {
     const element = crestRef.current;
     if (!element) return null;
     const box = element.getBoundingClientRect();
-    return { x: box.left + box.width / 2, y: box.top + box.height / 2, r: box.width * 0.98 };
+    anchorRef.current = { x: box.left + box.width / 2, y: box.top + box.height / 2, r: box.width * 0.98 };
+    return anchorRef.current;
   }, []);
+  useLayoutEffect(() => {
+    measureAnchor();
+    const onResize = () => measureAnchor();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [measureAnchor]);
+  const getAnchor = useCallback(() => anchorRef.current ?? measureAnchor(), [measureAnchor]);
+
+  // Smooth percentage: eases towards the finished steps and keeps creeping while a step is still
+  // working (so the wait for the trades never looks frozen); written straight to the DOM.
+  const stepAt = useRef({ step: 0, at: 0 });
+  useEffect(() => { stepAt.current = { step, at: performance.now() }; }, [step]);
+  useEffect(() => {
+    let raf = 0, shown = 0, prev = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(0.1, (now - prev) / 1000);
+      prev = now;
+      const { step: done, at } = stepAt.current;
+      const creep = done >= steps.length ? 0 : 0.85 * (1 - Math.exp(-(now - at) / 1400));
+      const target = Math.min(1, (done + creep) / steps.length);
+      shown += (target - shown) * Math.min(1, dt * 5);
+      if (target >= 1 && 1 - shown < 0.004) shown = 1;
+      if (pctRef.current) pctRef.current.textContent = `${String(Math.round(shown * 100)).padStart(2, '0')}%`;
+      barRef.current?.style.setProperty('--pct', shown.toFixed(4));
+      if (shown < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [steps.length]);
 
   // Each finished step drops a little ink, with a koto note or a wind chime.
   useEffect(() => {
@@ -207,9 +249,10 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
       data-i18n-skip=""
       onClick={() => finish(true)}
     >
-      {theme === 'kikyo' ? <ShojiDoors silhouette={silhouette} near={step / steps.length} /> : <NorenCurtain silhouette={silhouette} />}
+      {theme === 'kikyo' ? <ShojiDoors silhouette={silhouette} near={step / steps.length} /> : <NorenCurtain silhouette={silhouette} lit={step >= 1} />}
+      {theme === 'kikyo' ? <KikyoScene step={step} total={steps.length} stage={stage} /> : <ShigureScene step={step} total={steps.length} stage={stage} />}
 
-      {!reduced && inkOk && (
+      {!reduced && inkOk && inkMounted && (
         <InkFluid ref={inkRef} theme={theme} active={stage === 'loading' || stage === 'form'} className="opening-ink" onFail={() => setInkOk(false)} />
       )}
 
@@ -255,14 +298,15 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
           </svg>
         </div>
 
-        {theme === 'kikyo' ? <AyatoriThread step={step} total={steps.length} /> : <SnowSteps step={step} total={steps.length} />}
+        {theme === 'kikyo' ? <AyatoriThread step={step} total={steps.length} /> : <BrewGauges step={step} total={steps.length} />}
       </div>
 
       <div className="opening-caption">
         <div className="opening-label">
           <span className="opening-step">{label}</span>
-          <span className="opening-pct">{`${String(pct).padStart(2, '0')}%`}</span>
+          <span className="opening-pct" ref={pctRef}>00%</span>
         </div>
+        <span className="opening-bar" ref={barRef}><i /></span>
         <div className="opening-brand">{`OPTIONFLOW · ${titles[theme]}`}</div>
         <div className="opening-skip">{skipHint}</div>
       </div>
@@ -294,14 +338,14 @@ const yukiwaPattern = (() => {
   return `url("data:image/svg+xml;utf8,${svg.replace(/#/g, '%23')}")`;
 })();
 
-function NorenCurtain({ silhouette }: { silhouette: string | null }) {
+function NorenCurtain({ silhouette, lit }: { silhouette: string | null; lit: boolean }) {
   return (
     <div className="noren" aria-hidden="true">
       <div className="noren-rod" />
       {[0, 1, 2].map((i) => (
         <div key={i} className={`noren-strip noren-${i}`}>
           <div className="noren-print" style={{ backgroundImage: yukiwaPattern }} />
-          {i === 0 && <span className="noren-text"><i>時</i><i>雨</i></span>}
+          {i === 0 && <span className={`noren-text${lit ? ' neon' : ''}`}><i>時</i><i>雨</i></span>}
           {i === 2 && silhouette && <span className="noren-figure" style={maskStyle(silhouette)} />}
         </div>
       ))}
@@ -321,17 +365,5 @@ function AyatoriThread({ step, total }: { step: number; total: number }) {
       {segments.map((d, i) => <path key={d} d={d} pathLength={1} className={`ayatori-seg${i < done ? ' on' : ''}`} />)}
       {pegs.map(([x, y], i) => <circle key={x} cx={x} cy={y} r={2.4} className={`ayatori-peg${i <= done ? ' on' : ''}`} />)}
     </svg>
-  );
-}
-
-function SnowSteps({ step, total }: { step: number; total: number }) {
-  return (
-    <div className="snowsteps" aria-hidden="true">
-      {Array.from({ length: total }, (_, i) => (
-        <svg key={i} viewBox="-1 -1 2 2" className={i < step ? 'on' : ''}>
-          <path d={snowCrystal(0.8)} fill="none" stroke="currentColor" strokeWidth={0.12} strokeLinecap="round" />
-        </svg>
-      ))}
-    </div>
   );
 }

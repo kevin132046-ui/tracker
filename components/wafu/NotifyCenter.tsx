@@ -48,8 +48,10 @@ function ThemeIcon({ theme }: { theme: WafuTheme }) {
  * Notification center in the top bar: results out, market closures, earnings dates, options about to
  * expire and dividend payments, gathered in one list. Read and dismissed items are kept per browser.
  */
-export default function NotifyCenter({ theme, items, openSignal = 0 }: {
+export default function NotifyCenter({ theme, items, openSignal = 0, bar = true }: {
   theme: WafuTheme;
+  /** Wide screens: show the notice bar in the top bar (off = only the round bell). */
+  bar?: boolean;
   items: NoticeItem[];
   /** Bumped from outside (the quick sheet) to open the panel. */
   openSignal?: number;
@@ -88,7 +90,9 @@ export default function NotifyCenter({ theme, items, openSignal = 0 }: {
 
   return <div className={`wafu-notify${unread ? ' has-unread' : ''}`} ref={rootRef}>
     <button type="button" className="wafu-notify-toggle" aria-expanded={open} aria-haspopup="dialog" aria-label={unread ? `通知（${unread} 則未讀）` : '通知'} title="通知" onClick={() => setOpen((value) => !value)}>
-      {current && <span className="wafu-notify-roll" key={current.id} aria-hidden="true"><i className="wafu-notify-lamp" /><b>通知</b><em>{current.label}</em><span>{current.text}</span><small>{current.when}</small></span>}
+      {bar && (current
+        ? <span className="wafu-notify-roll" key={current.id} aria-hidden="true"><i className="wafu-notify-lamp" /><b>通知</b><em>{current.label}</em><span>{current.text}</span><small>{current.when}</small></span>
+        : <span className="wafu-notify-roll is-empty" aria-hidden="true"><i className="wafu-notify-lamp" /><b>通知</b><span>目前沒有新通知</span></span>)}
       <ThemeIcon theme={theme} />
       {unread > 0 && <span className="wafu-notify-badge" aria-hidden="true">{unread > 9 ? '9+' : unread}</span>}
     </button>

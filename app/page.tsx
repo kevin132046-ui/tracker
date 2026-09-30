@@ -52,7 +52,6 @@ import WafuBackdrop from '@/components/wafu/Backdrop';
 import MusicDock from '@/components/wafu/MusicDock';
 import NotifyCenter from '@/components/wafu/NotifyCenter';
 import GuideBar from '@/components/wafu/GuideBar';
-import RailFoot from '@/components/wafu/RailFoot';
 import { MetricsGrid, MonthlyHeatmap } from '@/components/wafu/PerfMetrics';
 import { VisualFieldPicker, defaultVisualFields, loadVisualFields, saveVisualFields, visualFields as visualFieldList } from '@/components/wafu/VisualFields';
 import type { VisualFieldId } from '@/components/wafu/VisualFields';
@@ -69,6 +68,7 @@ import WafuMediaCard from '@/components/wafu/WafuMediaCard';
 import { useMediaPrefs } from '@/lib/wafu/media';
 import { applyPerf, probeFramesOnce } from '@/lib/wafu/perf';
 import { jikanOf, sekkiOf } from '@/lib/wafu/koyomi';
+import { kikyoInner, kikyoOutline, snowCrystal, yukiwaOutline } from '@/lib/wafu/marks';
 import type { AssistantPrefs, PortfolioSnapshot, SnapshotPosition } from '@/lib/ai-assistant';
 import { defaultAssistantPrefs, loadAssistantPrefs, saveAssistantPrefs } from '@/lib/ai-assistant';
 import type { WafuPreference, WafuTheme } from '@/lib/wafu/theme';
@@ -240,6 +240,7 @@ const holidayNoticeKey = 'optionflow-holiday-notice';
 const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
 const aiEnabledKey = 'optionflow-ai-enabled';
 const notifyCenterKey = 'optionflow-notify-center';
+const notifyBarKey = 'optionflow-notify-bar';
 const bottomNavKey = 'optionflow-bottom-nav';
 type SettingsTab = 'look' | 'sound' | 'ai' | 'modules' | 'data';
 const settingsTabs: ReadonlyArray<readonly [SettingsTab, string]> = [['look', '外觀'], ['sound', '音樂'], ['ai', 'AI'], ['modules', '模組'], ['data', '資料']];
@@ -1046,6 +1047,8 @@ export default function Home() {
   const [holidayNoticeEnabled, setHolidayNoticeEnabled] = useState(true);
   // The notification center gathers the header notice line and more; off → the line as before.
   const [notifyEnabled, setNotifyEnabled] = useState(true);
+  // The notice bar in the middle of the top bar (wide screens); can be turned off in the settings.
+  const [notifyBar, setNotifyBar] = useState(true);
   const [noticeNow, setNoticeNow] = useState<number | null>(null);
   // Phones: the main menu as a bar along the bottom instead of the top strip.
   // Bottom navigation: the guide bar (every screen, default), the phone menu bar, or nothing.
@@ -1290,6 +1293,7 @@ export default function Home() {
     try {
       if (window.localStorage.getItem(holidayNoticeKey) === 'off') queueMicrotask(() => setHolidayNoticeEnabled(false));
       if (window.localStorage.getItem(notifyCenterKey) === 'off') queueMicrotask(() => setNotifyEnabled(false));
+      if (window.localStorage.getItem(notifyBarKey) === 'off') queueMicrotask(() => setNotifyBar(false));
       const storedNav = window.localStorage.getItem(bottomNavKey);
       if (storedNav === 'menu' || storedNav === 'off') queueMicrotask(() => setBottomNav(storedNav));
     } catch { /* storage unavailable: keep the default */ }
@@ -1510,6 +1514,12 @@ export default function Home() {
     setActiveSection(section);
     window.history.replaceState(null, '', `#${section}`);
     document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' });
+  }, []);
+  const toggleNotifyBar = useCallback(() => {
+    setNotifyBar((current) => {
+      try { window.localStorage.setItem(notifyBarKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
   }, []);
   const toggleNotifyCenter = useCallback(() => {
     setNotifyEnabled((current) => {
@@ -3205,13 +3215,14 @@ export default function Home() {
       <header className="topbar">
         <div className="brand-cluster">
           <a className="brand" href="#top" aria-label="OptionFlow 首頁">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="brand-logo" src="/optionflow-logo.png" alt="" width="52" height="52" />
+            <i className="brand-crest" aria-hidden="true"><svg viewBox="-1.3 -1.3 2.6 2.6">{wafuTheme === 'shigure'
+              ? <g fill="none" strokeLinejoin="round" strokeLinecap="round"><path d={yukiwaOutline()} strokeWidth={0.08} /><path d={snowCrystal(0.44)} strokeWidth={0.06} /></g>
+              : <g fill="none" strokeLinejoin="round" strokeLinecap="round"><path d={kikyoOutline()} strokeWidth={0.08} /><path d={kikyoInner()} strokeWidth={0.06} /></g>}</svg></i>
             <span>OPTIONFLOW</span>
           </a>
           <HeaderMarketCalendar />
         </div>
-        {notifyEnabled && <div className="topbar-notice"><NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} /></div>}
+        {notifyEnabled && <div className="topbar-notice"><NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} bar={notifyBar} /></div>}
         <div className="header-actions">
           <LanguageSwitcher />
           {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
@@ -3233,11 +3244,10 @@ export default function Home() {
             {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" disabled={backgroundSaving} className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" disabled={backgroundSaving} className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
             <input ref={backgroundInputRef} className="visually-hidden" type="file" accept="image/*" disabled={backgroundSaving} onChange={handleBackgroundUpload} />
           </div>
-          <RailFoot theme={wafuTheme} />
         </nav>
         <div className="dashboard">
         <section className="hero" id="overview">
-          <div><EditableHeroTitle onNotify={notify} /></div>
+          <div className="wafu-hero-title"><EditableHeroTitle onNotify={notify} /><p className="wafu-hero-sub">{wafuTheme === 'shigure' ? '赤冬 · 雪夜的自家調配帳' : '作戰參謀的帳簿 · 百花繚亂'}</p></div>
           <LiveMarketClocks lastQuoteAt={lastQuoteAt} />
         </section>
 
@@ -3555,6 +3565,10 @@ export default function Home() {
                 <span>關閉後改回頁首的提示列，不另外計算通知。</span>
                 <button type="button" className={`settings-toggle ${notifyEnabled ? 'is-on' : ''}`} role="switch" aria-checked={notifyEnabled} onClick={toggleNotifyCenter}><i /><b>{notifyEnabled ? '開啟' : '關閉'}</b></button>
               </div>
+              {notifyEnabled && <div className="settings-feature-actions">
+                <span>頂欄中央的通知條（寬螢幕）；關閉後只留右側的鈴鐺。</span>
+                <button type="button" className={`settings-toggle ${notifyBar ? 'is-on' : ''}`} role="switch" aria-checked={notifyBar} aria-label="頂欄通知條" onClick={toggleNotifyBar}><i /><b>{notifyBar ? '開啟' : '關閉'}</b></button>
+              </div>}
             </section>
             <section className={`settings-feature-card ${brokerHubEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon" aria-hidden="true">◎</span><div><p>Optional module</p><h3>跨券商資產追蹤與再平衡</h3></div><span className="settings-feature-status">{brokerHubLoading ? '讀取中' : brokerHubEnabled ? '已開啟' : '預設關閉'}</span></div>

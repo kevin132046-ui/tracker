@@ -7,7 +7,7 @@ import { aiGate, byokLimited, openAiUsageScope, providerKey, serverKeys, type Ai
 import type { UsageTier } from '@/lib/openai-free-tier';
 import { estimateTokens } from '@/lib/openai-free-tier';
 import { anthropicModel, dateLookupEstimate, findEarningsDate, openAiModelPattern } from '@/lib/server/ai-earnings';
-import { claudeModels, resolveClaudeModel } from '@/lib/ai-models';
+import { claudeModels, resolveClaudeModel, safeAiError } from '@/lib/ai-models';
 import type { OpenTradeHint } from '@/lib/ai-trade-entry';
 import { maxEntryLength, maxOpenTradeHints } from '@/lib/ai-trade-entry';
 import { parseEntryImage, parseTrades, tradeParseRequest } from '@/lib/server/trade-parse';
@@ -127,6 +127,8 @@ export async function POST(request: Request) {
 
   const apiKey = providerKey(request, gate, provider);
   if (apiKey === 'invalid') return fail(`設定中的 ${providerName(provider)} 金鑰格式不正確。`, 400);
+  // Admin keys only read usage and projects; they cannot generate answers.
+  if (provider === 'openai' && typeof apiKey === 'string' && apiKey.startsWith('sk-admin-')) return fail('這是 OpenAI 管理金鑰（sk-admin-…），只能讀取用量，不能產生回覆。請在「AI 設定」的 OpenAI 金鑰欄填入一般 API 金鑰（sk-proj-…），管理金鑰放在「管理金鑰」欄。', 400);
   if (apiKey === null) {
     return fail(gate.mode === 'access'
       ? `尚未設定 ${providerName(provider)} 金鑰：請在「AI 設定」輸入，或在伺服器設定 ${provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'}。`
@@ -187,7 +189,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ provider, model: result.model, text: result.text }, { headers: noStore });
     } catch (error) {
       console.warn(`Portfolio chat failed (${provider} ${model}):`, error instanceof Error ? error.message : error);
-      return fail(`${providerName(provider)} 回覆失敗，請稍後再試。`, 502);
+      return fail(`${providerName(provider)} 回覆失敗：${error instanceof Error ? safeAiError(error.message) : '請稍後再試。'}`, 502);
     }
   }
 

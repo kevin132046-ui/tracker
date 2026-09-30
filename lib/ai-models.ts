@@ -96,3 +96,15 @@ export function claudeChoices(found: ModelDetection | null): Array<{ id: string;
   if (!detected.length) return claudeModels.map((model) => ({ id: model.id, label: model.label }));
   return detected.map((model) => ({ id: model.id, label: model.id === defaultClaudeModel ? `${model.label}（預設）` : model.label }));
 }
+
+/**
+ * OpenAI reasoning models (the gpt-5 family except the chat snapshots, the o-series) spend output
+ * tokens on reasoning before the answer; with a small cap they can run out and return no text.
+ * These get a low reasoning effort and room for the answer.
+ */
+export const openAiReasoning = (model: string, maxOutput: number) => /^(gpt-5(?!-chat)|o\d)/.test(model)
+  ? { reasoning: { effort: 'low' as const }, max_output_tokens: Math.max(maxOutput, 4000) }
+  : { max_output_tokens: maxOutput };
+
+/** A provider error for the user: short, with anything that looks like a key masked. */
+export const safeAiError = (message: string) => message.replace(/\bsk-[A-Za-z0-9_*-]{6,}/g, 'sk-••••').slice(0, 180);

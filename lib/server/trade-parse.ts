@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { claudeExtras } from '@/lib/ai-models';
+import { claudeExtras, openAiReasoning } from '@/lib/ai-models';
 import type { AiTradeParse, OpenTradeHint } from '@/lib/ai-trade-entry';
 import { cleanAiTradeParse, entryImageTypes, extractJson, maxEntryImageBytes } from '@/lib/ai-trade-entry';
 import type { AiProvider } from '@/lib/earnings';
@@ -96,7 +96,7 @@ async function chatGptParse(apiKey: string, model: string, request: TradeParseRe
           { type: 'input_text', text: request.prompt },
           ...(request.image ? [{ type: 'input_image', image_url: `data:${request.image.mediaType};base64,${request.image.data}`, detail: 'high' }] : []),
         ] }],
-        max_output_tokens: request.maxOutput,
+        ...openAiReasoning(model, request.maxOutput),
       }),
       signal: controller.signal,
     });

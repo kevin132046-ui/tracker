@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { claudeExtras } from '@/lib/ai-models';
+import { claudeExtras, openAiReasoning } from '@/lib/ai-models';
 import type { AiProvider } from '@/lib/earnings';
 import type { AssistantLanguage, AssistantPersona, AssistantTurn, PortfolioSnapshot, SnapshotPosition } from '@/lib/ai-assistant';
 import { assistantMaxOutput, maxAssistantQuestion, maxAssistantTurnLength, maxAssistantTurns, maxSnapshotPositions } from '@/lib/ai-assistant';
@@ -163,7 +163,7 @@ async function chatGptChat(apiKey: string, model: string, request: ChatRequest) 
         model,
         instructions: `${request.system}\n\n${request.portfolio}`,
         input: [...request.turns.map((turn) => ({ role: turn.role, content: turn.text })), { role: 'user', content: request.question }],
-        max_output_tokens: request.maxOutput,
+        ...openAiReasoning(model, request.maxOutput),
       }),
       signal: controller.signal,
     });

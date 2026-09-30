@@ -2,7 +2,6 @@
 
 import type { ChangeEvent, CSSProperties } from 'react';
 import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import type { BrokerWorkspace } from '@/lib/broker-workspace';
 import {
   buildAnnualRocSummary,
@@ -45,6 +44,8 @@ import FilingAnalysisDialog from '@/components/FilingAnalysisDialog';
 import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import HaloIcon from '@/components/wafu/HaloIcon';
+// The opening's controller (its markup ships with the layout: StaticOpening).
+import WafuOpening from '@/components/wafu/opening/Opening';
 import NavIcon from '@/components/wafu/NavIcon';
 import type { WafuNavIconName } from '@/components/wafu/NavIcon';
 import WafuThemeCard from '@/components/wafu/WafuThemeCard';
@@ -206,13 +207,10 @@ const loadBrokerHub = () => import('@/components/BrokerHub');
 const loadDcfCalculator = () => import('@/components/DcfCalculator');
 const loadCompanyFundamentals = () => import('@/components/CompanyFundamentals');
 const loadTradeImportDialog = () => import('@/components/TradeImportDialog');
-// The 和風 opening (and its ink engine) is only fetched when a 和風 theme plays it.
-const loadWafuOpening = () => import('@/components/wafu/opening/Opening');
 const BrokerHub = lazy(loadBrokerHub);
 const DcfCalculator = lazy(loadDcfCalculator);
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
 const TradeImportDialog = lazy(loadTradeImportDialog);
-const WafuOpening = lazy(loadWafuOpening);
 // The AI assistant panel is only fetched when it is opened.
 const loadAssistantPanel = () => import('@/components/wafu/AssistantPanel');
 const AssistantPanel = lazy(loadAssistantPanel);
@@ -3877,7 +3875,7 @@ export default function Home() {
         background={{ label: backgroundSaving ? '保存中' : backgroundImage ? '換背景圖片' : '背景圖片', busy: backgroundSaving, pick: () => backgroundInputRef.current?.click() }}
       />}
       {assistantOpen && assistantOn && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={importAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}
-      {intro && createPortal(<Suspense fallback={null}><WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} /></Suspense>, document.body)}
+      {intro && <WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} />}
     </main>
   );
 }

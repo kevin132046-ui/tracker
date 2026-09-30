@@ -8,6 +8,7 @@ import './wafu-assistant.css';
 import './wafu-mobile.css';
 import './wafu-sections.css';
 import { wafuBootScript, wafuFontsHref } from '@/lib/wafu/theme';
+import StaticOpening from '@/components/wafu/opening/StaticOpening';
 
 const title = 'OptionFlow — Visual Options Tracker';
 const description = '可編輯與儲存的選擇權持倉追蹤工具，包含股票報價更新、週月年收益、SPY／BOXX 比較與持倉圓餅圖。';
@@ -44,5 +45,5 @@ const appHead = <>
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   // The server renders 桔梗; the boot script switches <html data-wafu> to the chosen theme before the first paint.
-  return <html lang="zh-Hant" data-wafu="kikyo" suppressHydrationWarning><head>{appHead}<link id="wafu-fonts" rel="stylesheet" href={wafuFontsHref} /><script dangerouslySetInnerHTML={{ __html: wafuBootScript }} /></head><body>{children}</body></html>;
+  return <html lang="zh-Hant" data-wafu="kikyo" suppressHydrationWarning><head>{appHead}<link id="wafu-fonts" rel="stylesheet" href={wafuFontsHref} /><script dangerouslySetInnerHTML={{ __html: wafuBootScript }} /></head><body><StaticOpening />{children}</body></html>;
 }

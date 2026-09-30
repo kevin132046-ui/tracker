@@ -110,7 +110,7 @@ const LOOKS: Record<InkTheme, Look> = {
 };
 
 const SIM = {
-  pressureIters: 20,
+  pressureIters: 14,
   pressureKeep: 0.8, // pressure dissipation (warm start)
   velDissipation: 0.5,
   dyeDissipation: 0.1,
@@ -374,7 +374,9 @@ export function createInkEngine(host: HTMLElement, opts: InkEngineOptions): InkE
     if (w < 2 || h < 2) return false;
     sizeDirty = false;
     const rawDpr = window.devicePixelRatio || 1;
-    dpr = Math.min(rawDpr, 1.5);
+    // The ink is soft by nature: render it below CSS resolution and let the browser scale it up.
+    // This is the largest single saving of the opening on laptop and phone GPUs (fill rate).
+    dpr = Math.min(rawDpr, 1) * (w * h > 1_600_000 ? 0.6 : 0.75);
     const bw = Math.max(1, Math.round(w * dpr));
     const bh = Math.max(1, Math.round(h * dpr));
     if (canvas.width !== bw || canvas.height !== bh) {

@@ -244,3 +244,6 @@
 /* 效能模式: the PV keeps its drawings but its loops stop. */
 :root[data-perf="lite"] .scene-crt .noise, :root[data-perf="lite"] .scene-crt .roll, :root[data-perf="lite"] .scene-snow i, :root[data-perf="lite"] .scene-sweep, :root[data-perf="lite"] .scene-valve.on .glow { animation: none; }
 :root[data-perf="lite"] .scene-snow { opacity: calc(0.4 * var(--p, 0)); }
+/* The crest's strokes (and the dot) wait until the opening is live (painted, main thread free),
+   so the brush is seen drawing instead of the crest appearing finished. */
+.opening:not(.is-live) .crest-draw, .opening:not(.is-live) .crest-dot { animation-play-state: paused; }

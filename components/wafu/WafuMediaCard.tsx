@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import type { WafuAssetKind, WafuAssetSlot } from '@/lib/wafu/asset-slots';
 import { assetKind, assetSlot, maxAssetBytes } from '@/lib/wafu/asset-slots';
+import { isZipFile, unzip } from '@/lib/wafu/unzip';
 import { deleteWafuAsset, prepareBackdrop, prepareSilhouette, uploadWafuAsset, useWafuAssets } from '@/lib/wafu/assets';
 import type { WafuMediaPrefs } from '@/lib/wafu/media';
 import { setMediaPrefs, useMediaPrefs } from '@/lib/wafu/media';
@@ -65,11 +66,22 @@ export default function WafuMediaCard({ theme }: { theme: WafuTheme }) {
     }
   };
   // Several files at once: each goes to the slot its name points to.
-  const uploadAll = async (files: File[]) => {
-    if (!files.length || busy || batch) return;
+  const uploadAll = async (picked: File[]) => {
+    if (!picked.length || busy || batch) return;
     setBatch(true);
     const done: string[] = [];
     const failed: string[] = [];
+    // A zip (such as 和風素材.zip) is opened here and its files take part like picked ones.
+    const files: File[] = [];
+    for (const file of picked) {
+      if (!isZipFile(file)) { files.push(file); continue; }
+      setMessage({ text: `解壓縮中：${file.name}`, error: false });
+      try {
+        files.push(...await unzip(file));
+      } catch (reason) {
+        failed.push(`${file.name}（${reason instanceof Error ? reason.message : '無法解壓縮'}）`);
+      }
+    }
     const planned = files.map((file) => [file, slotForFile(file)] as const);
     const skipped = planned.filter(([, slot]) => !slot).map(([file]) => file.name);
     const jobs = planned.filter((job): job is readonly [File, WafuAssetSlot] => Boolean(job[1]));
@@ -115,9 +127,9 @@ export default function WafuMediaCard({ theme }: { theme: WafuTheme }) {
       }} /><span>{toggle.label}</span></label>)}
     </div>
     <div className="wafu-media-batch">
-      <input ref={batchRef} className="visually-hidden" type="file" multiple accept="image/*,audio/*,.mp3,.m4a,.ogg,.wav,.flac" tabIndex={-1} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void uploadAll(files); }} />
+      <input ref={batchRef} className="visually-hidden" type="file" multiple accept="image/*,audio/*,.mp3,.m4a,.ogg,.wav,.flac,.zip,application/zip" tabIndex={-1} onChange={(event) => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void uploadAll(files); }} />
       <button type="button" disabled={Boolean(busy) || batch} onClick={() => batchRef.current?.click()}>一次上傳全部</button>
-      <small>一次選多個檔案，依檔名放進對應欄位：含「桔梗」或「時雨」；含「剪影」的是剪影，音檔是背景音樂，其餘圖片是背景圖。</small>
+      <small>可以直接選 zip 壓縮檔（例如和風素材.zip），或一次選多個檔案；依檔名放進對應欄位：含「桔梗」或「時雨」；含「剪影」的是剪影，音檔是背景音樂，其餘圖片是背景圖。</small>
     </div>
     {status === 'error' && <p className="wafu-media-note is-error" role="alert">{`無法讀取已上傳的檔案：${loadError}`}</p>}
     {themes.map((item) => <div key={item.id} className="wafu-media-theme">

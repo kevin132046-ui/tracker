@@ -57,6 +57,7 @@ import { MetricsGrid, MonthlyHeatmap } from '@/components/wafu/PerfMetrics';
 import { VisualFieldPicker, defaultVisualFields, loadVisualFields, saveVisualFields, visualFields as visualFieldList } from '@/components/wafu/VisualFields';
 import type { VisualFieldId } from '@/components/wafu/VisualFields';
 import ManualQuotes from '@/components/wafu/ManualQuotes';
+import YieldCurve from '@/components/wafu/YieldCurve';
 import type { ManualQuoteRow } from '@/components/wafu/ManualQuotes';
 import { computeRiskMetrics, cumulativeOf, drawdownOf, monthlyGrid } from '@/lib/wafu/metrics';
 import HankoTile from '@/components/wafu/HankoTile';
@@ -2714,6 +2715,13 @@ export default function Home() {
     };
   }, [allocationDate, allocationHistory, currentAllocationDate, openTrades, wafuTheme]);
   const allocation = allocationSnapshot.items as AllocationItem[];
+  // 集中度提醒 (from the prototype): how much of the book sits in the three largest holdings.
+  const concentration = useMemo(() => {
+    const ranked = [...allocation].filter((item) => item.share > 0).sort((a, b) => b.share - a.share);
+    if (ranked.length < 2) return null;
+    const top3 = ranked.slice(0, 3).reduce((sum, item) => sum + item.share, 0);
+    return { top3, top1: ranked[0].share, names: ranked.slice(0, 3).map((item) => item.label), level: top3 >= 0.75 ? 'high' as const : top3 >= 0.5 ? 'mid' as const : 'low' as const };
+  }, [allocation]);
   // The quick sheet's 個股研究 opens the ticker in view, else the largest position.
   const researchTicker = drilledTicker ?? allocation.flatMap((item) => item.members).find((member) => member !== 'USD' && member !== 'JPY') ?? null;
   const allocationFallbackLabel = allocationGroupSelection?.label ?? allocation.find((item) => drilledTicker && item.members.includes(drilledTicker))?.label ?? null;
@@ -3305,6 +3313,7 @@ export default function Home() {
                   {!activeMacroMarkets.length && Array.from({ length: macroMarketGroup === 'rates' ? 3 : 2 }, (_, item) => <article className="macro-market-card macro-market-placeholder" key={item}><span /><b /><i /></article>)}
                 </div>
               </div>
+              {macroMarketGroup === 'rates' && <YieldCurve />}
               <p className="macro-market-note">{macroMarketGroup === 'rates' ? '美元／日圓顯示至小數點後 2 位；美國 10 年與 30 年公債顯示殖利率、變動點數與漲跌幅。' : '黃金與 WTI 原油採連續近月期貨價格；上下滑動卡片或使用推疊按鈕即可返回匯率與美債。'}</p>
             </section>
           </article>
@@ -3338,6 +3347,11 @@ export default function Home() {
               <div>{allocationPresets.map((preset) => <button key={preset.label} className={allocationDate === preset.date ? 'active' : ''} onClick={() => selectAllocationDate(preset.date)}>{preset.label}</button>)}</div>
               <label><span>歷史日期</span><input type="date" min={earliestAllocationDate} max={currentAllocationDate} value={allocationDate} onChange={(event) => selectAllocationDate(event.target.value || currentAllocationDate)} /></label>
             </div>
+            {concentration && <p className={`wafu-concentration is-${concentration.level}`} role="note">
+              <i aria-hidden="true" />
+              <span>前三大部位占 <b>{percent.format(concentration.top3)}</b>{concentration.level === 'high' ? '，集中度偏高' : concentration.level === 'mid' ? '，略為集中' : '，分散良好'}</span>
+              <small>{concentration.names.join('、')} · 最大單一 {percent.format(concentration.top1)}</small>
+            </p>}
             {allocationChartMode === 'donut' ? <div className="allocation-content">
               <AllocationDonut items={allocation} total={allocationSnapshot.total} loading={allocationLoading} activeLabel={activeAllocationItem?.label ?? null} onHover={setAllocationHoveredLabel} onPin={setAllocationPinnedLabel} onSelect={selectAllocationItem} />
               <div className="legend">

@@ -229,3 +229,32 @@
 
 /* Option risk strip: room for 本年權利金 as a seventh cell. */
 :root[data-wafu] .option-risk-strip dl { grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); }
+
+/* ---- 集中度提醒 ---- */
+.wafu-concentration { display: grid; grid-template-columns: auto 1fr; column-gap: 9px; row-gap: 1px; align-items: center; margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--wa-line); border-radius: 10px; background: color-mix(in srgb, var(--wa-raise) 60%, transparent); font-size: 12px; color: var(--wa-ink); }
+.wafu-concentration i { width: 7px; height: 7px; border-radius: 50%; background: var(--wa-up); box-shadow: 0 0 8px currentColor; color: var(--wa-up); }
+.wafu-concentration.is-mid i { background: var(--wa-gold); color: var(--wa-gold); }
+.wafu-concentration.is-high { border-color: color-mix(in srgb, var(--wa-down) 45%, var(--wa-line)); }
+.wafu-concentration.is-high i { background: var(--wa-down); color: var(--wa-down); }
+.wafu-concentration b { font-variant-numeric: tabular-nums; }
+.wafu-concentration small { grid-column: 2; color: var(--wa-muted); font-size: 10.5px; }
+
+/* ---- 殖利率曲線 ---- */
+.wafu-curve { margin-top: 12px; padding: 12px 14px 8px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 12px); background: rgb(0 0 0 / .16); }
+.wafu-curve > header { display: flex; justify-content: space-between; align-items: start; gap: 12px; flex-wrap: wrap; }
+.wafu-curve h4 { margin: 0; color: var(--wa-accent); font-size: 13px; }
+.wafu-curve header small { color: var(--wa-muted); font-size: 10px; }
+.wafu-curve dl { display: flex; gap: 16px; margin: 0; }
+.wafu-curve dl div { display: grid; justify-items: end; }
+.wafu-curve dt { color: var(--wa-muted); font-size: 10px; }
+.wafu-curve dd { margin: 0; color: var(--wa-ink); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wafu-curve dl .negative dd { color: var(--wa-down); }
+.wafu-curve dd em { margin-left: 6px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--wa-down); font-style: normal; font-size: 10px; }
+.wafu-curve svg { display: block; width: 100%; height: auto; max-height: 150px; margin-top: 6px; overflow: visible; }
+.wafu-curve-line { fill: none; stroke: var(--wa-accent); stroke-width: 1.4; stroke-linejoin: round; }
+.wafu-curve-area { fill: color-mix(in srgb, var(--wa-accent) 12%, transparent); stroke: none; }
+.wafu-curve.is-inverted .wafu-curve-line { stroke: var(--wa-down); }
+.wafu-curve circle { fill: var(--wa-ink); }
+.wafu-curve text { fill: var(--wa-ink); font-size: 5.5px; font-variant-numeric: tabular-nums; }
+.wafu-curve text.tenor { fill: var(--wa-muted); font-size: 5px; letter-spacing: .05em; }
+.wafu-curve-empty { margin: 14px 0 8px; color: var(--wa-muted); font-size: 11px; text-align: center; }

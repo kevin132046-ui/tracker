@@ -13,7 +13,7 @@ type ChartResult = {
 };
 type ChartPayload = { chart?: { result?: ChartResult[] } };
 type MarketConfig = {
-  id: 'USDJPY' | 'US10Y' | 'US30Y' | 'GOLD' | 'OIL';
+  id: 'USDJPY' | 'US10Y' | 'US30Y' | 'GOLD' | 'OIL' | 'US3M' | 'US5Y';
   providerSymbol: string;
   symbol: string;
   label: string;
@@ -27,6 +27,13 @@ const marketConfigs: MarketConfig[] = [
   { id: 'US30Y', providerSymbol: '^TYX', symbol: 'US30-YR', label: '美國公債30年期', unit: '殖利率（%）', decimals: 2 },
   { id: 'GOLD', providerSymbol: 'GC=F', symbol: 'GC=F', label: '黃金期貨', unit: '美元／盎司', decimals: 2 },
   { id: 'OIL', providerSymbol: 'CL=F', symbol: 'CL=F', label: 'WTI 原油期貨', unit: '美元／桶', decimals: 2 },
+];
+// 殖利率曲線 only (Yahoo's Treasury yield indexes: 13-week bill, 5, 10 and 30 years).
+const curveConfigs: MarketConfig[] = [
+  { id: 'US3M', providerSymbol: '^IRX', symbol: '3M', label: '3 個月', unit: '殖利率（%）', decimals: 2 },
+  { id: 'US5Y', providerSymbol: '^FVX', symbol: '5Y', label: '5 年', unit: '殖利率（%）', decimals: 2 },
+  marketConfigs[1],
+  marketConfigs[2],
 ];
 
 const chartCache = new Map<string, { result: ChartResult; fetchedAt: number }>();
@@ -194,6 +201,15 @@ function emptyMarket(config: MarketConfig, mode: Mode) {
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
+  if (params.get('scope') === 'curve') {
+    const settled = await Promise.allSettled(curveConfigs.map((config) => marketHistory(config, 'month', params.has('refresh'))));
+    const points = curveConfigs.map((config, index) => {
+      const result = settled[index];
+      const value = result.status === 'fulfilled' ? result.value : null;
+      return { id: config.id, tenor: config.symbol, label: config.label, latest: value?.latest ?? null, change: value?.change ?? null };
+    });
+    return NextResponse.json({ points, updatedAt: new Date().toISOString(), source: 'Yahoo Finance — U.S. Treasury yield indexes (^IRX, ^FVX, ^TNX, ^TYX)' }, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=900' } });
+  }
   const modeParam = params.get('mode');
   const scope = params.get('scope') === 'markets' ? 'markets' : params.get('scope') === 'benchmarks' ? 'benchmarks' : 'all';
   const marketGroup = params.get('group') === 'commodities' ? 'commodities' : 'rates';

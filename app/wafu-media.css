@@ -116,3 +116,45 @@
 .wafu-media-batch button { padding: 7px 14px; font-size: 13px; font-weight: 700; color: var(--wa-on-accent); background: var(--wa-accent); border: 1px solid var(--wa-accent); border-radius: var(--wa-r); cursor: pointer; }
 .wafu-media-batch button:disabled { opacity: .5; cursor: default; }
 .wafu-media-batch small { flex: 1 1 240px; color: var(--wa-muted); font-size: 11.5px; line-height: 1.5; }
+
+/* ---------- Notification center ---------- */
+.wafu-notify { position: relative; }
+.wafu-notify-toggle { position: relative; width: 36px; height: 36px; display: grid; place-items: center; padding: 0; cursor: pointer; color: var(--wa-ink-2); background: rgb(var(--wa-raise-rgb) / .04); border: 1px solid var(--wa-line-2); border-radius: var(--wa-r); }
+.wafu-notify-toggle:hover, .wafu-notify.has-unread .wafu-notify-toggle { color: var(--wa-accent); border-color: var(--wa-accent); }
+.wafu-notify.has-unread .wafu-notify-icon { animation: wafu-notify-sway 3.6s ease-in-out infinite; transform-origin: 50% 12%; }
+@keyframes wafu-notify-sway { 0%, 80%, 100% { rotate: 0deg; } 85% { rotate: 9deg; } 90% { rotate: -7deg; } 95% { rotate: 4deg; } }
+.wafu-notify-badge { position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; padding: 0 4px; display: grid; place-items: center; font: 700 10px/1 var(--wa-f-mono); color: #fff; background: var(--wa-seal); border-radius: 999px; box-shadow: 0 0 0 2px var(--wa-bg); }
+.wafu-notify-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; width: min(360px, calc(100vw - 32px)); max-height: min(70vh, 520px); display: flex; flex-direction: column; color: var(--wa-ink); background: var(--wa-panel-hi); border: 1px solid var(--wa-line-2); border-radius: var(--wa-r-lg); box-shadow: 0 18px 40px rgb(0 0 0 / .45); backdrop-filter: blur(10px); overflow: hidden; }
+.wafu-notify-panel header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--wa-line); }
+.wafu-notify-panel header b { font-family: var(--wa-f-display); font-size: 14px; }
+.wafu-notify-panel header button { padding: 3px 9px; font-size: 12px; color: var(--wa-accent); background: transparent; border: 1px solid var(--wa-line-2); border-radius: var(--wa-r); cursor: pointer; }
+.wafu-notify-panel header button:disabled { opacity: .45; cursor: default; }
+.wafu-notify-panel ul { margin: 0; padding: 4px 0; list-style: none; overflow-y: auto; }
+.wafu-notify-item { position: relative; display: flex; align-items: stretch; }
+.wafu-notify-item + .wafu-notify-item { border-top: 1px solid var(--wa-line); }
+.wafu-notify-item.is-unread::before { content: ""; position: absolute; left: 6px; top: 50%; width: 5px; height: 5px; margin-top: -2.5px; border-radius: 50%; background: var(--wa-seal); }
+.wafu-notify-main { flex: 1; min-width: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: baseline; padding: 9px 6px 9px 18px; color: inherit; text-align: left; background: transparent; border: 0; cursor: pointer; }
+.wafu-notify-main:hover { background: rgb(var(--wa-raise-rgb) / .05); }
+.wafu-notify-kind { font-size: 11px; font-weight: 700; color: var(--wa-accent); white-space: nowrap; }
+.is-closure .wafu-notify-kind, .is-early .wafu-notify-kind { color: var(--wa-gold); }
+.is-expiry .wafu-notify-kind { color: var(--wa-down); }
+.is-dividend .wafu-notify-kind { color: var(--wa-up); }
+.wafu-notify-text { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wafu-notify-text em { font-style: normal; color: var(--wa-accent); }
+.wafu-notify-main small { grid-column: 2; color: var(--wa-muted); font-size: 11.5px; }
+.wafu-notify-item:not(.is-unread) .wafu-notify-text { color: var(--wa-ink-2); }
+.wafu-notify-dismiss { flex: none; width: 32px; color: var(--wa-muted); font-size: 16px; background: transparent; border: 0; cursor: pointer; }
+.wafu-notify-dismiss:hover { color: var(--wa-ink); }
+.wafu-notify-empty { margin: 0; padding: 18px 12px; color: var(--wa-muted); font-size: 12.5px; text-align: center; }
+@media (prefers-reduced-motion: reduce) { .wafu-notify.has-unread .wafu-notify-icon { animation: none; } }
+/* Phones: the panels span the screen under the top bar instead of hanging off their button. */
+@media (max-width: 640px) {
+  .wafu-notify-panel, .wafu-music-panel { position: fixed; top: calc(64px + env(safe-area-inset-top, 0px)); left: 16px; right: 16px; width: auto; }
+}
+/* Narrow phones: the top bar holds the date, the language globe and the notice, music and add buttons. */
+@media (max-width: 480px) {
+  .language-picker-toggle > span, .language-picker-toggle .language-picker-chevron { display: none; }
+  .language-picker-toggle { width: 32px; padding: 0; justify-content: center; }
+  .wafu-notify-toggle, .wafu-music-toggle { width: 32px; height: 32px; }
+  .header-actions { gap: 6px; }
+}

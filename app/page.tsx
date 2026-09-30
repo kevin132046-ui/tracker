@@ -224,6 +224,8 @@ const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
 const aiEnabledKey = 'optionflow-ai-enabled';
 const notifyCenterKey = 'optionflow-notify-center';
 const bottomNavKey = 'optionflow-bottom-nav';
+type SettingsTab = 'look' | 'sound' | 'ai' | 'modules' | 'data';
+const settingsTabs: ReadonlyArray<readonly [SettingsTab, string]> = [['look', '外觀'], ['sound', '音樂'], ['ai', 'AI'], ['modules', '模組'], ['data', '資料']];
 // The page's sections, in page order, for the guide bar's swipes.
 const guideSections = [{ id: 'overview', label: '總覽' }, { id: 'returns', label: '收益' }, { id: 'positions', label: '持倉' }, { id: 'valuation', label: '估值' }];
 type BottomNav = 'guide' | 'menu' | 'off';
@@ -995,6 +997,7 @@ export default function Home() {
   const [bottomNav, setBottomNav] = useState<BottomNav>('guide');
   const homeBarEnabled = bottomNav === 'menu';
   const [notifySignal, setNotifySignal] = useState(0);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('look');
   // Android Chrome offers installing the site as an app; the event is kept for the settings button.
   const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
   const [earningsEnabled, setEarningsEnabled] = useState(true);
@@ -3269,25 +3272,13 @@ export default function Home() {
 
       {settingsOpen && <div className="settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
         <aside className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-          <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title">設定</h2><span>選擇要啟用的擴充工作區。</span></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
-          <div className="settings-body">
+          <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title"><HaloIcon theme={wafuTheme} size={26} minStrokePx={1} />設定</h2></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
+          <div className="settings-tabs" role="tablist" aria-label="設定分類">
+            {settingsTabs.map(([tab, label]) => <button key={tab} type="button" role="tab" id={`settings-tab-${tab}`} aria-selected={settingsTab === tab} aria-controls="settings-tabpanel" className={settingsTab === tab ? 'on' : ''} onClick={() => setSettingsTab(tab)}>{label}</button>)}
+          </div>
+          <div className="settings-body" id="settings-tabpanel" role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} key={settingsTab}>
+            {settingsTab === 'look' && <>
             <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
-            <WafuMediaCard theme={wafuTheme} />
-            <section className={`settings-feature-card assistant-settings-card ${assistantPrefs.enabled ? 'is-enabled' : ''}`}>
-              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">談</span><div><p>AI assistant</p><h3>AI 助理</h3></div><span className="settings-feature-status">{assistantPrefs.enabled ? '已開啟' : '已關閉'}</span></div>
-              <p>側欄的「AI」可以問關於自己持倉的問題：到期、風險、損益。送出時附上持倉摘要（代號、數量、價格與總額，不含備註），使用「AI 設定」中的金鑰與模型；只提供分析，不會更動交易。</p>
-              <div className="wafu-intro-row assistant-voice-row">
-                <span id="assistant-voice-label">口吻</span>
-                <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="assistant-voice-label">
-                  <button type="button" role="radio" aria-checked={assistantPrefs.voice === 'character'} className={assistantPrefs.voice === 'character' ? 'active' : ''} onClick={() => updateAssistantPrefs({ voice: 'character' })}>角色（桔梗／時雨）</button>
-                  <button type="button" role="radio" aria-checked={assistantPrefs.voice === 'neutral'} className={assistantPrefs.voice === 'neutral' ? 'active' : ''} onClick={() => updateAssistantPrefs({ voice: 'neutral' })}>中性</button>
-                </div>
-              </div>
-              <div className="settings-feature-actions">
-                <span>關閉後側欄不顯示 AI，也不載入這部分的程式。</span>
-                <button type="button" className={`settings-toggle ${assistantPrefs.enabled ? 'is-on' : ''}`} role="switch" aria-checked={assistantPrefs.enabled} onClick={() => updateAssistantPrefs({ enabled: !assistantPrefs.enabled })}><i /><b>{assistantPrefs.enabled ? '開啟' : '關閉'}</b></button>
-              </div>
-            </section>
             <section className={`settings-feature-card home-bar-settings-card ${bottomNav !== 'off' ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帖</span><div><p>Bottom navigation</p><h3>底部導覽</h3></div><span className="settings-feature-status">{bottomNav === 'guide' ? '引導條' : bottomNav === 'menu' ? '選單列' : '已關閉'}</span></div>
               <p>引導條：畫面下方一條細線，左右滑切換區塊、點一下回頂部、往上滑或長按開啟快捷面板（新增交易、匯入、AI、個股研究、通知、設定、音樂）；鍵盤可用 ← → 與 Enter。選單列：手機上把總覽、持倉、收益、AI、設定、更多放在底部，直接點選。</p>
@@ -3303,6 +3294,29 @@ export default function Home() {
                 {installPrompt && <button type="button" onClick={() => { void installPrompt.prompt().finally(() => setInstallPrompt(null)); }}>安裝 App</button>}
               </div>
             </section>
+            </>}
+            {settingsTab === 'sound' && <>
+            <WafuMediaCard theme={wafuTheme} />
+            </>}
+            {settingsTab === 'ai' && <>
+            <AiSettingsCard enabled={aiEnabled} onEnabledChange={updateAiEnabled} status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
+            <section className={`settings-feature-card assistant-settings-card ${assistantPrefs.enabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">談</span><div><p>AI assistant</p><h3>AI 助理</h3></div><span className="settings-feature-status">{assistantPrefs.enabled ? '已開啟' : '已關閉'}</span></div>
+              <p>側欄的「AI」可以問關於自己持倉的問題：到期、風險、損益。送出時附上持倉摘要（代號、數量、價格與總額，不含備註），使用「AI 設定」中的金鑰與模型；只提供分析，不會更動交易。</p>
+              <div className="wafu-intro-row assistant-voice-row">
+                <span id="assistant-voice-label">口吻</span>
+                <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="assistant-voice-label">
+                  <button type="button" role="radio" aria-checked={assistantPrefs.voice === 'character'} className={assistantPrefs.voice === 'character' ? 'active' : ''} onClick={() => updateAssistantPrefs({ voice: 'character' })}>角色（桔梗／時雨）</button>
+                  <button type="button" role="radio" aria-checked={assistantPrefs.voice === 'neutral'} className={assistantPrefs.voice === 'neutral' ? 'active' : ''} onClick={() => updateAssistantPrefs({ voice: 'neutral' })}>中性</button>
+                </div>
+              </div>
+              <div className="settings-feature-actions">
+                <span>關閉後側欄不顯示 AI，也不載入這部分的程式。</span>
+                <button type="button" className={`settings-toggle ${assistantPrefs.enabled ? 'is-on' : ''}`} role="switch" aria-checked={assistantPrefs.enabled} onClick={() => updateAssistantPrefs({ enabled: !assistantPrefs.enabled })}><i /><b>{assistantPrefs.enabled ? '開啟' : '關閉'}</b></button>
+              </div>
+            </section>
+            </>}
+            {settingsTab === 'modules' && <>
             <section className={`settings-feature-card notify-settings-card ${notifyEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">報</span><div><p>Notifications</p><h3>通知中心</h3></div><span className="settings-feature-status">{notifyEnabled ? '已開啟' : '已關閉'}</span></div>
               <p>頂欄的通知集中顯示財報公布、財報日、美日休市、7 天內到期的選擇權與股息入帳，可逐則關閉或全部標為已讀。</p>
@@ -3407,8 +3421,18 @@ export default function Home() {
                 <button type="button" className={`settings-toggle ${earningsEnabled ? 'is-on' : ''}`} role="switch" aria-checked={earningsEnabled} aria-label="持倉財報日曆與提醒" onClick={toggleEarnings}><i /><b>{earningsEnabled ? '開啟' : '關閉'}</b></button>
               </div>
             </section>
-            <AiSettingsCard enabled={aiEnabled} onEnabledChange={updateAiEnabled} status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
+            </>}
+            {settingsTab === 'data' && <>
+            <section className="settings-feature-card data-settings-card is-enabled">
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帳</span><div><p>Trades data</p><h3>匯入與匯出</h3></div><span className="settings-feature-status">{trades.length} 筆</span></div>
+              <p>讀取 CSV（券商成交紀錄或自製表格），或用 AI 辨識券商 App 的截圖與一句話紀錄後匯入；也可把全部交易匯出成 CSV 備份。交易資料存在本站的資料庫。</p>
+              <div className="settings-data-actions">
+                <button type="button" className="primary-button" onClick={() => { setSettingsOpen(false); void loadTradeImportDialog(); setImportOpen(true); }}>⇪ 匯入 CSV／截圖</button>
+                <button type="button" className="secondary-button" onClick={exportTradesCsv}>匯出 CSV</button>
+              </div>
+            </section>
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
+            </>}
           </div>
         </aside>
       </div>}

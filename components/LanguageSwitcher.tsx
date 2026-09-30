@@ -206,6 +206,19 @@ const translations: ReadonlyArray<readonly [string, string | null, string | null
   ['目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。', null, 'A manual aggregation and planning tool: it never signs in to brokers, reads broker credentials or sends real orders.'], ['的股息資料暫時無法取得', null, ' dividend data is unavailable for now'], ['走勢', null, 'trend'],
   ['日走勢', null, 'Daily trend'], ['週走勢', null, 'Weekly trend'], ['月走勢', null, 'Monthly trend'], ['年走勢', null, 'Yearly trend'],
   ['目前', null, 'Now'], ['預設', null, 'Default'], ['（每行一題，最多', null, ' (one per line, up to'], ['題）', null, ')'],
+  // AI settings: master switch, bring-your-own-key mode, key checks and model detection.
+  ['AI 功能總開關：關閉後所有 AI 按鈕都會隱藏，不送出任何 AI 請求。', 'AI 機能のマスタースイッチ：オフにするとすべての AI ボタンが隠れ、AI リクエストは送信されません。', 'Master switch for AI: when off, every AI button is hidden and no AI request is sent.'],
+  ['AI 功能已關閉：不顯示財報解讀、AI 查財報日、AI 記錄交易與 AI 助理，也不會送出任何 AI 請求。其他功能照常。', 'AI 機能はオフです：決算解説、AI 決算日検索、AI 取引記録、AI アシスタントは表示されず、AI リクエストも送信されません。ほかの機能は通常どおりです。', 'AI is off: filing analysis, AI earnings dates, AI trade entry and the AI assistant are hidden, and no AI request is sent. Everything else works as usual.'],
+  ['開啟後可用 Claude 或 ChatGPT；金鑰只存在這個瀏覽器。', 'オンにすると Claude または ChatGPT を使えます。キーはこのブラウザにだけ保存されます。', 'Turn on to use Claude or ChatGPT; keys stay in this browser only.'],
+  ['OpenAI 管理金鑰（選填，只用來讀今日用量、檢查免費額度）', 'OpenAI 管理キー（任意。本日の使用量を読んで無料枠を確認するためだけに使用）', 'OpenAI admin key (optional; only reads today\'s usage to check the free tier)'],
+  ['重新檢查金鑰', 'キーを再確認', 'Check keys again'], ['正在檢查金鑰並偵測可用模型…', 'キーを確認し、使えるモデルを検出中…', 'Checking keys and detecting models…'],
+  ['輸入金鑰後會自動檢查是否有效，並偵測可用的模型。', 'キーを入力すると有効か自動で確認し、使えるモデルを検出します。', 'Keys are checked automatically once entered, and their models detected.'],
+  ['（列出模型不花 token）', '（モデル一覧の取得はトークンを消費しません）', ' (listing models costs no tokens)'], ['金鑰與模型清單檢查於', 'キーとモデル一覧の確認時刻', 'Keys and models checked at'],
+  ['無法檢查金鑰：', 'キーを確認できません：', 'Cannot check keys: '], ['其他可用（會計費）', 'その他（課金されます）', 'Other models (billed)'], ['其他可用（不在免費額度，會被擋下）', 'その他（無料枠外のためブロック）', 'Other models (outside the free tier, blocked)'],
+  ['免費額度內', '無料枠内', 'Free tier'], ['（依金鑰偵測）', '（キーから検出）', ' (detected from key)'], ['自備金鑰模式', '自前キーモード', 'Bring-your-own-key mode'], ['自備金鑰', '自前キー', 'Own keys'], ['待設定金鑰', 'キー未設定', 'Key needed'],
+  ['檢查中…', '確認中…', 'Checking…'], ['✓ 有效', '✓ 有効', '✓ Valid'], ['✗ 無效', '✗ 無効', '✗ Invalid'], ['✗ 權限不足', '✗ 権限不足', '✗ Not permitted'], ['✗ 額度或速率受限', '✗ 残高・レート制限', '✗ Quota or rate limited'], ['✗ 無法確認', '✗ 確認不可', '✗ Unknown'], ['（伺服器金鑰）', '（サーバーキー）', ' (server key)'],
+  ['已通過 Cloudflare Access（可使用伺服器金鑰）。', 'Cloudflare Access 認証済み（サーバーキーを使用可）。', 'Signed in through Cloudflare Access (server keys available).'],
+  ['未設定 OpenAI 管理金鑰，無法檢查免費額度：', 'OpenAI 管理キーが未設定のため無料枠を確認できません：', 'No OpenAI admin key, so the free tier cannot be checked: '], ['照常使用，用量由你的 OpenAI 帳戶計費。', 'は通常どおり使え、使用量はあなたの OpenAI アカウントに課金されます。', ' works as usual and is billed to your OpenAI account.'],
 ];
 
 const column: Record<Language, 0 | 1 | 2> = { 'zh-TW': 0, 'ja-JP': 1, en: 2 };

@@ -1,4 +1,3 @@
-import { env } from 'cloudflare:workers';
 import type { FreeTierList, ModelQuota, QuotaReport, UsageTier } from '@/lib/openai-free-tier';
 import { builtinFreeTier, freeTierArticleUrl, groupOfModel, limitFor, nextUtcMidnight, parseFreeTierText } from '@/lib/openai-free-tier';
 import { htmlToText } from '@/lib/server/html';
@@ -16,8 +15,20 @@ const timeoutMs = 8_000;
 const safetyMargin = 0.95;
 
 let listCache: FreeTierList | null = null;
-let usageCache: { day: string; usedByModel: Record<string, number>; fetchedAt: number } | null = null;
-const recentCalls: Array<{ model: string; tokens: number; at: number }> = [];
+// Per admin key (by fingerprint): each organisation has its own usage.
+const usageCache = new Map<string, { day: string; usedByModel: Record<string, number>; fetchedAt: number }>();
+const recentCalls: Array<{ scope: string; model: string; tokens: number; at: number }> = [];
+
+/**
+ * Whose usage a request is checked against: an OpenAI admin key plus a fingerprint of it
+ * (the key itself is never kept as a map key or logged). null = no admin key, usage unknown.
+ */
+export type UsageScope = { adminKey: string; id: string } | null;
+export async function usageScope(adminKey: string | null | undefined): Promise<UsageScope> {
+  if (!adminKey) return null;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(adminKey));
+  return { adminKey, id: [...new Uint8Array(digest).slice(0, 12)].map((byte) => byte.toString(16).padStart(2, '0')).join('') };
+}
 
 const utcDay = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
 
@@ -50,11 +61,12 @@ export async function freeTierList(now = Date.now()): Promise<FreeTierList> {
 type UsagePage = { data?: Array<{ results?: Array<{ model?: string | null; input_tokens?: number; output_tokens?: number }> }>; has_more?: boolean; next_page?: string | null };
 
 /** Tokens per model since 00:00 UTC today. */
-async function todayUsage(now = Date.now()) {
+async function todayUsage(scope: UsageScope, now = Date.now()) {
   const day = utcDay(now);
-  if (usageCache?.day === day && now - usageCache.fetchedAt < usageFreshMs) return usageCache.usedByModel;
-  const adminKey = env.OPENAI_ADMIN_KEY;
-  if (!adminKey) throw new Error('OPENAI_ADMIN_KEY is not set.');
+  if (!scope) throw new Error('OPENAI_ADMIN_KEY is not set.');
+  const cached = usageCache.get(scope.id);
+  if (cached?.day === day && now - cached.fetchedAt < usageFreshMs) return cached.usedByModel;
+  const { adminKey } = scope;
   const start = Math.floor(Date.parse(`${day}T00:00:00Z`) / 1000);
   const usedByModel: Record<string, number> = {};
   let page: string | null = null;
@@ -66,7 +78,7 @@ async function todayUsage(now = Date.now()) {
     url.searchParams.set('limit', '1');
     if (page) url.searchParams.set('page', page);
     const response = await fetchWithTimeout(url.toString(), { headers: { Authorization: `Bearer ${adminKey}`, 'Content-Type': 'application/json' } });
-    if (!response.ok) throw new Error(`Usage API returned ${response.status}.`);
+    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? 'Admin key rejected.' : `Usage API returned ${response.status}.`);
     const payload = await response.json() as UsagePage;
     (payload.data ?? []).forEach((bucket) => (bucket.results ?? []).forEach((result) => {
       const model = String(result.model ?? 'unknown').toLowerCase();
@@ -75,28 +87,32 @@ async function todayUsage(now = Date.now()) {
     if (!payload.has_more || !payload.next_page) break;
     page = payload.next_page;
   }
-  usageCache = { day, usedByModel, fetchedAt: now };
+  if (usageCache.size > 50) usageCache.clear();
+  usageCache.set(scope.id, { day, usedByModel, fetchedAt: now });
   return usedByModel;
 }
 
 /** Records a call made from this site so it counts before the Usage API reports it. */
-export function recordOpenAiUsage(model: string, tokens: number, now = Date.now()) {
-  if (!Number.isFinite(tokens) || tokens <= 0) return;
-  recentCalls.push({ model: model.toLowerCase(), tokens, at: now });
+export function recordOpenAiUsage(scope: UsageScope, model: string, tokens: number, now = Date.now()) {
+  if (!scope || !Number.isFinite(tokens) || tokens <= 0) return;
+  recentCalls.push({ scope: scope.id, model: model.toLowerCase(), tokens, at: now });
   while (recentCalls.length && now - recentCalls[0].at > usageLagMs) recentCalls.shift();
 }
 
-export async function quotaReport(model: string, tier: UsageTier, now = Date.now()): Promise<QuotaReport> {
+export async function quotaReport(model: string, tier: UsageTier, scope: UsageScope, now = Date.now()): Promise<QuotaReport> {
   const list = await freeTierList(now);
   let usedByModel: Record<string, number> = {};
   let usageError: string | null = null;
   try {
-    usedByModel = { ...(await todayUsage(now)) };
+    usedByModel = { ...(await todayUsage(scope, now)) };
   } catch (error) {
-    usageError = error instanceof Error && error.message.includes('OPENAI_ADMIN_KEY') ? '伺服器尚未設定 OPENAI_ADMIN_KEY，無法確認今日用量。' : '暫時無法讀取 OpenAI 今日用量。';
+    const message = error instanceof Error ? error.message : '';
+    usageError = message.includes('OPENAI_ADMIN_KEY') ? '尚未設定 OpenAI 管理金鑰（OPENAI_ADMIN_KEY），無法確認今日用量。'
+      : message.includes('rejected') ? 'OpenAI 管理金鑰無效或權限不足，無法確認今日用量。'
+      : '暫時無法讀取 OpenAI 今日用量。';
   }
   const today = utcDay(now);
-  recentCalls.filter((call) => utcDay(call.at) === today && now - call.at <= usageLagMs)
+  recentCalls.filter((call) => call.scope === scope?.id && utcDay(call.at) === today && now - call.at <= usageLagMs)
     .forEach((call) => { usedByModel[call.model] = (usedByModel[call.model] ?? 0) + call.tokens; });
 
   const groups = list.groups.map((group) => {
@@ -114,8 +130,8 @@ export async function quotaReport(model: string, tier: UsageTier, now = Date.now
 }
 
 /** Whether a call estimated at `estimate` tokens stays inside the model's free allowance. */
-export async function checkOpenAiQuota(model: string, tier: UsageTier, estimate: number) {
-  const report = await quotaReport(model, tier);
+export async function checkOpenAiQuota(model: string, tier: UsageTier, estimate: number, scope: UsageScope) {
+  const report = await quotaReport(model, tier, scope);
   const selected = report.selected!;
   if (!report.usageAvailable) return { ok: false as const, report, message: `${report.usageError}為避免超出免費額度，已停止這次 ChatGPT 請求。` };
   if (!selected.group) return { ok: false as const, report, message: `${model} 不在 OpenAI 免費額度清單中，使用會直接計費，已擋下。請在「AI 設定」改選清單內的模型。` };

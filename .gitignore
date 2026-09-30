@@ -42,3 +42,4 @@ next-env.d.ts
 optionflow-trades-*.csv
 optionflow-import-*.csv
 /private/
+*.tsbuildinfo

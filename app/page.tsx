@@ -26,7 +26,7 @@ import { addDaysToKey, dateKey, japaneseHolidays, parseDateKey, upcomingClosures
 import type { UpcomingClosure } from '@/lib/market-calendar';
 import { earningsReminders, exchangeTodayKey, mergeEarnings, pruneManualEarnings } from '@/lib/earnings';
 import type { AiEarningsSuggestion, AiProvider, EarningsEntry, EarningsEvent, EarningsReminder } from '@/lib/earnings';
-import { aiKeyHeaders, loadAiKeys, loadAnalyses, loadDefaultProvider, loadQuestions, releaseNoticeDays, saveAiKeys, saveAnalyses, saveDefaultProvider, saveQuestions } from '@/lib/filings';
+import { aiKeyHeaders, emptyAiKeys, loadAiKeys, loadAnalyses, loadDefaultProvider, loadQuestions, releaseNoticeDays, saveAiKeys, saveAnalyses, saveDefaultProvider, saveQuestions } from '@/lib/filings';
 import type { AiKeys, CompanyFilings, FilingAnalysis } from '@/lib/filings';
 import { loadUsageTier, saveUsageTier } from '@/lib/filings';
 import type { ClaudeModel } from '@/lib/ai-models';
@@ -219,6 +219,7 @@ const backgroundPendingModeKey = 'optionflow-pending-background-mode';
 const usdJpyRateKey = 'optionflow-usdjpy-rate';
 const holidayNoticeKey = 'optionflow-holiday-notice';
 const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
+const aiEnabledKey = 'optionflow-ai-enabled';
 const notifyCenterKey = 'optionflow-notify-center';
 const homeBarKey = 'optionflow-home-bar';
 const earningsReminderKey = 'optionflow-earnings-reminder';
@@ -995,7 +996,7 @@ export default function Home() {
   // Bumped after each AI call so the quota is read again.
   const [quotaCheck, setQuotaCheck] = useState(0);
   const refreshQuota = useCallback(() => setQuotaCheck((current) => current + 1), []);
-  const [aiKeys, setAiKeys] = useState<AiKeys>({ openai: '', anthropic: '' });
+  const [aiKeys, setAiKeys] = useState<AiKeys>(emptyAiKeys);
   const [defaultAiProvider, setDefaultAiProvider] = useState<AiProvider>('openai');
   const [analysisQuestions, setAnalysisQuestions] = useState<string[]>([]);
   const [filingAnalyses, setFilingAnalyses] = useState<Record<string, FilingAnalysis>>({});
@@ -1012,6 +1013,9 @@ export default function Home() {
   const [intro, setIntro] = useState<{ theme: WafuTheme; reduced: boolean } | null>(null);
   const wafuMedia = useMediaPrefs();
   const [assistantPrefs, setAssistantPrefs] = useState<AssistantPrefs>(defaultAssistantPrefs);
+  // The master switch for every AI feature (財報解讀、AI 查財報日、AI 記錄交易、AI 助理); the rest of the site is unaffected.
+  const [aiEnabled, setAiEnabled] = useState(true);
+  const assistantOn = aiEnabled && assistantPrefs.enabled;
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [aiLookups, setAiLookups] = useState<Record<string, { loading: boolean; suggestion?: AiEarningsSuggestion; error?: string }>>({});
   const [yahooEarnings, setYahooEarnings] = useState<{ key: string; events: Record<string, EarningsEvent>; failed: string[] } | null>(null);
@@ -1240,6 +1244,7 @@ export default function Home() {
       const introPreference = loadWafuIntro();
       const assistant = loadAssistantPrefs();
       const liteAuto = loadIntroLiteAuto();
+      const aiOn = window.localStorage.getItem(aiEnabledKey) !== 'off';
       // The boot script veiled the page when the opening should play; otherwise lift any veil now.
       const playIntro = introPending() ? { theme: wafuShown, reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches } : null;
       if (!playIntro) liftIntroVeil();
@@ -1260,6 +1265,7 @@ export default function Home() {
         setWafuIntro(introPreference);
         setAssistantPrefs(assistant);
         setIntroLiteAuto(liteAuto);
+        setAiEnabled(aiOn);
         setIntro(playIntro);
         setAnalysisQuestions(questions);
         setFilingAnalyses(analyses);
@@ -1289,25 +1295,25 @@ export default function Home() {
     try { window.localStorage.setItem(openAiModelKey, value.trim()); } catch { /* storage unavailable */ }
   }, []);
 
-  // AI lookups sit behind Cloudflare Access. The status carries today's free ChatGPT tokens, so it
+  // AI lookups use the Worker's keys only behind Cloudflare Access (else the browser's own keys). The status carries today's free ChatGPT tokens, so it
   // is asked again every time the settings panel or the analysis dialog opens, after every AI call,
   // and when the model or usage tier changes.
   useEffect(() => {
-    if (!settingsOpen && !filingDialogSymbol) return;
+    if (!aiEnabled || (!settingsOpen && !filingDialogSymbol)) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      fetch(`/api/ai?model=${encodeURIComponent(openAiModel.trim())}&tier=${openAiTier}`, { cache: 'no-store', signal: controller.signal })
+      fetch(`/api/ai?model=${encodeURIComponent(openAiModel.trim())}&tier=${openAiTier}`, { cache: 'no-store', headers: aiKeyHeaders(aiKeys), signal: controller.signal })
         .then(async (response) => {
-          const payload = await response.json() as { providers?: Record<AiProvider, boolean>; openAiModel?: string | null; sec?: boolean; quota?: QuotaReport; error?: string };
+          const payload = await response.json() as { mode?: 'access' | 'byok'; note?: string | null; providers?: Record<AiProvider, boolean>; openAiModel?: string | null; sec?: boolean; quota?: QuotaReport; error?: string };
           if (!response.ok || !payload.providers) throw new Error(payload.error ?? 'AI 查詢暫時無法使用。');
-          if (!controller.signal.aborted) setAiStatus({ state: 'ok', providers: payload.providers, openAiModel: payload.openAiModel ?? null, sec: Boolean(payload.sec), quota: payload.quota ?? null });
+          if (!controller.signal.aborted) setAiStatus({ state: 'ok', mode: payload.mode === 'byok' ? 'byok' : 'access', note: payload.note ?? null, providers: payload.providers, openAiModel: payload.openAiModel ?? null, sec: Boolean(payload.sec), quota: payload.quota ?? null });
         })
         .catch((error: unknown) => {
           if (!controller.signal.aborted) setAiStatus({ state: 'error', message: error instanceof Error ? error.message : 'AI 查詢暫時無法使用。' });
         });
     }, 300);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [filingDialogSymbol, openAiModel, openAiTier, quotaCheck, settingsOpen]);
+  }, [aiEnabled, aiKeys, filingDialogSymbol, openAiModel, openAiTier, quotaCheck, settingsOpen]);
 
   const lookupEarningsWithAi = useCallback(async (symbol: string, provider: AiProvider) => {
     const id = `${provider}:${symbol}`;
@@ -1337,6 +1343,11 @@ export default function Home() {
   }, []);
 
   const updateAiKeys = useCallback((keys: AiKeys) => { setAiKeys(keys); saveAiKeys(keys); }, []);
+  const updateAiEnabled = useCallback((enabled: boolean) => {
+    setAiEnabled(enabled);
+    if (!enabled) { setAssistantOpen(false); setFilingDialogSymbol(null); }
+    try { window.localStorage.setItem(aiEnabledKey, enabled ? 'on' : 'off'); } catch { /* storage unavailable */ }
+  }, []);
   const updateOpenAiTier = useCallback((tier: UsageTier) => { setOpenAiTier(tier); saveUsageTier(tier); }, []);
   const updateClaudeModel = useCallback((model: ClaudeModel) => { setClaudeModel(model); saveClaudeModel(model); }, []);
   const updateWafuPreference = useCallback((preference: WafuPreference) => {
@@ -2980,7 +2991,7 @@ export default function Home() {
         <div className="brand-cluster">
           <a className="brand" href="#top" aria-label="OptionFlow 首頁">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="brand-logo" src="/optionflow-logo.jpg" alt="" width="52" height="52" />
+            <img className="brand-logo" src="/optionflow-logo.png" alt="" width="52" height="52" />
             <span>OPTIONFLOW</span>
           </a>
           <HeaderMarketCalendar />
@@ -3001,7 +3012,7 @@ export default function Home() {
           <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}>{navGlyph('settings', settingsOpen)}<span>設定</span></button>
           {([['overview', '總覽'], ['positions', '持倉'], ['returns', '收益']] as const).map(([section, label]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}>{navGlyph(section, activeSection === section)}<span>{label}</span></a>)}
           <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}>{navGlyph('valuation', activeSection === 'valuation')}<span>估值</span></button>
-          {assistantPrefs.enabled && <button type="button" className={`settings-nav-button wafu-nav-ai ${assistantOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}><i className="wafu-nav-glyph"><HaloIcon theme={wafuTheme} size={24} spin={assistantOpen} minStrokePx={1} /></i><span>AI</span></button>}
+          {assistantOn && <button type="button" className={`settings-nav-button wafu-nav-ai ${assistantOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}><i className="wafu-nav-glyph"><HaloIcon theme={wafuTheme} size={24} spin={assistantOpen} minStrokePx={1} /></i><span>AI</span></button>}
           <div className="background-control">
             <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}>{navGlyph(backgroundSaving ? 'saving' : 'background', false)}<span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
             {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" disabled={backgroundSaving} className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" disabled={backgroundSaving} className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
@@ -3341,7 +3352,7 @@ export default function Home() {
                       <input type="date" min={today} value={manualEarnings[symbol] ?? ''} aria-label={`手動財報日 ${symbol}`} onChange={(event) => setManualEarningsDate(symbol, event.target.value || null)} />
                       {manualEarnings[symbol] && <button type="button" onClick={() => setManualEarningsDate(symbol, null)} aria-label={`清除手動財報日 ${symbol}`}>×</button>}
                     </span>
-                    {(filingsFor(symbol) || (aiStatus?.state === 'ok' && (aiProviderReady('anthropic') || aiProviderReady('openai')))) && <span role="cell" className="earnings-ai-actions">
+                    {aiEnabled && (filingsFor(symbol) || (aiStatus?.state === 'ok' && (aiProviderReady('anthropic') || aiProviderReady('openai')))) && <span role="cell" className="earnings-ai-actions">
                       {filingsFor(symbol) && <button type="button" className="is-filing" onClick={() => setFilingDialogSymbol(symbol)} aria-label={`財報解讀 ${symbol}`}>財報解讀</button>}
                       {aiStatus?.state === 'ok' && (['openai', 'anthropic'] as const).filter((provider) => aiProviderReady(provider)).map((provider) => {
                         const lookup = aiLookups[`${provider}:${symbol}`];
@@ -3375,7 +3386,7 @@ export default function Home() {
                 <button type="button" className={`settings-toggle ${earningsEnabled ? 'is-on' : ''}`} role="switch" aria-checked={earningsEnabled} aria-label="持倉財報日曆與提醒" onClick={toggleEarnings}><i /><b>{earningsEnabled ? '開啟' : '關閉'}</b></button>
               </div>
             </section>
-            <AiSettingsCard status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
+            <AiSettingsCard enabled={aiEnabled} onEnabledChange={updateAiEnabled} status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
           </div>
         </aside>
@@ -3524,7 +3535,7 @@ export default function Home() {
         </section>
       </div>}
       {rocBreakdownOpen && <RocBreakdownDialog summary={annualRocSummary} onClose={closeRocBreakdown} />}
-      {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} onClose={closeImport} onImported={handleImported} ai={importAi} /></Suspense>}
+      {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} onClose={closeImport} onImported={handleImported} ai={aiEnabled ? importAi : undefined} /></Suspense>}
       {dividendAdjustmentCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!dividendAdjusting && event.target === event.currentTarget) setDividendAdjustmentCandidate(null); }}>
         <section className="dividend-adjustment-modal" role="dialog" aria-modal="true" aria-labelledby="dividend-adjustment-title">
           <header><div><p className="eyebrow">Dividend cash</p><h2 id="dividend-adjustment-title">調減股息入帳</h2></div><button type="button" className="close-button" disabled={dividendAdjusting} onClick={() => setDividendAdjustmentCandidate(null)} aria-label="關閉">×</button></header>
@@ -3553,13 +3564,13 @@ export default function Home() {
         theme={wafuTheme}
         active={activeSection}
         settingsOpen={settingsOpen}
-        assistant={assistantPrefs.enabled ? { open: assistantOpen, toggle: () => setAssistantOpen((open) => !open) } : null}
+        assistant={assistantOn ? { open: assistantOpen, toggle: () => setAssistantOpen((open) => !open) } : null}
         onSection={goToSection}
         onSettings={() => setSettingsOpen(true)}
         onValuation={() => openValuation(drilledTicker ?? valuationTicker)}
         background={{ label: backgroundSaving ? '保存中' : backgroundImage ? '換背景圖片' : '背景圖片', busy: backgroundSaving, pick: () => backgroundInputRef.current?.click() }}
       />}
-      {assistantOpen && assistantPrefs.enabled && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={importAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}
+      {assistantOpen && assistantOn && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={importAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}
       {intro && createPortal(<Suspense fallback={null}><WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} /></Suspense>, document.body)}
     </main>
   );

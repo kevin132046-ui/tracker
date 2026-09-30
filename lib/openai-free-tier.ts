@@ -17,7 +17,9 @@ export type ModelQuota = {
   remaining: number;
   resetsAt: string;
 };
-export type QuotaReport = { list: FreeTierList; tier: UsageTier; usageAvailable: boolean; usageError: string | null; usedByModel: Record<string, number>; groups: Array<{ id: string; label: string; limit: number; used: number; remaining: number; models: string[] }>; selected: ModelQuota | null };
+export type QuotaReport = { list: FreeTierList; tier: UsageTier; usageAvailable: boolean; usageError: string | null; usedByModel: Record<string, number>; groups: Array<{ id: string; label: string; limit: number; used: number; remaining: number; models: string[] }>; selected: ModelQuota | null;
+  /** false: no admin key in bring-your-own-key mode, so ChatGPT is not held to the free tier (billed to that key). */
+  enforced?: boolean };
 
 /** From the article as captured on 2026-09-28; used only when the live article cannot be read. */
 export const builtinFreeTier: FreeTierList = {

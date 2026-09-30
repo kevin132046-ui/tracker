@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { claudeExtras } from '@/lib/ai-models';
 import type { AiTradeParse, OpenTradeHint } from '@/lib/ai-trade-entry';
 import { cleanAiTradeParse, entryImageTypes, extractJson, maxEntryImageBytes } from '@/lib/ai-trade-entry';
 import type { AiProvider } from '@/lib/earnings';
@@ -66,8 +67,7 @@ async function claudeParse(apiKey: string, model: string, request: TradeParseReq
   const response = await client.beta.messages.create({
     model,
     max_tokens: request.maxOutput,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    ...claudeExtras(model),
     output_config: { effort: 'low' },
     system: request.system,
     messages: [{ role: 'user', content: [

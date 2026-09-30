@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { claudeExtras } from '@/lib/ai-models';
 import type { AiProvider } from '@/lib/earnings';
 import type { AssistantLanguage, AssistantPersona, AssistantTurn, PortfolioSnapshot, SnapshotPosition } from '@/lib/ai-assistant';
 import { assistantMaxOutput, maxAssistantQuestion, maxAssistantTurnLength, maxAssistantTurns, maxSnapshotPositions } from '@/lib/ai-assistant';
@@ -137,8 +138,7 @@ async function claudeChat(apiKey: string, model: string, request: ChatRequest) {
   const response = await client.beta.messages.create({
     model,
     max_tokens: 6000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    ...claudeExtras(model),
     output_config: { effort: 'low' },
     // The portfolio block is cached: follow-up questions in a conversation reuse it.
     system: [{ type: 'text', text: request.system }, { type: 'text', text: request.portfolio, cache_control: { type: 'ephemeral' } }],

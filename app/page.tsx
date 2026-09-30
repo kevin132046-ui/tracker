@@ -51,6 +51,7 @@ import WafuBackdrop from '@/components/wafu/Backdrop';
 import MusicDock from '@/components/wafu/MusicDock';
 import NotifyCenter from '@/components/wafu/NotifyCenter';
 import GuideBar from '@/components/wafu/GuideBar';
+import RailFoot from '@/components/wafu/RailFoot';
 import HankoTile from '@/components/wafu/HankoTile';
 import ResearchDrawer from '@/components/wafu/ResearchDrawer';
 import type { ResearchTab } from '@/components/wafu/ResearchDrawer';
@@ -1297,6 +1298,25 @@ export default function Home() {
         setFilingAnalyses(analyses);
       });
     } catch { liftIntroVeil(); /* storage unavailable: keep the defaults */ }
+  }, []);
+
+  // 游標光暈 (prototype): the panel under the pointer gets its position for a soft radial light.
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce), (pointer: coarse)').matches) return;
+    let frame = 0;
+    const onMove = (event: PointerEvent) => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (document.documentElement.dataset.perf === 'lite') return;
+        const panel = (event.target as Element | null)?.closest?.('.panel, .metric-card') as HTMLElement | null;
+        if (!panel) return;
+        const box = panel.getBoundingClientRect();
+        panel.style.setProperty('--mx', `${event.clientX - box.left}px`);
+        panel.style.setProperty('--my', `${event.clientY - box.top}px`);
+      });
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => { window.removeEventListener('pointermove', onMove); cancelAnimationFrame(frame); };
   }, []);
 
   // 效能模式: the boot script already set it; this adds the device check, and measures once after
@@ -3056,6 +3076,7 @@ export default function Home() {
             {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" disabled={backgroundSaving} className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" disabled={backgroundSaving} className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
             <input ref={backgroundInputRef} className="visually-hidden" type="file" accept="image/*" disabled={backgroundSaving} onChange={handleBackgroundUpload} />
           </div>
+          <RailFoot theme={wafuTheme} />
         </nav>
         <div className="dashboard">
         <section className="hero" id="overview">

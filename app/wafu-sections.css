@@ -131,3 +131,21 @@
 :root[data-perf='lite'] .panel::after { display: none; }
 :root[data-perf='lite'] .market-pill.is-open > span, :root[data-perf='lite'] .wafu-notify-roll { animation: none; }
 @media (prefers-reduced-motion: reduce) { :root[data-wafu] .market-pill.is-open > span, .wafu-notify-roll { animation: none; } }
+
+/* ---------- Side rail (wide screens): a full-height column like the prototype; the lower part holds light ---------- */
+.wafu-rail-foot { display: none; }
+@media (min-width: 1181px) {
+  :root[data-wafu] .side-nav { display: flex; flex-direction: column; height: calc(100vh - 124px); min-height: 520px; }
+  .wafu-rail-foot { position: relative; flex: 1; min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 8px; padding: 0 0 12px; overflow: hidden; color: var(--wa-accent); border-top: 1px solid var(--wa-line); }
+  .wafu-rail-motes { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--wa-accent); pointer-events: none; }
+  .wafu-rail-koyomi { position: relative; display: flex; gap: 4px; writing-mode: vertical-rl; color: var(--wa-muted); font-family: var(--wa-f-display); font-size: 11px; letter-spacing: .28em; }
+  .wafu-rail-koyomi span + span { color: var(--wa-accent-2); }
+  .wafu-rail-crest { position: relative; width: 34px; height: 34px; stroke: var(--wa-accent); opacity: .8; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--wa-accent) 55%, transparent)); animation: wafu-crest-breathe 6s ease-in-out infinite; }
+  @keyframes wafu-crest-breathe { 50% { opacity: .45; filter: drop-shadow(0 0 2px color-mix(in srgb, var(--wa-accent) 30%, transparent)); } }
+}
+:root[data-perf='lite'] .wafu-rail-crest { animation: none; }
+@media (prefers-reduced-motion: reduce) { .wafu-rail-crest { animation: none; } }
+
+/* ---------- 游標光暈: panels light up softly where the pointer is (prototype) ---------- */
+:root[data-wafu] .panel:hover, :root[data-wafu] .metric-card:hover { background-image: radial-gradient(520px circle at var(--mx, -999px) var(--my, -999px), color-mix(in srgb, var(--wa-accent) 7%, transparent), transparent 62%); }
+:root[data-perf='lite'] .panel:hover, :root[data-perf='lite'] .metric-card:hover { background-image: none; }

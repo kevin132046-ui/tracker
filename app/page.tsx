@@ -49,6 +49,8 @@ import type { WafuNavIconName } from '@/components/wafu/NavIcon';
 import WafuThemeCard from '@/components/wafu/WafuThemeCard';
 import WafuBackdrop from '@/components/wafu/Backdrop';
 import MusicDock from '@/components/wafu/MusicDock';
+import NotifyCenter from '@/components/wafu/NotifyCenter';
+import type { NoticeItem } from '@/components/wafu/NotifyCenter';
 import WafuMediaCard from '@/components/wafu/WafuMediaCard';
 import { useMediaPrefs } from '@/lib/wafu/media';
 import type { WafuPreference, WafuTheme } from '@/lib/wafu/theme';
@@ -211,6 +213,7 @@ const backgroundPendingModeKey = 'optionflow-pending-background-mode';
 const usdJpyRateKey = 'optionflow-usdjpy-rate';
 const holidayNoticeKey = 'optionflow-holiday-notice';
 const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
+const notifyCenterKey = 'optionflow-notify-center';
 const earningsReminderKey = 'optionflow-earnings-reminder';
 const manualEarningsKey = 'optionflow-earnings-manual';
 const openAiModelKey = 'optionflow-openai-model';
@@ -971,6 +974,9 @@ export default function Home() {
   const [valuationTicker, setValuationTicker] = useState('MSFT');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [holidayNoticeEnabled, setHolidayNoticeEnabled] = useState(true);
+  // The notification center gathers the header notice line and more; off → the line as before.
+  const [notifyEnabled, setNotifyEnabled] = useState(true);
+  const [noticeNow, setNoticeNow] = useState<number | null>(null);
   const [earningsEnabled, setEarningsEnabled] = useState(true);
   const [manualEarnings, setManualEarnings] = useState<Record<string, string>>({});
   const [aiStatus, setAiStatus] = useState<AiStatus>(null);
@@ -1199,6 +1205,7 @@ export default function Home() {
   useEffect(() => {
     try {
       if (window.localStorage.getItem(holidayNoticeKey) === 'off') queueMicrotask(() => setHolidayNoticeEnabled(false));
+      if (window.localStorage.getItem(notifyCenterKey) === 'off') queueMicrotask(() => setNotifyEnabled(false));
     } catch { /* storage unavailable: keep the default */ }
   }, []);
 
@@ -1348,6 +1355,19 @@ export default function Home() {
   }, []);
   // A provider is usable with a key typed into this browser or one set on the server.
   const aiProviderReady = useCallback((provider: AiProvider) => Boolean(aiKeys[provider].trim()) || (aiStatus?.state === 'ok' && aiStatus.providers[provider]), [aiKeys, aiStatus]);
+
+  const toggleNotifyCenter = useCallback(() => {
+    setNotifyEnabled((current) => {
+      try { window.localStorage.setItem(notifyCenterKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
+  }, []);
+  // Notification dates move with the clock (checked each minute).
+  useEffect(() => {
+    queueMicrotask(() => setNoticeNow(Date.now()));
+    const timer = window.setInterval(() => setNoticeNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const toggleHolidayNotice = useCallback(() => {
     setHolidayNoticeEnabled((current) => {
@@ -1675,6 +1695,46 @@ export default function Home() {
       return filed && filed >= earliest && filed <= today ? [{ symbol, filed }] : [];
     }).sort((a, b) => b.filed.localeCompare(a.filed));
   }, [earningsEnabled, secFilings]);
+
+  // Notification center: the header notice line (results, closures, earnings dates) plus options
+  // expiring within a week and dividends paid or about to be paid.
+  const noticeItems = useMemo<NoticeItem[]>(() => {
+    if (!notifyEnabled || noticeNow === null) return [];
+    const items: NoticeItem[] = [];
+    const usToday = zonedDateKey(zonedDate(noticeNow, 'America/New_York'));
+    const short = (key: string) => key.slice(5).replace('-', '/');
+    for (const release of recentReleases) {
+      items.push({ id: `FILED:${release.filed}:${release.symbol}`, kind: 'release', label: '財報已公布', text: release.symbol, when: `${short(release.filed)} 申報`, date: release.filed, action: { label: ' · 查看解讀', run: () => setFilingDialogSymbol(release.symbol) } });
+    }
+    if (holidayNoticeEnabled) {
+      const closures = [
+        ...upcomingClosures('US', usToday),
+        ...upcomingClosures('JP', zonedDateKey(zonedDate(noticeNow, 'Asia/Tokyo'))),
+      ];
+      for (const closure of closures) items.push({ id: closureId(closure), kind: closure.kind === 'early' ? 'early' : 'closure', label: closureLabel(closure), text: `${closure.name}${closure.kind === 'early' ? ' · 13:00 ET' : ''}`, when: dayWhen(closure.key, closure.daysAway), date: closure.key });
+    }
+    if (noticeEarnings) {
+      for (const reminder of earningsReminders(mergeEarnings(noticeEarnings.symbols, noticeEarnings.yahoo, noticeEarnings.manual, noticeNow), noticeNow)) {
+        items.push({ id: earningsReminderId(reminder), kind: 'earnings', label: '財報', text: `${reminder.symbol}${earningsTimingLabel(reminder.timing) ? ` · ${earningsTimingLabel(reminder.timing)}` : ''}${reminder.estimate ? '（預估）' : ''}`, when: reminder.endDate ? `${short(reminder.date)}～${short(reminder.endDate)}` : dayWhen(reminder.date, reminder.daysAway), date: reminder.date });
+      }
+    }
+    for (const trade of trades) {
+      const right = trade.status === 'open' ? optionRightOf(trade) : null;
+      const days = right && trade.expiryDate ? daysToExpiry(trade.expiryDate, usToday) : null;
+      if (!right || days === null || days > 7 || !trade.expiryDate || trade.expiryDate < usToday) continue;
+      items.push({ id: `EXP:${trade.expiryDate}:${trade.id}`, kind: 'expiry', label: '選擇權到期', text: `${underlyingSymbolOf(trade.ticker)} ${trade.strike ?? ''} ${right === 'call' ? 'Call' : 'Put'}`.replace(/\s+/g, ' ').trim(), when: dayWhen(trade.expiryDate, days), date: trade.expiryDate });
+    }
+    if (dividendSettings.enabled) {
+      const soon = addDaysToKey(usToday, 7);
+      const recent = addDaysToKey(usToday, -3);
+      for (const event of dividendEvents) {
+        const amount = `${event.ticker} · ${event.currency === 'JPY' ? '¥' : '$'}${event.net.toFixed(event.currency === 'JPY' ? 0 : 2)}`;
+        if (!event.credited && event.payDate >= usToday && event.payDate <= soon) items.push({ id: `DIV:${event.payDate}:${event.eventKey}`, kind: 'dividend', label: '股息即將入帳', text: amount, when: dayWhen(event.payDate, calendarDaysBetween(usToday, event.payDate) ?? 0), date: event.payDate });
+        else if (event.credited && event.payDate >= recent && event.payDate <= usToday) items.push({ id: `DIV:${event.payDate}:${event.eventKey}`, kind: 'dividend', label: '股息已入帳', text: amount, when: `${short(event.payDate)} 入帳`, date: event.payDate });
+      }
+    }
+    return items;
+  }, [dividendEvents, dividendSettings.enabled, holidayNoticeEnabled, noticeEarnings, noticeNow, notifyEnabled, recentReleases, trades]);
 
   const earningsRows = useMemo(() => {
     if (!noticeEarnings) return [];
@@ -2837,13 +2897,14 @@ export default function Home() {
         </div>
         <div className="header-actions">
           <LanguageSwitcher />
+          {notifyEnabled && <NotifyCenter theme={wafuTheme} items={noticeItems} />}
           {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
           <span className={`market-pill ${marketOpen ? 'is-open' : ''}`}><span />{marketOpen ? '美股交易中' : '非交易時段'}</span>
           <button className="secondary-button" type="button" onClick={() => refreshQuotes()} disabled={refreshing}>{refreshing ? '更新中…' : '↻ 更新報價'}</button>
           <button className="primary-button" type="button" onClick={() => setEditor(blankTrade())}>＋新增交易</button>
         </div>
       </header>
-      <HolidayNotice enabled={holidayNoticeEnabled} earnings={noticeEarnings} releases={recentReleases} onOpenRelease={setFilingDialogSymbol} />
+      {!notifyEnabled && <HolidayNotice enabled={holidayNoticeEnabled} earnings={noticeEarnings} releases={recentReleases} onOpenRelease={setFilingDialogSymbol} />}
 
       <div className="page-frame">
         <nav className="side-nav" aria-label="頁面切換">
@@ -3091,6 +3152,14 @@ export default function Home() {
           <div className="settings-body">
             <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
             <WafuMediaCard theme={wafuTheme} />
+            <section className={`settings-feature-card notify-settings-card ${notifyEnabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">報</span><div><p>Notifications</p><h3>通知中心</h3></div><span className="settings-feature-status">{notifyEnabled ? '已開啟' : '已關閉'}</span></div>
+              <p>頂欄的通知集中顯示財報公布、財報日、美日休市、7 天內到期的選擇權與股息入帳，可逐則關閉或全部標為已讀。</p>
+              <div className="settings-feature-actions">
+                <span>關閉後改回頁首的提示列，不另外計算通知。</span>
+                <button type="button" className={`settings-toggle ${notifyEnabled ? 'is-on' : ''}`} role="switch" aria-checked={notifyEnabled} onClick={toggleNotifyCenter}><i /><b>{notifyEnabled ? '開啟' : '關閉'}</b></button>
+              </div>
+            </section>
             <section className={`settings-feature-card ${brokerHubEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon" aria-hidden="true">◎</span><div><p>Optional module</p><h3>跨券商資產追蹤與再平衡</h3></div><span className="settings-feature-status">{brokerHubLoading ? '讀取中' : brokerHubEnabled ? '已開啟' : '預設關閉'}</span></div>
               <p>把不同券商的手動部位聚合成單一全景，提供 USD／JPY 平抑檢視、偏離診斷、只買不賣試算與跨券商待辦清單。</p>

@@ -44,7 +44,7 @@
 .wafu-music { position: relative; }
 .wafu-music-toggle {
   width: 36px; height: 36px; display: grid; place-items: center; padding: 0; cursor: pointer;
-  color: var(--wa-ink-2); background: rgb(var(--wa-raise-rgb) / .04); border: 1px solid var(--wa-line-2); border-radius: var(--wa-r);
+  color: var(--wa-ink-2); background: rgb(var(--wa-raise-rgb) / .04); border: 1px solid var(--wa-line-2); border-radius: 999px;
 }
 .wafu-music-toggle:hover, .wafu-music.is-playing .wafu-music-toggle { color: var(--wa-accent); border-color: var(--wa-accent); }
 .wafu-music-panel {
@@ -120,7 +120,7 @@
 
 /* ---------- Notification center ---------- */
 .wafu-notify { position: relative; }
-.wafu-notify-toggle { position: relative; width: 36px; height: 36px; display: grid; place-items: center; padding: 0; cursor: pointer; color: var(--wa-ink-2); background: rgb(var(--wa-raise-rgb) / .04); border: 1px solid var(--wa-line-2); border-radius: var(--wa-r); }
+.wafu-notify-toggle { position: relative; width: 36px; height: 36px; display: grid; place-items: center; padding: 0; cursor: pointer; color: var(--wa-ink-2); background: rgb(var(--wa-raise-rgb) / .04); border: 1px solid var(--wa-line-2); border-radius: 999px; }
 .wafu-notify-toggle:hover, .wafu-notify.has-unread .wafu-notify-toggle { color: var(--wa-accent); border-color: var(--wa-accent); }
 .wafu-notify.has-unread .wafu-notify-icon { animation: wafu-notify-sway 3.6s ease-in-out infinite; transform-origin: 50% 12%; }
 @keyframes wafu-notify-sway { 0%, 80%, 100% { rotate: 0deg; } 85% { rotate: 9deg; } 90% { rotate: -7deg; } 95% { rotate: 4deg; } }

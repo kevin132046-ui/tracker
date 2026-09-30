@@ -3246,7 +3246,7 @@ export default function Home() {
         </nav>
         <div className="dashboard">
         <section className="hero" id="overview">
-          <div className="wafu-hero-title"><EditableHeroTitle onNotify={notify} /><p className="wafu-hero-sub">{wafuTheme === 'shigure' ? '赤冬 · 雪夜的自家調配帳' : '作戰參謀的帳簿 · 百花繚亂'}</p></div>
+          <div className="wafu-hero-title"><EditableHeroTitle onNotify={notify} theme={wafuTheme} /><p className="wafu-hero-sub">{wafuTheme === 'shigure' ? '赤冬 · 雪夜的自家調配帳' : '作戰參謀的帳簿 · 百花繚亂'}</p></div>
           <LiveMarketClocks lastQuoteAt={lastQuoteAt} />
         </section>
 

@@ -10,26 +10,36 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
 
+const d1Databases = d1
+  ? [
+      {
+        binding: d1,
+        database_name: 'site-creator-d1',
+        database_id: SITE_CREATOR_DATABASE_ID,
+      },
+    ]
+  : [];
+const r2Buckets = r2
+  ? [
+      {
+        binding: r2,
+        bucket_name: 'site-creator-r2',
+      },
+    ]
+  : [];
+
 const localBindingConfig = {
   main: 'vinext/server/app-router-entry',
   compatibility_flags: ['nodejs_compat'],
-  d1_databases: d1
-    ? [
-        {
-          binding: d1,
-          database_name: 'site-creator-d1',
-          database_id: SITE_CREATOR_DATABASE_ID,
-        },
-      ]
-    : [],
-  r2_buckets: r2
-    ? [
-        {
-          binding: r2,
-          bucket_name: 'site-creator-r2',
-        },
-      ]
-    : [],
+  d1_databases: d1Databases,
+  r2_buckets: r2Buckets,
+  // Worker Previews (branch preview URLs) inherit nothing from production, so they get the same
+  // database and bucket here: the preview shows the real portfolio, and art uploaded there is the
+  // art production uses. Secrets for Previews are set separately (wrangler preview secret).
+  previews: {
+    d1_databases: d1Databases,
+    r2_buckets: r2Buckets,
+  },
 };
 
 export default defineConfig(async () => {

@@ -2,6 +2,7 @@
 
 import type { ChangeEvent, CSSProperties } from 'react';
 import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { BrokerWorkspace } from '@/lib/broker-workspace';
 import {
   buildAnnualRocSummary,
@@ -16,18 +17,49 @@ import {
   normalizeTickerForMarket,
   normalizedUsdAmount,
   priceHistoryRequest,
+  priceSymbolFor,
   rangeBuckets,
   timeWeightedReturnSeries,
 } from '@/lib/performance';
 import type { AnnualRocSummary, CapitalBasis, PriceHistorySeries, RangeMode } from '@/lib/performance';
-import { dateKey, japaneseHolidays, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
+import { addDaysToKey, dateKey, japaneseHolidays, parseDateKey, upcomingClosures, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
+import type { UpcomingClosure } from '@/lib/market-calendar';
+import { earningsReminders, exchangeTodayKey, mergeEarnings, pruneManualEarnings } from '@/lib/earnings';
+import type { AiEarningsSuggestion, AiProvider, EarningsEntry, EarningsEvent, EarningsReminder } from '@/lib/earnings';
+import { aiKeyHeaders, loadAiKeys, loadAnalyses, loadDefaultProvider, loadQuestions, releaseNoticeDays, saveAiKeys, saveAnalyses, saveDefaultProvider, saveQuestions } from '@/lib/filings';
+import type { AiKeys, CompanyFilings, FilingAnalysis } from '@/lib/filings';
+import { loadUsageTier, saveUsageTier } from '@/lib/filings';
+import type { ClaudeModel } from '@/lib/ai-models';
+import { defaultClaudeModel, loadClaudeModel, requestModel, saveClaudeModel } from '@/lib/ai-models';
+import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
 import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
 import type { TradeColumnId } from '@/lib/trade-columns';
 import { tradesToCsv } from '@/lib/trade-csv';
+import AiSettingsCard from '@/components/AiSettingsCard';
+import type { AiStatus } from '@/components/AiSettingsCard';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
+import FilingAnalysisDialog from '@/components/FilingAnalysisDialog';
+import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
+import HaloIcon from '@/components/wafu/HaloIcon';
+import NavIcon from '@/components/wafu/NavIcon';
+import type { WafuNavIconName } from '@/components/wafu/NavIcon';
+import WafuThemeCard from '@/components/wafu/WafuThemeCard';
+import WafuBackdrop from '@/components/wafu/Backdrop';
+import MusicDock from '@/components/wafu/MusicDock';
+import NotifyCenter from '@/components/wafu/NotifyCenter';
+import HomeBar from '@/components/wafu/HomeBar';
+import type { NoticeItem } from '@/components/wafu/NotifyCenter';
+import WafuMediaCard from '@/components/wafu/WafuMediaCard';
+import { useMediaPrefs } from '@/lib/wafu/media';
+import type { AssistantPrefs, PortfolioSnapshot, SnapshotPosition } from '@/lib/ai-assistant';
+import { defaultAssistantPrefs, loadAssistantPrefs, saveAssistantPrefs } from '@/lib/ai-assistant';
+import type { WafuPreference, WafuTheme } from '@/lib/wafu/theme';
+import { applyWafu, defaultWafuPreference, loadWafuPreference, resolveWafu, saveWafuPreference } from '@/lib/wafu/theme';
+import type { WafuIntroPreference } from '@/lib/wafu/intro';
+import { defaultWafuIntro, introPending, liftIntroVeil, loadIntroLiteAuto, loadWafuIntro, saveIntroLiteAuto, saveWafuIntro } from '@/lib/wafu/intro';
 import DatePicker from '@/components/DatePicker';
 import TradeColumnPicker from '@/components/TradeColumnPicker';
 
@@ -131,7 +163,7 @@ type PriceHistoryState = { key: string; series: PriceHistorySeries };
 type MacroMarketData = { mode: RangeMode | null; markets: BenchmarkMarket[]; updatedAt: string | null };
 type MacroCacheEntry = { markets: BenchmarkMarket[]; updatedAt: string; fetchedAt: number };
 type BackgroundMode = 'default' | 'image';
-type DividendSettings = { enabled: boolean; usTaxRate: number; jpTaxRate: number };
+type DividendSettings = { enabled: boolean; usTaxRate: number; jpTaxRate: number; creditOn: 'pay' | 'ex' };
 type DividendCash = {
   USD: { gross: number; tax: number; adjustment: number; net: number; count: number };
   JPY: { gross: number; tax: number; adjustment: number; net: number; count: number };
@@ -148,22 +180,34 @@ type DividendEvent = {
   calculatedNet: number;
   adjustment: number;
   net: number;
+  payDate: string;
+  paySource: 'nasdaq' | 'yahoo' | 'manual' | 'estimate';
+  credited: boolean;
 };
+
+const paySourceLabels: Record<DividendEvent['paySource'], string> = { nasdaq: 'Nasdaq', yahoo: 'Yahoo', manual: '手動', estimate: '預估' };
 
 const loadBrokerHub = () => import('@/components/BrokerHub');
 const loadDcfCalculator = () => import('@/components/DcfCalculator');
 const loadCompanyFundamentals = () => import('@/components/CompanyFundamentals');
 const loadTradeImportDialog = () => import('@/components/TradeImportDialog');
+// The 和風 opening (and its ink engine) is only fetched when a 和風 theme plays it.
+const loadWafuOpening = () => import('@/components/wafu/opening/Opening');
 const BrokerHub = lazy(loadBrokerHub);
 const DcfCalculator = lazy(loadDcfCalculator);
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
 const TradeImportDialog = lazy(loadTradeImportDialog);
+const WafuOpening = lazy(loadWafuOpening);
+// The AI assistant panel is only fetched when it is opened.
+const loadAssistantPanel = () => import('@/components/wafu/AssistantPanel');
+const AssistantPanel = lazy(loadAssistantPanel);
 
 const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
 const companyNames: Record<string, string> = {
   AAPL: 'Apple', AMZN: 'Amazon', AXP: 'American Express', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
   CNC: 'Centene', META: 'Meta Platforms', MSFT: 'Microsoft', NVDA: 'NVIDIA', SPGI: 'S&P Global', SPY: 'SPDR S&P 500',
   TRV: 'The Travelers Companies', TSLA: 'Tesla', TTWO: 'Take-Two Interactive', V: 'Visa', VST: 'Vistra',
+  COST: 'Costco', DIS: 'Disney', F: 'Ford Motor', INTC: 'Intel', JNJ: 'Johnson & Johnson', JPM: 'JPMorgan Chase', KHC: 'Kraft Heinz',
   '7203.T': 'Toyota Motor', '6758.T': 'Sony Group', '9984.T': 'SoftBank Group', '6861.T': 'Keyence',
   '8306.T': 'Mitsubishi UFJ Financial Group', '8035.T': 'Tokyo Electron', '9983.T': 'Fast Retailing', '7974.T': 'Nintendo',
 };
@@ -173,6 +217,13 @@ const backgroundModeKey = 'optionflow-background-mode';
 const backgroundPendingKey = 'optionflow-pending-background';
 const backgroundPendingModeKey = 'optionflow-pending-background-mode';
 const usdJpyRateKey = 'optionflow-usdjpy-rate';
+const holidayNoticeKey = 'optionflow-holiday-notice';
+const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
+const notifyCenterKey = 'optionflow-notify-center';
+const homeBarKey = 'optionflow-home-bar';
+const earningsReminderKey = 'optionflow-earnings-reminder';
+const manualEarningsKey = 'optionflow-earnings-manual';
+const openAiModelKey = 'optionflow-openai-model';
 const usdJpyUpdatedAtKey = 'optionflow-usdjpy-updated-at';
 const macroMarketStorageKey = 'optionflow-macro-markets-v2';
 const localBackgroundPattern = /^data:image\/jpeg;base64,/i;
@@ -450,7 +501,7 @@ const MacroMarketCard = memo(function MacroMarketCard({ market, startLabel, endL
     <div className="macro-history-chart">
       {points ? <svg viewBox="0 0 100 54" preserveAspectRatio="none" role="img" aria-label={`${market.label}${rangeLabel}${market.id === 'USDJPY' ? '匯率' : market.id === 'US10Y' || market.id === 'US30Y' ? '殖利率' : '價格'}走勢`}><defs><linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="currentColor" stopOpacity=".2"/><stop offset="100%" stopColor="currentColor" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="50" y2="50"/><polygon points={`0,50 ${points} 100,50`} fill={`url(#${gradientId})`}/><polyline points={points}/></svg> : <span>暫時沒有歷史資料</span>}
     </div>
-    <footer><span>{startLabel}</span><b>{rangeLabel}走勢</b><span>{endLabel}</span></footer>
+    <footer><span>{startLabel}</span><b>{`${rangeLabel}走勢`}</b><span>{endLabel}</span></footer>
   </article>;
 });
 
@@ -576,6 +627,89 @@ const HeaderMarketCalendar = memo(function HeaderMarketCalendar() {
       {status.japanClosedReason && <em>日股休市 · {status.japanClosedReason}</em>}
       {status.usClosedReason && <em>美股休市 · {status.usClosedReason}</em>}
     </span>}
+  </div>;
+});
+
+const closureWeekdays = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+const closureId = (closure: UpcomingClosure) => `${closure.market}:${closure.key}:${closure.kind}`;
+const closureLabel = (closure: UpcomingClosure) => closure.kind === 'early' ? '美股提前收盤' : closure.market === 'US' ? '美股休市' : '日股休市';
+const dayWhen = (key: string, daysAway: number) => {
+  const date = parseDateKey(key)!;
+  const distance = daysAway === 0 ? '今天' : `${daysAway} 天後`;
+  return `${date.month}/${date.day} ${closureWeekdays[weekday(date)]} · ${distance}`;
+};
+// Dismissal ids keep the date second so old ones can be pruned by date.
+const earningsReminderId = (reminder: EarningsReminder) => `EARN:${reminder.date}:${reminder.symbol}`;
+const earningsTimingLabel = (timing: EarningsEvent['timing']) => timing === 'pre' ? '盤前' : timing === 'post' ? '盤後' : '';
+
+function readDismissedClosures() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(holidayNoticeDismissedKey) ?? '[]');
+    return Array.isArray(stored) ? stored.filter((value): value is string => typeof value === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+type NoticeEarnings = { symbols: string[]; yahoo: Record<string, EarningsEvent>; manual: Record<string, string> };
+
+// US and Japanese closures in the coming week, US early closes, and earnings of held symbols.
+// Hidden when there is nothing to show, when everything shown has been dismissed, or when both
+// parts are switched off in settings.
+const HolidayNotice = memo(function HolidayNotice({ enabled, earnings, releases, onOpenRelease }: { enabled: boolean; earnings: NoticeEarnings | null; releases: Array<{ symbol: string; filed: string }>; onOpenRelease: (symbol: string) => void }) {
+  const [timestamp, setTimestamp] = useState<number | null>(null);
+  const [dismissed, setDismissed] = useState<string[] | null>(null);
+  useEffect(() => {
+    const update = () => setTimestamp(Date.now());
+    queueMicrotask(() => {
+      update();
+      setDismissed(readDismissedClosures());
+    });
+    const timer = window.setInterval(update, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const closures = useMemo(() => {
+    if (timestamp === null || !enabled) return [];
+    return [
+      ...upcomingClosures('US', zonedDateKey(zonedDate(timestamp, 'America/New_York'))),
+      ...upcomingClosures('JP', zonedDateKey(zonedDate(timestamp, 'Asia/Tokyo'))),
+    ].sort((a, b) => a.key.localeCompare(b.key) || a.market.localeCompare(b.market));
+  }, [enabled, timestamp]);
+  const reminders = useMemo(() => {
+    if (timestamp === null || !earnings) return [];
+    return earningsReminders(mergeEarnings(earnings.symbols, earnings.yahoo, earnings.manual, timestamp), timestamp);
+  }, [earnings, timestamp]);
+  const releaseId = (release: { symbol: string; filed: string }) => `FILED:${release.filed}:${release.symbol}`;
+  const ids = [...releases.map(releaseId), ...closures.map(closureId), ...reminders.map(earningsReminderId)];
+  if (dismissed === null || !ids.length || ids.every((id) => dismissed.includes(id))) return null;
+  const dismiss = () => {
+    // Keep only ids that can still come up, so the stored list stays small.
+    const today = zonedDateKey(zonedDate(Date.now(), 'Asia/Tokyo'));
+    const next = [...new Set([...dismissed.filter((id) => id.split(':')[1] >= addDaysToKey(today, -2)), ...ids])];
+    setDismissed(next);
+    try { window.localStorage.setItem(holidayNoticeDismissedKey, JSON.stringify(next)); } catch { /* storage unavailable: hide for this visit only */ }
+  };
+  const title = reminders.length || releases.length ? '市場提醒' : '休市預告';
+  return <div className="holiday-notice" role="status">
+    <strong>{title}</strong>
+    <ul>
+      {releases.map((release) => <li key={releaseId(release)} className="holiday-notice-item is-release">
+        <b>財報已公布</b>
+        <button type="button" onClick={() => onOpenRelease(release.symbol)} aria-label={`查看 ${release.symbol} 財報解讀`}>{release.symbol} · 查看解讀</button>
+        <small>{release.filed.slice(5).replace('-', '/')} 申報</small>
+      </li>)}
+      {closures.map((closure) => <li key={closureId(closure)} className={`holiday-notice-item is-${closure.market.toLowerCase()} ${closure.kind === 'early' ? 'is-early' : ''}`}>
+        <b>{closureLabel(closure)}</b>
+        <span>{closure.name}{closure.kind === 'early' ? ' · 13:00 ET' : ''}</span>
+        <small>{dayWhen(closure.key, closure.daysAway)}</small>
+      </li>)}
+      {reminders.map((reminder) => <li key={earningsReminderId(reminder)} className="holiday-notice-item is-earnings">
+        <b>財報</b>
+        <span>{reminder.symbol}{earningsTimingLabel(reminder.timing) ? ` · ${earningsTimingLabel(reminder.timing)}` : ''}{reminder.estimate ? '（預估）' : ''}</span>
+        <small>{reminder.endDate ? `${reminder.date.slice(5).replace('-', '/')}～${reminder.endDate.slice(5).replace('-', '/')}` : dayWhen(reminder.date, reminder.daysAway)}</small>
+      </li>)}
+    </ul>
+    <button type="button" className="holiday-notice-close" onClick={dismiss} aria-label={`關閉${title}`}>×</button>
   </div>;
 });
 
@@ -846,6 +980,41 @@ export default function Home() {
   const [valuationOpen, setValuationOpen] = useState(false);
   const [valuationTicker, setValuationTicker] = useState('MSFT');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [holidayNoticeEnabled, setHolidayNoticeEnabled] = useState(true);
+  // The notification center gathers the header notice line and more; off → the line as before.
+  const [notifyEnabled, setNotifyEnabled] = useState(true);
+  const [noticeNow, setNoticeNow] = useState<number | null>(null);
+  // Phones: the main menu as a bar along the bottom instead of the top strip.
+  const [homeBarEnabled, setHomeBarEnabled] = useState(true);
+  // Android Chrome offers installing the site as an app; the event is kept for the settings button.
+  const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
+  const [earningsEnabled, setEarningsEnabled] = useState(true);
+  const [manualEarnings, setManualEarnings] = useState<Record<string, string>>({});
+  const [aiStatus, setAiStatus] = useState<AiStatus>(null);
+  const [openAiTier, setOpenAiTier] = useState<UsageTier>('low');
+  // Bumped after each AI call so the quota is read again.
+  const [quotaCheck, setQuotaCheck] = useState(0);
+  const refreshQuota = useCallback(() => setQuotaCheck((current) => current + 1), []);
+  const [aiKeys, setAiKeys] = useState<AiKeys>({ openai: '', anthropic: '' });
+  const [defaultAiProvider, setDefaultAiProvider] = useState<AiProvider>('openai');
+  const [analysisQuestions, setAnalysisQuestions] = useState<string[]>([]);
+  const [filingAnalyses, setFilingAnalyses] = useState<Record<string, FilingAnalysis>>({});
+  const [secFilings, setSecFilings] = useState<{ key: string; filings: Record<string, CompanyFilings> } | null>(null);
+  const [filingDialogSymbol, setFilingDialogSymbol] = useState<string | null>(null);
+  const [openAiModel, setOpenAiModel] = useState('');
+  const [claudeModel, setClaudeModel] = useState<ClaudeModel>(defaultClaudeModel);
+  const [wafuPreference, setWafuPreference] = useState<WafuPreference>(defaultWafuPreference);
+  // The server renders 桔梗; the saved choice is applied on load (the boot script already set <html data-wafu>).
+  const [wafuTheme, setWafuTheme] = useState<WafuTheme>('kikyo');
+  const [wafuIntro, setWafuIntro] = useState<WafuIntroPreference>(defaultWafuIntro);
+  const [introLiteAuto, setIntroLiteAuto] = useState(true);
+  // The opening playing now (on load, or previewed from the settings).
+  const [intro, setIntro] = useState<{ theme: WafuTheme; reduced: boolean } | null>(null);
+  const wafuMedia = useMediaPrefs();
+  const [assistantPrefs, setAssistantPrefs] = useState<AssistantPrefs>(defaultAssistantPrefs);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [aiLookups, setAiLookups] = useState<Record<string, { loading: boolean; suggestion?: AiEarningsSuggestion; error?: string }>>({});
+  const [yahooEarnings, setYahooEarnings] = useState<{ key: string; events: Record<string, EarningsEvent>; failed: string[] } | null>(null);
   const [brokerHubEnabled, setBrokerHubEnabled] = useState(false);
   const [brokerHubLoading, setBrokerHubLoading] = useState(true);
   const [brokerHubToggleSaving, setBrokerHubToggleSaving] = useState(false);
@@ -866,9 +1035,10 @@ export default function Home() {
   const [underlyingQuotes, setUnderlyingQuotes] = useState<Record<string, UnderlyingQuote>>({});
   const [underlyingFailures, setUnderlyingFailures] = useState<Set<string>>(new Set());
   const [tradeColumnSet, setTradeColumnSet] = useState<TradeColumnId[]>(readStoredTradeColumns);
-  const [dividendSettings, setDividendSettings] = useState<DividendSettings>({ enabled: true, usTaxRate: 30, jpTaxRate: 15.315 });
+  const [dividendSettings, setDividendSettings] = useState<DividendSettings>({ enabled: true, usTaxRate: 30, jpTaxRate: 15.315, creditOn: 'pay' });
   const [dividendCash, setDividendCash] = useState<DividendCash>({ USD: { gross: 0, tax: 0, adjustment: 0, net: 0, count: 0 }, JPY: { gross: 0, tax: 0, adjustment: 0, net: 0, count: 0 } });
   const [dividendEvents, setDividendEvents] = useState<DividendEvent[]>([]);
+  const [dividendPending, setDividendPending] = useState<DividendCash | null>(null);
   const [dividendAdjustmentCount, setDividendAdjustmentCount] = useState(0);
   const [dividendLoading, setDividendLoading] = useState(true);
   const [dividendSaving, setDividendSaving] = useState(false);
@@ -939,10 +1109,11 @@ export default function Home() {
     setDividendLoading(true);
     try {
       const response = await fetch('/api/dividends', { cache: 'no-store' });
-      const payload = await response.json() as { settings?: DividendSettings; cash?: DividendCash; events?: DividendEvent[]; adjustmentCount?: number; updatedAt?: string; failedTickers?: string[]; error?: string };
+      const payload = await response.json() as { settings?: DividendSettings; cash?: DividendCash; pending?: DividendCash; events?: DividendEvent[]; adjustmentCount?: number; updatedAt?: string; failedTickers?: string[]; error?: string };
       if (!response.ok || !payload.settings || !payload.cash) throw new Error(payload.error ?? '股息現金目前無法更新');
       setDividendSettings(payload.settings);
       setDividendCash(payload.cash);
+      setDividendPending(payload.pending ?? null);
       setDividendEvents(Array.isArray(payload.events) ? payload.events : []);
       setDividendAdjustmentCount(Math.max(0, Number(payload.adjustmentCount) || 0));
       setDividendUpdatedAt(payload.updatedAt ?? new Date().toISOString());
@@ -969,6 +1140,26 @@ export default function Home() {
       await refreshDividendCash(false);
     } catch (error) {
       notify(error instanceof Error ? error.message : '股息設定無法保存');
+    } finally {
+      setDividendSaving(false);
+    }
+  }, [dividendSaving, notify, refreshDividendCash]);
+
+  const saveDividendPayDate = useCallback(async (eventKey: string, payDate: string) => {
+    if (dividendSaving) return;
+    setDividendSaving(true);
+    try {
+      const response = await fetch('/api/dividends', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pay-date', eventKey, payDate }),
+      });
+      const payload = await response.json() as { adjusted?: boolean; error?: string };
+      if (!response.ok || !payload.adjusted) throw new Error(payload.error ?? '發放日無法保存');
+      await refreshDividendCash(false);
+      notify(payDate ? '發放日已更新' : '發放日已改回自動判斷');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '發放日無法保存');
     } finally {
       setDividendSaving(false);
     }
@@ -1022,6 +1213,216 @@ export default function Home() {
   const openBrokerHub = useCallback(() => {
     setSettingsOpen(false);
     window.requestAnimationFrame(() => document.getElementById('broker-hub')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(holidayNoticeKey) === 'off') queueMicrotask(() => setHolidayNoticeEnabled(false));
+      if (window.localStorage.getItem(notifyCenterKey) === 'off') queueMicrotask(() => setNotifyEnabled(false));
+      if (window.localStorage.getItem(homeBarKey) === 'off') queueMicrotask(() => setHomeBarEnabled(false));
+    } catch { /* storage unavailable: keep the default */ }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const off = window.localStorage.getItem(earningsReminderKey) === 'off';
+      const stored = JSON.parse(window.localStorage.getItem(manualEarningsKey) ?? '{}') as unknown;
+      const manual = stored && typeof stored === 'object' && !Array.isArray(stored)
+        ? pruneManualEarnings(Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => typeof entry[1] === 'string')), Date.now())
+        : {};
+      const model = window.localStorage.getItem(openAiModelKey) ?? '';
+      const keys = loadAiKeys();
+      const provider = loadDefaultProvider();
+      const tier = loadUsageTier();
+      const claude = loadClaudeModel();
+      const wafu = loadWafuPreference();
+      const wafuShown = resolveWafu(wafu);
+      const introPreference = loadWafuIntro();
+      const assistant = loadAssistantPrefs();
+      const liteAuto = loadIntroLiteAuto();
+      // The boot script veiled the page when the opening should play; otherwise lift any veil now.
+      const playIntro = introPending() ? { theme: wafuShown, reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches } : null;
+      if (!playIntro) liftIntroVeil();
+      const questions = loadQuestions();
+      // Loading also drops analyses older than half a year.
+      const analyses = loadAnalyses();
+      queueMicrotask(() => {
+        if (off) setEarningsEnabled(false);
+        setManualEarnings(manual);
+        setOpenAiModel(model);
+        setAiKeys(keys);
+        setDefaultAiProvider(provider);
+        setOpenAiTier(tier);
+        setClaudeModel(claude);
+        setWafuPreference(wafu);
+        setWafuTheme(wafuShown);
+        applyWafu(wafuShown);
+        setWafuIntro(introPreference);
+        setAssistantPrefs(assistant);
+        setIntroLiteAuto(liteAuto);
+        setIntro(playIntro);
+        setAnalysisQuestions(questions);
+        setFilingAnalyses(analyses);
+      });
+    } catch { liftIntroVeil(); /* storage unavailable: keep the defaults */ }
+  }, []);
+
+  const toggleEarnings = useCallback(() => {
+    setEarningsEnabled((current) => {
+      try { window.localStorage.setItem(earningsReminderKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
+  }, []);
+
+  const setManualEarningsDate = useCallback((symbol: string, date: string | null) => {
+    setManualEarnings((current) => {
+      const next = { ...current };
+      if (date) next[symbol] = date;
+      else delete next[symbol];
+      try { window.localStorage.setItem(manualEarningsKey, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
+  }, []);
+
+  const updateOpenAiModel = useCallback((value: string) => {
+    setOpenAiModel(value);
+    try { window.localStorage.setItem(openAiModelKey, value.trim()); } catch { /* storage unavailable */ }
+  }, []);
+
+  // AI lookups sit behind Cloudflare Access. The status carries today's free ChatGPT tokens, so it
+  // is asked again every time the settings panel or the analysis dialog opens, after every AI call,
+  // and when the model or usage tier changes.
+  useEffect(() => {
+    if (!settingsOpen && !filingDialogSymbol) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      fetch(`/api/ai?model=${encodeURIComponent(openAiModel.trim())}&tier=${openAiTier}`, { cache: 'no-store', signal: controller.signal })
+        .then(async (response) => {
+          const payload = await response.json() as { providers?: Record<AiProvider, boolean>; openAiModel?: string | null; sec?: boolean; quota?: QuotaReport; error?: string };
+          if (!response.ok || !payload.providers) throw new Error(payload.error ?? 'AI 查詢暫時無法使用。');
+          if (!controller.signal.aborted) setAiStatus({ state: 'ok', providers: payload.providers, openAiModel: payload.openAiModel ?? null, sec: Boolean(payload.sec), quota: payload.quota ?? null });
+        })
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) setAiStatus({ state: 'error', message: error instanceof Error ? error.message : 'AI 查詢暫時無法使用。' });
+        });
+    }, 300);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [filingDialogSymbol, openAiModel, openAiTier, quotaCheck, settingsOpen]);
+
+  const lookupEarningsWithAi = useCallback(async (symbol: string, provider: AiProvider) => {
+    const id = `${provider}:${symbol}`;
+    setAiLookups((current) => ({ ...current, [id]: { loading: true } }));
+    try {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...aiKeyHeaders(aiKeys) },
+        body: JSON.stringify({ task: 'earnings-date', symbol, provider, model: requestModel(provider, openAiModel, claudeModel), usageTier: openAiTier }),
+      });
+      const payload = await response.json() as { suggestion?: AiEarningsSuggestion; error?: string };
+      if (!response.ok || !payload.suggestion) throw new Error(payload.error ?? '查詢失敗，請稍後再試。');
+      setAiLookups((current) => ({ ...current, [id]: { loading: false, suggestion: payload.suggestion } }));
+    } catch (error) {
+      setAiLookups((current) => ({ ...current, [id]: { loading: false, error: error instanceof Error ? error.message : '查詢失敗，請稍後再試。' } }));
+    } finally {
+      refreshQuota();
+    }
+  }, [aiKeys, claudeModel, openAiModel, openAiTier, refreshQuota]);
+
+  const dismissAiLookup = useCallback((id: string) => {
+    setAiLookups((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  const updateAiKeys = useCallback((keys: AiKeys) => { setAiKeys(keys); saveAiKeys(keys); }, []);
+  const updateOpenAiTier = useCallback((tier: UsageTier) => { setOpenAiTier(tier); saveUsageTier(tier); }, []);
+  const updateClaudeModel = useCallback((model: ClaudeModel) => { setClaudeModel(model); saveClaudeModel(model); }, []);
+  const updateWafuPreference = useCallback((preference: WafuPreference) => {
+    const theme = resolveWafu(preference);
+    saveWafuPreference(preference);
+    setWafuPreference(preference);
+    setWafuTheme(theme);
+    applyWafu(theme);
+  }, []);
+  const updateAssistantPrefs = useCallback((change: Partial<AssistantPrefs>) => {
+    setAssistantPrefs((current) => {
+      const next = { ...current, ...change };
+      saveAssistantPrefs(next);
+      if (!next.enabled) setAssistantOpen(false);
+      return next;
+    });
+  }, []);
+  const closeAssistant = useCallback(() => setAssistantOpen(false), []);
+  const updateWafuIntro = useCallback((preference: WafuIntroPreference) => { setWafuIntro(preference); saveWafuIntro(preference); }, []);
+  const updateIntroLiteAuto = useCallback((on: boolean) => { setIntroLiteAuto(on); saveIntroLiteAuto(on); }, []);
+  const previewIntro = useCallback(() => {
+    setIntro({ theme: wafuTheme, reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches });
+  }, [wafuTheme]);
+  const finishIntro = useCallback(() => setIntro(null), []);
+  // As the doors open the page rises into place (wafu-opening.css).
+  const revealAfterIntro = useCallback(() => {
+    const root = document.documentElement;
+    root.dataset.wafuReveal = '1';
+    window.setTimeout(() => { delete root.dataset.wafuReveal; }, 1500);
+  }, []);
+  // The import dialog's AI entry starts from the AI settings and can pick another model per use.
+  const importAi = useMemo(() => ({ keys: aiKeys, defaultProvider: defaultAiProvider, openAiModel, claudeModel, usageTier: openAiTier, onUsed: refreshQuota }), [aiKeys, claudeModel, defaultAiProvider, openAiModel, openAiTier, refreshQuota]);
+  const updateDefaultAiProvider = useCallback((provider: AiProvider) => { setDefaultAiProvider(provider); saveDefaultProvider(provider); }, []);
+  const updateAnalysisQuestions = useCallback((questions: string[]) => { setAnalysisQuestions(questions); saveQuestions(questions); }, []);
+  const saveFilingAnalysis = useCallback((analysis: FilingAnalysis) => {
+    setFilingAnalyses((current) => {
+      const next = { ...current, [analysis.accession]: analysis };
+      saveAnalyses(next);
+      return next;
+    });
+  }, []);
+  // A provider is usable with a key typed into this browser or one set on the server.
+  const aiProviderReady = useCallback((provider: AiProvider) => Boolean(aiKeys[provider].trim()) || (aiStatus?.state === 'ok' && aiStatus.providers[provider]), [aiKeys, aiStatus]);
+
+  const toggleHomeBar = useCallback(() => {
+    setHomeBarEnabled((current) => {
+      try { window.localStorage.setItem(homeBarKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
+  }, []);
+  useEffect(() => {
+    const offer = (event: Event) => { event.preventDefault(); setInstallPrompt(event as Event & { prompt: () => Promise<void> }); };
+    const installed = () => setInstallPrompt(null);
+    window.addEventListener('beforeinstallprompt', offer);
+    window.addEventListener('appinstalled', installed);
+    return () => { window.removeEventListener('beforeinstallprompt', offer); window.removeEventListener('appinstalled', installed); };
+  }, []);
+  // wafu-mobile.css keys the phone layout off <html data-home-bar>.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (homeBarEnabled) root.dataset.homeBar = '1';
+    else delete root.dataset.homeBar;
+  }, [homeBarEnabled]);
+  const goToSection = useCallback((section: 'overview' | 'positions' | 'returns') => {
+    setActiveSection(section);
+    window.history.replaceState(null, '', `#${section}`);
+    document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' });
+  }, []);
+  const toggleNotifyCenter = useCallback(() => {
+    setNotifyEnabled((current) => {
+      try { window.localStorage.setItem(notifyCenterKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
+  }, []);
+  // Notification dates move with the clock (checked each minute).
+  useEffect(() => {
+    queueMicrotask(() => setNoticeNow(Date.now()));
+    const timer = window.setInterval(() => setNoticeNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const toggleHolidayNotice = useCallback(() => {
+    setHolidayNoticeEnabled((current) => {
+      try { window.localStorage.setItem(holidayNoticeKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
   }, []);
 
   const toggleBrokerHub = useCallback(async () => {
@@ -1237,10 +1638,10 @@ export default function Home() {
   }, []);
 
   // After an import the list reloads from the server, as on first load, and dividend cash recalculates once.
-  const handleImported = useCallback((count: number) => {
+  const handleImported = useCallback((count: number, updated = 0) => {
     void fetchTrades().catch((error) => notify(error instanceof Error ? error.message : '無法載入交易資料'));
     window.setTimeout(() => void refreshDividendCash(false), 0);
-    notify(`已匯入 ${count} 筆交易`);
+    notify(updated ? (count ? `已匯入 ${count} 筆、平倉 ${updated} 筆交易` : `已平倉 ${updated} 筆交易`) : `已匯入 ${count} 筆交易`);
   }, [fetchTrades, notify, refreshDividendCash]);
 
   const refreshQuotes = useCallback(async (announce = true) => {
@@ -1292,6 +1693,106 @@ export default function Home() {
   // Underlying prices for open US option positions (IV, greeks, moneyness): one request per
   // symbol at most once a minute while the page is visible, and nothing without open options.
   const optionUnderlyingKey = useMemo(() => [...new Set(trades.flatMap((trade) => trade.status === 'open' && optionRightOf(trade) ? [underlyingSymbolOf(trade.ticker)] : []))].filter(Boolean).sort().join(','), [trades]);
+
+  // Symbols of open stock and option positions, for the earnings calendar.
+  const earningsSymbolKey = useMemo(() => [...new Set(trades.flatMap((trade) => trade.status === 'open' && !isCashTrade(trade) ? [priceSymbolFor(trade)] : []))]
+    .filter((symbol) => /^[A-Z0-9.-]{1,15}$/.test(symbol)).sort().join(','), [trades]);
+
+  useEffect(() => {
+    if (!earningsEnabled || !earningsSymbolKey || yahooEarnings?.key === earningsSymbolKey) return;
+    const controller = new AbortController();
+    fetch(`/api/earnings?symbols=${encodeURIComponent(earningsSymbolKey)}`, { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { earnings?: Record<string, EarningsEvent>; failed?: string[]; error?: string };
+        if (!response.ok || !payload.earnings) throw new Error(payload.error ?? '財報日暫時無法取得');
+        if (!controller.signal.aborted) setYahooEarnings({ key: earningsSymbolKey, events: payload.earnings, failed: payload.failed ?? [] });
+      })
+      // Without Yahoo the card still lists the symbols and takes manual dates.
+      .catch(() => { if (!controller.signal.aborted) setYahooEarnings({ key: earningsSymbolKey, events: {}, failed: earningsSymbolKey.split(',') }); });
+    return () => controller.abort();
+  }, [earningsEnabled, earningsSymbolKey, yahooEarnings?.key]);
+
+  const noticeEarnings = useMemo(() => earningsEnabled && earningsSymbolKey
+    ? { symbols: earningsSymbolKey.split(','), yahoo: yahooEarnings?.events ?? {}, manual: manualEarnings }
+    : null, [earningsEnabled, earningsSymbolKey, manualEarnings, yahooEarnings?.events]);
+
+  // SEC filings of the US symbols, for the "results are out" chip and the analysis dialog.
+  const secSymbolKey = useMemo(() => earningsSymbolKey.split(',').filter((symbol) => symbol && !symbol.endsWith('.T')).join(','), [earningsSymbolKey]);
+  useEffect(() => {
+    if (!earningsEnabled || !secSymbolKey || secFilings?.key === secSymbolKey) return;
+    const controller = new AbortController();
+    fetch(`/api/filings?symbols=${encodeURIComponent(secSymbolKey)}`, { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { filings?: Record<string, CompanyFilings> };
+        if (!controller.signal.aborted) setSecFilings({ key: secSymbolKey, filings: response.ok && payload.filings ? payload.filings : {} });
+      })
+      .catch(() => { if (!controller.signal.aborted) setSecFilings({ key: secSymbolKey, filings: {} }); });
+    return () => controller.abort();
+  }, [earningsEnabled, secFilings?.key, secSymbolKey]);
+
+  const filingsFor = useCallback((symbol: string) => {
+    const company = secFilings?.filings[symbol];
+    return company && (company.earningsRelease || company.periodicReport) ? company : null;
+  }, [secFilings]);
+
+  const recentReleases = useMemo(() => {
+    if (!earningsEnabled || !secFilings) return [];
+    const today = zonedDateKey(zonedDate(Date.now(), 'America/New_York'));
+    const earliest = addDaysToKey(today, -releaseNoticeDays);
+    return Object.entries(secFilings.filings).flatMap(([symbol, company]) => {
+      const filed = company.earningsRelease?.filed;
+      return filed && filed >= earliest && filed <= today ? [{ symbol, filed }] : [];
+    }).sort((a, b) => b.filed.localeCompare(a.filed));
+  }, [earningsEnabled, secFilings]);
+
+  // Notification center: the header notice line (results, closures, earnings dates) plus options
+  // expiring within a week and dividends paid or about to be paid.
+  const noticeItems = useMemo<NoticeItem[]>(() => {
+    if (!notifyEnabled || noticeNow === null) return [];
+    const items: NoticeItem[] = [];
+    const usToday = zonedDateKey(zonedDate(noticeNow, 'America/New_York'));
+    const short = (key: string) => key.slice(5).replace('-', '/');
+    for (const release of recentReleases) {
+      items.push({ id: `FILED:${release.filed}:${release.symbol}`, kind: 'release', label: '財報已公布', text: release.symbol, when: `${short(release.filed)} 申報`, date: release.filed, action: { label: ' · 查看解讀', run: () => setFilingDialogSymbol(release.symbol) } });
+    }
+    if (holidayNoticeEnabled) {
+      const closures = [
+        ...upcomingClosures('US', usToday),
+        ...upcomingClosures('JP', zonedDateKey(zonedDate(noticeNow, 'Asia/Tokyo'))),
+      ];
+      for (const closure of closures) items.push({ id: closureId(closure), kind: closure.kind === 'early' ? 'early' : 'closure', label: closureLabel(closure), text: `${closure.name}${closure.kind === 'early' ? ' · 13:00 ET' : ''}`, when: dayWhen(closure.key, closure.daysAway), date: closure.key });
+    }
+    if (noticeEarnings) {
+      for (const reminder of earningsReminders(mergeEarnings(noticeEarnings.symbols, noticeEarnings.yahoo, noticeEarnings.manual, noticeNow), noticeNow)) {
+        items.push({ id: earningsReminderId(reminder), kind: 'earnings', label: '財報', text: `${reminder.symbol}${earningsTimingLabel(reminder.timing) ? ` · ${earningsTimingLabel(reminder.timing)}` : ''}${reminder.estimate ? '（預估）' : ''}`, when: reminder.endDate ? `${short(reminder.date)}～${short(reminder.endDate)}` : dayWhen(reminder.date, reminder.daysAway), date: reminder.date });
+      }
+    }
+    for (const trade of trades) {
+      const right = trade.status === 'open' ? optionRightOf(trade) : null;
+      const days = right && trade.expiryDate ? daysToExpiry(trade.expiryDate, usToday) : null;
+      if (!right || days === null || days > 7 || !trade.expiryDate || trade.expiryDate < usToday) continue;
+      items.push({ id: `EXP:${trade.expiryDate}:${trade.id}`, kind: 'expiry', label: '選擇權到期', text: `${underlyingSymbolOf(trade.ticker)} ${trade.strike ?? ''} ${right === 'call' ? 'Call' : 'Put'}`.replace(/\s+/g, ' ').trim(), when: dayWhen(trade.expiryDate, days), date: trade.expiryDate });
+    }
+    if (dividendSettings.enabled) {
+      const soon = addDaysToKey(usToday, 7);
+      const recent = addDaysToKey(usToday, -3);
+      for (const event of dividendEvents) {
+        const amount = `${event.ticker} · ${event.currency === 'JPY' ? '¥' : '$'}${event.net.toFixed(event.currency === 'JPY' ? 0 : 2)}`;
+        if (!event.credited && event.payDate >= usToday && event.payDate <= soon) items.push({ id: `DIV:${event.payDate}:${event.eventKey}`, kind: 'dividend', label: '股息即將入帳', text: amount, when: dayWhen(event.payDate, calendarDaysBetween(usToday, event.payDate) ?? 0), date: event.payDate });
+        else if (event.credited && event.payDate >= recent && event.payDate <= usToday) items.push({ id: `DIV:${event.payDate}:${event.eventKey}`, kind: 'dividend', label: '股息已入帳', text: amount, when: `${short(event.payDate)} 入帳`, date: event.payDate });
+      }
+    }
+    return items;
+  }, [dividendEvents, dividendSettings.enabled, holidayNoticeEnabled, noticeEarnings, noticeNow, notifyEnabled, recentReleases, trades]);
+
+  const earningsRows = useMemo(() => {
+    if (!noticeEarnings) return [];
+    const now = Date.now();
+    const merged = mergeEarnings(noticeEarnings.symbols, noticeEarnings.yahoo, noticeEarnings.manual, now);
+    return noticeEarnings.symbols
+      .map((symbol) => ({ symbol, entry: merged[symbol] as EarningsEntry | null, today: exchangeTodayKey(symbol, now) }))
+      .sort((a, b) => (a.entry?.date ?? '9999').localeCompare(b.entry?.date ?? '9999') || a.symbol.localeCompare(b.symbol));
+  }, [noticeEarnings]);
 
   const loadUnderlyingQuote = useCallback(async (symbol: string, signal?: AbortSignal) => {
     const fetchedAt = underlyingFetchedAtRef.current.get(symbol) ?? 0;
@@ -1856,15 +2357,24 @@ export default function Home() {
     setSymbolFocused(false);
   }, []);
 
+  // Dividends that may still be unpaid or were paid recently, for checking and editing pay dates.
+  const recentDividendEvents = useMemo(() => {
+    const cutoff = new Date(Date.now() - 120 * 86_400_000).toISOString().slice(0, 10);
+    return dividendEvents.filter((event) => event.net > 0 && (event.credited === false || event.date >= cutoff))
+      .sort((a, b) => b.date.localeCompare(a.date) || a.ticker.localeCompare(b.ticker)).slice(0, 20);
+  }, [dividendEvents]);
+
   const derivedDividendTrades = useMemo<Trade[]>(() => {
     if (!dividendSettings.enabled) return [];
+    // Only paid dividends are cash; each appears on the day it is credited.
+    const creditDate = (event: DividendEvent) => dividendSettings.creditOn === 'ex' || !event.payDate ? event.date : event.payDate;
     return dividendEvents
-      .filter((event) => event.net > 0)
-      .sort((a, b) => b.date.localeCompare(a.date) || a.ticker.localeCompare(b.ticker))
+      .filter((event) => event.net > 0 && event.credited !== false)
+      .sort((a, b) => creditDate(b).localeCompare(creditDate(a)) || a.ticker.localeCompare(b.ticker))
       .map((event, index) => ({
         id: -910_000 - index,
         type: 'CASH',
-        openDate: event.date,
+        openDate: creditDate(event),
         expiryDate: null,
         closeDate: null,
         ticker: event.currency,
@@ -1875,7 +2385,7 @@ export default function Home() {
         currentPrice: 1,
         fees: 0,
         collateral: event.net,
-        notes: `${event.ticker} 股息 · 每股 ${nativeMoney(event.ticker, event.amountPerShare)} · ${quantityNumber.format(event.quantity)} 股 · 稅前 ${nativeMoney(event.ticker, event.gross)} · 預扣 ${nativeMoney(event.ticker, event.tax)}`,
+        notes: `${event.ticker} 股息 · 每股 ${nativeMoney(event.ticker, event.amountPerShare)} · ${quantityNumber.format(event.quantity)} 股 · 稅前 ${nativeMoney(event.ticker, event.gross)} · 預扣 ${nativeMoney(event.ticker, event.tax)}${dividendSettings.creditOn === 'ex' ? '' : ` · 除息 ${event.date} · 發放 ${event.payDate}（${paySourceLabels[event.paySource] ?? '預估'}）`}`,
         status: 'open',
         quoteMode: 'manual',
         market: event.currency === 'JPY' ? 'JP' : 'US',
@@ -1889,7 +2399,7 @@ export default function Home() {
         dividendCalculatedNet: event.calculatedNet,
         dividendAdjustment: event.adjustment,
       }));
-  }, [dividendEvents, dividendSettings.enabled]);
+  }, [dividendEvents, dividendSettings.creditOn, dividendSettings.enabled]);
   const portfolioTrades = useMemo(() => [...trades, ...derivedDividendTrades], [derivedDividendTrades, trades]);
   const enriched = useMemo(() => portfolioTrades.map((trade) => ({ trade, ...metrics(trade, usdJpyRate) })), [portfolioTrades, usdJpyRate]);
   const openTrades = useMemo(() => enriched.filter((item) => item.trade.status === 'open'), [enriched]);
@@ -1929,6 +2439,47 @@ export default function Home() {
   }, [capitalAtRisk, optionRows, trades, usdJpyRate]);
   const currentRocYear = Number(today().slice(0, 4));
   const annualRocSummary = useMemo(() => buildAnnualRocSummary(closedTrades, currentRocYear, usdJpyRate), [closedTrades, currentRocYear, usdJpyRate]);
+
+  // What the AI assistant sees: the open positions and totals this page shows (no notes or names).
+  const buildAssistantSnapshot = useCallback((): PortfolioSnapshot => {
+    const round = (value: number, digits = 2) => Number(value.toFixed(digits));
+    const positions = openTrades.map(({ trade, pnl, marketValue }): SnapshotPosition => {
+      const right = optionRightOf(trade);
+      const row = right ? optionRows.get(trade.id) : undefined;
+      return {
+        ticker: trade.ticker || (isCashTrade(trade) ? 'USD' : '—'),
+        kind: isCashTrade(trade) ? 'cash' : right === 'put' ? 'put' : right === 'call' ? 'call' : isStockTrade(trade) || isYenTrade(trade) ? 'stock' : 'other',
+        side: isShortTrade(trade) ? 'short' : 'long',
+        quantity: trade.quantity,
+        strike: right ? trade.strike : null,
+        expiry: right ? trade.expiryDate : null,
+        daysToExpiry: row?.dte ?? null,
+        entryPrice: trade.entryPrice,
+        currentPrice: trade.currentPrice,
+        underlyingPrice: row?.underlying ?? null,
+        marketValueUsd: round(marketValue),
+        pnlUsd: round(pnl),
+        currency: isYenTrade(trade) ? 'JPY' : 'USD',
+      };
+    });
+    const year = currentRocYear;
+    return {
+      asOf: todayKey,
+      usdJpy: usdJpyRate > 0 ? round(usdJpyRate, 3) : null,
+      totals: { marketValueUsd: round(trackedValue), openPnlUsd: round(openPnl), capitalUsd: round(capitalAtRisk) },
+      positions,
+      closed: {
+        count: closedTrades.length,
+        realizedUsd: round(closedTrades.reduce((sum, item) => sum + item.pnl, 0)),
+        yearRealizedUsd: round(closedTrades.filter((item) => item.trade.closeDate?.startsWith(String(year))).reduce((sum, item) => sum + item.pnl, 0)),
+        year,
+      },
+      dividends: dividendSettings.enabled ? {
+        usdNet: round(dividendCash.USD.net), jpyNet: round(dividendCash.JPY.net, 0),
+        usdPending: round(dividendPending?.USD.net ?? 0), jpyPending: round(dividendPending?.JPY.net ?? 0, 0),
+      } : null,
+    };
+  }, [capitalAtRisk, closedTrades, currentRocYear, dividendCash, dividendPending, dividendSettings.enabled, openPnl, openTrades, optionRows, todayKey, trackedValue, usdJpyRate]);
 
   const activePriceHistory = priceHistory && priceHistory.key === priceHistoryKey ? priceHistory : null;
   const priceHistoryPending = Boolean(priceHistoryKey) && !activePriceHistory;
@@ -2414,6 +2965,8 @@ export default function Home() {
   const imageBackgroundActive = backgroundMode === 'image' && Boolean(backgroundImage);
   const shellStyle = useMemo(() => imageBackgroundActive ? { '--custom-background': `url("${backgroundImage}")` } as CSSProperties : undefined, [backgroundImage, imageBackgroundActive]);
   const selectedStockTrades = useMemo(() => drilledTicker ? trades.filter((trade) => trade.ticker === drilledTicker && (trade.type === 'SDI' || trade.event === 'STOCK')) : [], [drilledTicker, trades]);
+  // Side-navigation icon: the original glyph, or in a 和風 theme a line icon with the character's halo over the current item.
+  const navGlyph = (name: WafuNavIconName, current: boolean) => <i className="wafu-nav-glyph"><NavIcon name={name} />{current && <span className="wafu-nav-halo" aria-hidden="true"><HaloIcon theme={wafuTheme} size={34} tilt={64} /></span>}</i>;
 
   return (
     <main
@@ -2434,19 +2987,23 @@ export default function Home() {
         </div>
         <div className="header-actions">
           <LanguageSwitcher />
+          {notifyEnabled && <NotifyCenter theme={wafuTheme} items={noticeItems} />}
+          {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
           <span className={`market-pill ${marketOpen ? 'is-open' : ''}`}><span />{marketOpen ? '美股交易中' : '非交易時段'}</span>
           <button className="secondary-button" type="button" onClick={() => refreshQuotes()} disabled={refreshing}>{refreshing ? '更新中…' : '↻ 更新報價'}</button>
           <button className="primary-button" type="button" onClick={() => setEditor(blankTrade())}>＋新增交易</button>
         </div>
       </header>
+      {!notifyEnabled && <HolidayNotice enabled={holidayNoticeEnabled} earnings={noticeEarnings} releases={recentReleases} onOpenRelease={setFilingDialogSymbol} />}
 
       <div className="page-frame">
         <nav className="side-nav" aria-label="頁面切換">
-          <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}><i>⚙</i><span>設定</span></button>
-          {([['overview', '總覽', '⌂'], ['positions', '持倉', '▦'], ['returns', '收益', '⌁']] as const).map(([section, label, icon]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}><i>{icon}</i><span>{label}</span></a>)}
-          <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}><i>◇</i><span>估值</span></button>
+          <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}>{navGlyph('settings', settingsOpen)}<span>設定</span></button>
+          {([['overview', '總覽'], ['positions', '持倉'], ['returns', '收益']] as const).map(([section, label]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}>{navGlyph(section, activeSection === section)}<span>{label}</span></a>)}
+          <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}>{navGlyph('valuation', activeSection === 'valuation')}<span>估值</span></button>
+          {assistantPrefs.enabled && <button type="button" className={`settings-nav-button wafu-nav-ai ${assistantOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}><i className="wafu-nav-glyph"><HaloIcon theme={wafuTheme} size={24} spin={assistantOpen} minStrokePx={1} /></i><span>AI</span></button>}
           <div className="background-control">
-            <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}><i>{backgroundSaving ? '◌' : '▧'}</i><span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
+            <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}>{navGlyph(backgroundSaving ? 'saving' : 'background', false)}<span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
             {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" disabled={backgroundSaving} className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" disabled={backgroundSaving} className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
             <input ref={backgroundInputRef} className="visually-hidden" type="file" accept="image/*" disabled={backgroundSaving} onChange={handleBackgroundUpload} />
           </div>
@@ -2664,10 +3221,64 @@ export default function Home() {
         </div>
       </div>
 
+      {filingDialogSymbol && secFilings?.filings[filingDialogSymbol] && <FilingAnalysisDialog
+        symbol={filingDialogSymbol}
+        company={secFilings.filings[filingDialogSymbol]}
+        status={aiStatus}
+        keys={aiKeys}
+        defaultProvider={defaultAiProvider}
+        openAiModel={openAiModel}
+        claudeModel={claudeModel}
+        questions={analysisQuestions}
+        analyses={filingAnalyses}
+        onSave={saveFilingAnalysis}
+        onUsed={refreshQuota}
+        usageTier={openAiTier}
+        onClose={() => setFilingDialogSymbol(null)}
+      />}
+
       {settingsOpen && <div className="settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
         <aside className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
           <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title">設定</h2><span>選擇要啟用的擴充工作區。</span></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
           <div className="settings-body">
+            <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
+            <WafuMediaCard theme={wafuTheme} />
+            <section className={`settings-feature-card assistant-settings-card ${assistantPrefs.enabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">談</span><div><p>AI assistant</p><h3>AI 助理</h3></div><span className="settings-feature-status">{assistantPrefs.enabled ? '已開啟' : '已關閉'}</span></div>
+              <p>側欄的「AI」可以問關於自己持倉的問題：到期、風險、損益。送出時附上持倉摘要（代號、數量、價格與總額，不含備註），使用「AI 設定」中的金鑰與模型；只提供分析，不會更動交易。</p>
+              <div className="wafu-intro-row assistant-voice-row">
+                <span id="assistant-voice-label">口吻</span>
+                <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="assistant-voice-label">
+                  <button type="button" role="radio" aria-checked={assistantPrefs.voice === 'character'} className={assistantPrefs.voice === 'character' ? 'active' : ''} onClick={() => updateAssistantPrefs({ voice: 'character' })}>角色（桔梗／時雨）</button>
+                  <button type="button" role="radio" aria-checked={assistantPrefs.voice === 'neutral'} className={assistantPrefs.voice === 'neutral' ? 'active' : ''} onClick={() => updateAssistantPrefs({ voice: 'neutral' })}>中性</button>
+                </div>
+              </div>
+              <div className="settings-feature-actions">
+                <span>關閉後側欄不顯示 AI，也不載入這部分的程式。</span>
+                <button type="button" className={`settings-toggle ${assistantPrefs.enabled ? 'is-on' : ''}`} role="switch" aria-checked={assistantPrefs.enabled} onClick={() => updateAssistantPrefs({ enabled: !assistantPrefs.enabled })}><i /><b>{assistantPrefs.enabled ? '開啟' : '關閉'}</b></button>
+              </div>
+            </section>
+            <section className={`settings-feature-card home-bar-settings-card ${homeBarEnabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帖</span><div><p>Phone menu</p><h3>手機底部選單</h3></div><span className="settings-feature-status">{homeBarEnabled ? '已開啟' : '已關閉'}</span></div>
+              <p>手機上把主選單放到畫面底部（總覽、持倉、收益、AI、設定、更多），目前所在的項目浮著角色光環；估值與背景在「更多」裡。</p>
+              <div className="settings-feature-actions">
+                <span>關閉後改回頁面上方的選單列；電腦版不受影響。</span>
+                <button type="button" className={`settings-toggle ${homeBarEnabled ? 'is-on' : ''}`} role="switch" aria-checked={homeBarEnabled} onClick={toggleHomeBar}><i /><b>{homeBarEnabled ? '開啟' : '關閉'}</b></button>
+              </div>
+              <div className="app-install-hint">
+                <b>安裝成手機 App</b>
+                <span>iPhone／iPad：用 Safari 開啟 → 分享 → 加入主畫面。Android：Chrome 選單 → 安裝應用程式（或加到主畫面）。安裝後全螢幕開啟，資料與網頁版相同。</span>
+                {installPrompt && <button type="button" onClick={() => { void installPrompt.prompt().finally(() => setInstallPrompt(null)); }}>安裝 App</button>}
+              </div>
+            </section>
+            <section className={`settings-feature-card notify-settings-card ${notifyEnabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">報</span><div><p>Notifications</p><h3>通知中心</h3></div><span className="settings-feature-status">{notifyEnabled ? '已開啟' : '已關閉'}</span></div>
+              <p>頂欄的通知集中顯示財報公布、財報日、美日休市、7 天內到期的選擇權與股息入帳，可逐則關閉或全部標為已讀。</p>
+              <div className="settings-feature-actions">
+                <span>關閉後改回頁首的提示列，不另外計算通知。</span>
+                <button type="button" className={`settings-toggle ${notifyEnabled ? 'is-on' : ''}`} role="switch" aria-checked={notifyEnabled} onClick={toggleNotifyCenter}><i /><b>{notifyEnabled ? '開啟' : '關閉'}</b></button>
+              </div>
+            </section>
             <section className={`settings-feature-card ${brokerHubEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon" aria-hidden="true">◎</span><div><p>Optional module</p><h3>跨券商資產追蹤與再平衡</h3></div><span className="settings-feature-status">{brokerHubLoading ? '讀取中' : brokerHubEnabled ? '已開啟' : '預設關閉'}</span></div>
               <p>把不同券商的手動部位聚合成單一全景，提供 USD／JPY 平抑檢視、偏離診斷、只買不賣試算與跨券商待辦清單。</p>
@@ -2685,9 +3296,86 @@ export default function Home() {
                 <label><span>日股外國人股息預扣稅率</span><div><input type="number" min="0" max="100" step="0.001" value={dividendSettings.jpTaxRate} onChange={(event) => setDividendSettings((current) => ({ ...current, jpTaxRate: Math.min(100, Math.max(0, Number(event.target.value))) }))} /><i>%</i></div><small>上市股票預設 15.315%，可自行修改</small></label>
               </div>
               <div className="dividend-cash-preview"><div><span>USD 稅後股息現金</span><strong>{money.format(dividendCash.USD.net)}</strong><small>{dividendCash.USD.count} 筆事件 · 預扣 {money.format(dividendCash.USD.tax)}{dividendCash.USD.adjustment > 0 ? ` · 手動調減 ${money.format(dividendCash.USD.adjustment)}` : ''}</small></div><div><span>JPY 稅後股息現金</span><strong>{yenMoney.format(dividendCash.JPY.net)}</strong><small>{dividendCash.JPY.count} 筆事件 · 預扣 {yenMoney.format(dividendCash.JPY.tax)}{dividendCash.JPY.adjustment > 0 ? ` · 手動調減 ${yenMoney.format(dividendCash.JPY.adjustment)}` : ''}</small></div></div>
+              <div className="dividend-credit-on" role="radiogroup" aria-label="股息入帳日">
+                <span>入帳日</span>
+                {(['pay', 'ex'] as const).map((option) => <button key={option} type="button" role="radio" aria-checked={dividendSettings.creditOn === option} className={dividendSettings.creditOn === option ? 'active' : ''} disabled={dividendSaving} onClick={() => { if (dividendSettings.creditOn !== option) void persistDividendSettings({ ...dividendSettings, creditOn: option }); }}>{option === 'pay' ? '發放日' : '除息日'}</button>)}
+                <small>{dividendSettings.creditOn === 'pay' ? '公司實際付款那天才加入現金；股數以除息日前一天收盤時的持股計算。' : '在除息日就加入現金（舊做法）。'}</small>
+              </div>
+              {dividendSettings.enabled && dividendSettings.creditOn === 'pay' && dividendPending && (dividendPending.USD.count > 0 || dividendPending.JPY.count > 0) && <p className="dividend-pending-total">待入帳：{[dividendPending.USD.count ? `USD ${money.format(dividendPending.USD.net)}（${dividendPending.USD.count} 筆）` : '', dividendPending.JPY.count ? `JPY ${yenMoney.format(dividendPending.JPY.net)}（${dividendPending.JPY.count} 筆）` : ''].filter(Boolean).join(' · ')}</p>}
+              {dividendSettings.enabled && dividendSettings.creditOn === 'pay' && recentDividendEvents.length > 0 && <div className="dividend-pay-list" role="table" aria-label="近期股息發放日">
+                {recentDividendEvents.map((event) => <div className="dividend-pay-row" role="row" key={event.eventKey}>
+                  <strong role="cell">{event.ticker}</strong>
+                  <span role="cell">除息 {event.date}</span>
+                  <span role="cell" className="dividend-pay-date">
+                    <input type="date" min={event.date} value={event.payDate} disabled={dividendSaving} aria-label={`${event.ticker} ${event.date} 發放日`} onChange={(change) => { if (change.target.value && change.target.value !== event.payDate) void saveDividendPayDate(event.eventKey, change.target.value); }} />
+                    <small className={`pay-source is-${event.paySource}`}>{paySourceLabels[event.paySource]}</small>
+                    {event.paySource === 'manual' && <button type="button" disabled={dividendSaving} onClick={() => void saveDividendPayDate(event.eventKey, '')} aria-label={`${event.ticker} ${event.date} 發放日改回自動`}>自動</button>}
+                  </span>
+                  <span role="cell" className={event.credited ? 'is-credited' : 'is-pending'}>{nativeMoney(event.ticker, event.net)} · {event.credited ? '已入帳' : '待入帳'}</span>
+                </div>)}
+              </div>}
               {dividendError && <p className="dividend-settings-error">{dividendError}</p>}
               <div className="settings-feature-actions dividend-settings-actions"><span>{dividendUpdatedAt ? `最近計算 ${new Intl.DateTimeFormat('zh-TW', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(dividendUpdatedAt))}` : '開啟後會依現有股票持倉自動試算；僅供追蹤，不是稅務建議。'}</span><div>{dividendAdjustmentCount > 0 && <button type="button" className="dividend-save-button restore" disabled={dividendSaving} onClick={resetDividendAdjustments}>還原 {dividendAdjustmentCount} 筆調整</button>}<button type="button" className="dividend-save-button" disabled={dividendSaving} onClick={() => persistDividendSettings(dividendSettings)}>{dividendSaving ? '保存中…' : '保存稅率'}</button><button type="button" className={`settings-toggle ${dividendSettings.enabled ? 'is-on' : ''}`} role="switch" aria-checked={dividendSettings.enabled} disabled={dividendSaving} onClick={() => persistDividendSettings({ ...dividendSettings, enabled: !dividendSettings.enabled })}><i /><b>{dividendSettings.enabled ? '開啟' : '關閉'}</b></button></div></div>
             </section>
+            <section className={`settings-feature-card holiday-notice-settings-card ${holidayNoticeEnabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon holiday" aria-hidden="true">休</span><div><p>Market calendar</p><h3>美日休市預告</h3></div><span className="settings-feature-status">{holidayNoticeEnabled ? '已開啟' : '已關閉'}</span></div>
+              <p>未來 7 天內有美股或日股休市、或美股提前收盤（13:00 ET）時，在頁首下方顯示一行提示。</p>
+              <div className="settings-feature-actions">
+                <span>按提示右側的 × 只會隱藏目前這幾天；設定保存在這個瀏覽器。</span>
+                <button type="button" className={`settings-toggle ${holidayNoticeEnabled ? 'is-on' : ''}`} role="switch" aria-checked={holidayNoticeEnabled} onClick={toggleHolidayNotice}><i /><b>{holidayNoticeEnabled ? '開啟' : '關閉'}</b></button>
+              </div>
+            </section>
+            <section className={`settings-feature-card earnings-settings-card ${earningsEnabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon earnings" aria-hidden="true">決</span><div><p>Earnings calendar</p><h3>持倉財報日曆與提醒</h3></div><span className="settings-feature-status">{earningsEnabled ? (earningsSymbolKey && yahooEarnings?.key !== earningsSymbolKey ? '讀取中' : '已開啟') : '已關閉'}</span></div>
+              <p>列出未平倉股票與選擇權標的的下一次財報日；財報前 7 天起在頁首下方提醒。日期來自 Yahoo Finance，查不到時可自行填入。</p>
+              {earningsEnabled && <div className="earnings-table" role="table" aria-label="持倉財報日">
+                {!earningsRows.length && <p className="earnings-empty">目前沒有未平倉的股票或選擇權。</p>}
+                {earningsRows.map(({ symbol, entry, today }) => {
+                  const failed = yahooEarnings?.key === earningsSymbolKey && yahooEarnings.failed.includes(symbol);
+                  const source = entry?.source === 'manual' ? '手動' : entry ? (entry.estimate ? 'Yahoo 預估' : 'Yahoo') : failed ? '無法連線' : symbol.endsWith('.T') ? '日股不支援' : '未取得';
+                  return <div className="earnings-row" role="row" key={symbol}>
+                    <strong role="cell">{symbol}</strong>
+                    <span role="cell" className={entry ? '' : 'is-missing'}>{entry ? `${entry.date}${entry.endDate ? ` ～ ${entry.endDate}` : ''}${earningsTimingLabel(entry.timing) ? ` · ${earningsTimingLabel(entry.timing)}` : ''}` : '—'}</span>
+                    <small role="cell">{source}</small>
+                    <span role="cell" className="earnings-manual">
+                      <input type="date" min={today} value={manualEarnings[symbol] ?? ''} aria-label={`手動財報日 ${symbol}`} onChange={(event) => setManualEarningsDate(symbol, event.target.value || null)} />
+                      {manualEarnings[symbol] && <button type="button" onClick={() => setManualEarningsDate(symbol, null)} aria-label={`清除手動財報日 ${symbol}`}>×</button>}
+                    </span>
+                    {(filingsFor(symbol) || (aiStatus?.state === 'ok' && (aiProviderReady('anthropic') || aiProviderReady('openai')))) && <span role="cell" className="earnings-ai-actions">
+                      {filingsFor(symbol) && <button type="button" className="is-filing" onClick={() => setFilingDialogSymbol(symbol)} aria-label={`財報解讀 ${symbol}`}>財報解讀</button>}
+                      {aiStatus?.state === 'ok' && (['openai', 'anthropic'] as const).filter((provider) => aiProviderReady(provider)).map((provider) => {
+                        const lookup = aiLookups[`${provider}:${symbol}`];
+                        const name = provider === 'anthropic' ? 'Claude' : 'ChatGPT';
+                        return <button type="button" key={provider} disabled={lookup?.loading || (provider === 'openai' && !(openAiModel.trim() || (aiStatus?.state === 'ok' && aiStatus.openAiModel))) || (provider === 'openai' && aiStatus?.state === 'ok' && Boolean(aiStatus.quota) && !freeQuotaOpen(aiStatus.quota))} title={provider === 'openai' && aiStatus?.state === 'ok' ? freeQuotaLine(aiStatus.quota) : undefined} onClick={() => lookupEarningsWithAi(symbol, provider)} aria-label={`用 ${name} 查 ${symbol} 財報日`}>{lookup?.loading ? `${name} 查詢中…` : `${name} 查`}</button>;
+                      })}
+                    </span>}
+                    {(['anthropic', 'openai'] as const).map((provider) => {
+                      const id = `${provider}:${symbol}`;
+                      const lookup = aiLookups[id];
+                      if (!lookup || lookup.loading) return null;
+                      const name = provider === 'anthropic' ? 'Claude' : 'ChatGPT';
+                      const suggestion = lookup.suggestion;
+                      return <div className="earnings-ai-suggestion" key={id}>
+                        {lookup.error ? <p className="is-error">{name}：{lookup.error}</p> : suggestion && <>
+                          <p><b>{name} 建議</b>{suggestion.date ? `${suggestion.date}${earningsTimingLabel(suggestion.timing) ? ` · ${earningsTimingLabel(suggestion.timing)}` : ''}${suggestion.confirmed ? '（公司已公布）' : '（未經公司確認）'}` : '找不到日期'}{suggestion.note ? ` — ${suggestion.note}` : ''}</p>
+                          {suggestion.sources.length > 0 && <ul>{suggestion.sources.map((source) => <li key={source.url}><a href={source.url} target="_blank" rel="noreferrer noopener">{source.title}</a></li>)}</ul>}
+                        </>}
+                        <div>
+                          {suggestion?.date && suggestion.date >= today && <button type="button" className="apply" onClick={() => { setManualEarningsDate(symbol, suggestion.date); dismissAiLookup(id); }}>套用</button>}
+                          <button type="button" onClick={() => dismissAiLookup(id)}>略過</button>
+                        </div>
+                      </div>;
+                    })}
+                  </div>;
+                })}
+              </div>}
+              {earningsEnabled && <p className="earnings-ai-hint">{aiStatus?.state === 'error' ? `AI 查詢：${aiStatus.message}` : '金鑰、ChatGPT 模型與財報解讀問題在下方「AI 設定」。'}</p>}
+              <div className="settings-feature-actions">
+                <span>手動日期優先於 Yahoo，過了那天會自動改回 Yahoo 的日期；手動日期與開關保存在這個瀏覽器。</span>
+                <button type="button" className={`settings-toggle ${earningsEnabled ? 'is-on' : ''}`} role="switch" aria-checked={earningsEnabled} aria-label="持倉財報日曆與提醒" onClick={toggleEarnings}><i /><b>{earningsEnabled ? '開啟' : '關閉'}</b></button>
+              </div>
+            </section>
+            <AiSettingsCard status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
           </div>
         </aside>
@@ -2836,7 +3524,7 @@ export default function Home() {
         </section>
       </div>}
       {rocBreakdownOpen && <RocBreakdownDialog summary={annualRocSummary} onClose={closeRocBreakdown} />}
-      {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} onClose={closeImport} onImported={handleImported} /></Suspense>}
+      {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} onClose={closeImport} onImported={handleImported} ai={importAi} /></Suspense>}
       {dividendAdjustmentCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!dividendAdjusting && event.target === event.currentTarget) setDividendAdjustmentCandidate(null); }}>
         <section className="dividend-adjustment-modal" role="dialog" aria-modal="true" aria-labelledby="dividend-adjustment-title">
           <header><div><p className="eyebrow">Dividend cash</p><h2 id="dividend-adjustment-title">調減股息入帳</h2></div><button type="button" className="close-button" disabled={dividendAdjusting} onClick={() => setDividendAdjustmentCandidate(null)} aria-label="關閉">×</button></header>
@@ -2860,6 +3548,19 @@ export default function Home() {
         </section>
       </div>}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
+      <WafuBackdrop theme={wafuTheme} paused={Boolean(intro)} />
+      {homeBarEnabled && <HomeBar
+        theme={wafuTheme}
+        active={activeSection}
+        settingsOpen={settingsOpen}
+        assistant={assistantPrefs.enabled ? { open: assistantOpen, toggle: () => setAssistantOpen((open) => !open) } : null}
+        onSection={goToSection}
+        onSettings={() => setSettingsOpen(true)}
+        onValuation={() => openValuation(drilledTicker ?? valuationTicker)}
+        background={{ label: backgroundSaving ? '保存中' : backgroundImage ? '換背景圖片' : '背景圖片', busy: backgroundSaving, pick: () => backgroundInputRef.current?.click() }}
+      />}
+      {assistantOpen && assistantPrefs.enabled && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={importAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}
+      {intro && createPortal(<Suspense fallback={null}><WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} /></Suspense>, document.body)}
     </main>
   );
 }

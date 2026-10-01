@@ -64,7 +64,7 @@ import HankoTile from '@/components/wafu/HankoTile';
 import ResearchDrawer from '@/components/wafu/ResearchDrawer';
 import type { ResearchTab } from '@/components/wafu/ResearchDrawer';
 import HomeBar from '@/components/wafu/HomeBar';
-import type { NoticeItem } from '@/components/wafu/NotifyCenter';
+import type { NoticeCalendar, NoticeItem } from '@/components/wafu/NotifyCenter';
 import WafuMediaCard from '@/components/wafu/WafuMediaCard';
 import { useMediaPrefs } from '@/lib/wafu/media';
 import { applyPerf, probeFramesOnce } from '@/lib/wafu/perf';
@@ -1860,6 +1860,30 @@ export default function Home() {
     }).sort((a, b) => b.filed.localeCompare(a.filed));
   }, [earningsEnabled, secFilings]);
 
+  // 通知中心 calendar (prototype): all known upcoming earnings of holdings, closures in the next 45
+  // days, and a 財報解讀 card for the latest results of up to four holdings.
+  const noticeCalendar = useMemo<NoticeCalendar | undefined>(() => {
+    if (!notifyEnabled || noticeNow === null) return undefined;
+    const usToday = zonedDateKey(zonedDate(noticeNow, 'America/New_York'));
+    const closures = holidayNoticeEnabled ? [
+      ...upcomingClosures('US', usToday, 45),
+      ...upcomingClosures('JP', zonedDateKey(zonedDate(noticeNow, 'Asia/Tokyo')), 45),
+    ].sort((a, b) => a.key.localeCompare(b.key) || a.market.localeCompare(b.market))
+      .map((closure) => ({ key: closure.key, market: closure.market, label: closureLabel(closure), name: closure.name, early: closure.kind === 'early', daysAway: closure.daysAway })) : [];
+    const earnings = noticeEarnings
+      ? earningsReminders(mergeEarnings(noticeEarnings.symbols, noticeEarnings.yahoo, noticeEarnings.manual, noticeNow), noticeNow, 120)
+        .map((entry) => ({ symbol: entry.symbol, date: entry.date, timing: entry.timing, estimate: entry.estimate, daysAway: entry.daysAway }))
+        .sort((a, b) => a.daysAway - b.daysAway)
+      : [];
+    const digestFrom = addDaysToKey(usToday, -60);
+    const digests = earningsEnabled && secFilings ? Object.entries(secFilings.filings).flatMap(([symbol, company]) => {
+      const release = company.earningsRelease ?? company.periodicReport;
+      if (!release || release.filed < digestFrom) return [];
+      return [{ symbol, name: company.name, cik: company.cik, form: release.form, filed: release.filed, url: release.url, analysis: filingAnalyses[release.accession]?.text ?? null }];
+    }).sort((a, b) => b.filed.localeCompare(a.filed)).slice(0, 4) : [];
+    return { earnings, closures, digests, onAskAi: (symbol: string) => setFilingDialogSymbol(symbol) };
+  }, [earningsEnabled, filingAnalyses, holidayNoticeEnabled, noticeEarnings, noticeNow, notifyEnabled, secFilings]);
+
   // Notification center: the header notice line (results, closures, earnings dates) plus options
   // expiring within a week and dividends paid or about to be paid.
   const noticeItems = useMemo<NoticeItem[]>(() => {
@@ -3221,7 +3245,7 @@ export default function Home() {
           </a>
           <HeaderMarketCalendar />
         </div>
-        {notifyEnabled && <div className="topbar-notice"><NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} bar={notifyBar} /></div>}
+        {notifyEnabled && <div className="topbar-notice"><NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} bar={notifyBar} calendar={noticeCalendar} /></div>}
         <div className="header-actions">
           <LanguageSwitcher />
           {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}

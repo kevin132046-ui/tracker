@@ -280,3 +280,51 @@
 @media (min-width: 1800px) {
   :root[data-wafu] .side-nav { translate: calc((1760px - 100vw) / 2 + 12px) 0; }
 }
+
+/* ---- 通知中心 (prototype): 財報 / 休市 / 其他 tabs, upcoming earnings, 財報解讀 ---- */
+.wafu-notify-panel.ntc-pop { width: min(460px, calc(100vw - 24px)); max-height: min(78vh, 720px); overflow-y: auto; overscroll-behavior: contain; padding: 14px 14px 12px; }
+.ntc-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.ntc-head > b { font-family: var(--wa-f-display); font-size: 16px; letter-spacing: .06em; color: var(--wa-ink); }
+.ntc-seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--wa-line); border-radius: 999px; background: rgb(0 0 0 / .18); }
+.ntc-seg button { border: 0; background: transparent; padding: 5px 14px; border-radius: 999px; color: var(--wa-muted); font-size: 12.5px; cursor: pointer; }
+.ntc-seg button.on { color: var(--wa-on-accent); background: var(--wa-accent); }
+.ntc-n { margin-left: 5px; padding: 0 6px; font-size: 10.5px; border-radius: 999px; background: rgb(0 0 0 / .25); }
+.ntc-body h5 { margin: 12px 0 6px; font-size: 12px; color: var(--wa-accent-2); letter-spacing: .14em; font-weight: 600; }
+.ntc-earn, .ntc-hol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.ntc-earn li, .ntc-hol li { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 10px; }
+.ntc-earn li.soon, .ntc-hol li.soon { background: color-mix(in srgb, var(--wa-accent-2) 12%, transparent); }
+.ntc-tk { flex: none; min-width: 48px; text-align: center; padding: 3px 8px; border: 1px solid var(--wa-line-2, var(--wa-line)); border-radius: 999px; font-family: var(--wa-f-display); font-weight: 700; font-size: 12.5px; color: var(--wa-ink); }
+.ntc-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ntc-item b { color: var(--wa-ink); font-size: 13px; font-weight: 600; }
+.ntc-item small { color: var(--wa-muted); font-size: 11.5px; }
+.ntc-mk { flex: none; min-width: 44px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 6px; border-radius: 8px; background: rgb(255 255 255 / .06); }
+.ntc-mk.is-us { color: #9ec6ff; } .ntc-mk.is-jp { color: #ffb2a4; }
+.ntc-remind { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; font-size: 12px; color: var(--wa-muted); flex-wrap: wrap; }
+.ntc-remind button { padding: 3px 10px; border: 1px solid var(--wa-line); border-radius: 999px; background: transparent; color: var(--wa-muted); font-size: 11.5px; cursor: pointer; }
+.ntc-remind button.on { color: var(--wa-accent); border-color: var(--wa-accent); background: var(--wa-accent-soft); }
+.ntc-ana { margin-top: 8px; padding: 12px; border: 1px solid var(--wa-line); border-radius: 12px; background: rgb(0 0 0 / .16); }
+.ntc-ana header { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.ntc-ana header b { font-family: var(--wa-f-display); font-size: 15px; color: var(--wa-ink); }
+.ntc-ana header small { color: var(--wa-muted); font-size: 11.5px; }
+.ntc-ana a { color: var(--wa-accent); }
+.ntc-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ntc-metrics > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 8px; border-radius: 10px; background: rgb(255 255 255 / .04); }
+.ntc-metrics span { font-size: 11.5px; color: var(--wa-muted); }
+.ntc-metrics b { font-size: 15px; font-weight: 700; color: var(--wa-ink); font-variant-numeric: tabular-nums; }
+.ntc-metrics small { font-size: 11px; color: var(--wa-muted); font-variant-numeric: tabular-nums; }
+.ntc-metrics .good b { color: var(--wa-up); }
+.ntc-points { margin: 10px 0 8px; padding-left: 18px; font-size: 12.5px; line-height: 1.6; color: var(--wa-ink-2, var(--wa-ink)); display: flex; flex-direction: column; gap: 4px; }
+.ntc-loading, .ntc-hint { margin: 8px 0; font-size: 12px; color: var(--wa-muted); line-height: 1.6; }
+.ntc-ask { width: 100%; margin-top: 4px; padding: 8px 12px; border: 1px solid var(--wa-line-2, var(--wa-line)); border-radius: 999px; background: transparent; color: var(--wa-ink); font-size: 13px; cursor: pointer; }
+.ntc-ask:hover { border-color: var(--wa-accent); color: var(--wa-accent); }
+.ntc-note { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--wa-line); font-size: 11.5px; color: var(--wa-muted); line-height: 1.6; }
+.ntc-other-head { display: flex; justify-content: space-between; align-items: center; }
+.ntc-other-head button { border: 0; background: none; color: var(--wa-accent); font-size: 12px; cursor: pointer; }
+.ntc-other-head button:disabled { color: var(--wa-muted); cursor: default; }
+.wafu-notify-lamp.is-calm { background: var(--wa-gold); }
+@media (max-width: 520px) { .ntc-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ntc-pop .ntc-body, .ntc-pop .ntc-ana { text-align: left; }
+.ntc-pop .ntc-ana header { align-items: flex-start; justify-content: flex-start; padding: 0; border: 0; text-align: left; }
+.ntc-pop .ntc-head { padding: 0 0 10px; }
+.ntc-pop .ntc-body .wafu-notify-empty { text-align: left; padding: 6px 8px; }
+.wafu-notify-panel.ntc-pop { background: var(--wa-panel-solid, var(--wa-bg)); box-shadow: 0 24px 60px rgb(0 0 0 / .55); }

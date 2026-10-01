@@ -4,6 +4,8 @@ import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 
 export type ResearchTab = 'technical' | 'fundamentals' | 'dcf' | 'lots';
+/** A holding in the chip row: stocks show their P&L %; cash and option-only positions cannot be opened. */
+export type ResearchChip = { symbol: string; kind: 'stock' | 'option' | 'cash'; roc: number };
 const tabs: ReadonlyArray<readonly [ResearchTab, string]> = [['technical', '技術面'], ['fundamentals', '基本面'], ['dcf', 'DCF 估值'], ['lots', '購買紀錄']];
 
 /**
@@ -11,7 +13,7 @@ const tabs: ReadonlyArray<readonly [ResearchTab, string]> = [['technical', '技�
  * purchase lots in a drawer from the right (full screen on phones), over the page. The content is
  * the site's own panels with live data; the drawer only frames and switches them.
  */
-export default function ResearchDrawer({ symbol, company, summary, tab, onTab, onClose, symbols = [], onSymbol, children }: {
+export default function ResearchDrawer({ symbol, company, summary, tab, onTab, onClose, chips = [], onSymbol, children }: {
   symbol: string;
   company: string;
   /** One line under the title: holding, average cost, unrealised P&L (already formatted). */
@@ -19,8 +21,8 @@ export default function ResearchDrawer({ symbol, company, summary, tab, onTab, o
   tab: ResearchTab;
   onTab: (tab: ResearchTab) => void;
   onClose: () => void;
-  /** Held tickers for the switcher row (from the prototype); picking one keeps the open tab. */
-  symbols?: string[];
+  /** Every holding as a chip row (from the prototype); picking a stock keeps the open tab. */
+  chips?: ResearchChip[];
   onSymbol?: (symbol: string) => void;
   children: ReactNode;
 }) {
@@ -49,8 +51,17 @@ export default function ResearchDrawer({ symbol, company, summary, tab, onTab, o
         </div>
         <button type="button" ref={closeRef} className="wafu-research-close" onClick={onClose} aria-label="關閉個股研究">×</button>
       </header>
-      {onSymbol && symbols.length > 1 && <nav className="wafu-research-switch" aria-label="切換個股">
-        {symbols.map((item) => <button key={item} type="button" className={item === symbol ? 'on' : ''} aria-current={item === symbol ? 'true' : undefined} onClick={() => { if (item !== symbol) onSymbol(item); }}>{item}</button>)}
+      {onSymbol && chips.length > 1 && <nav className="wafu-research-switch" aria-label="切換個股">
+        {chips.map((chip) => {
+          const on = chip.symbol === symbol;
+          const off = chip.kind !== 'stock' && !on;
+          const note = chip.kind === 'cash' ? '現金' : chip.kind === 'option' ? '選擇權' : `${chip.roc >= 0 ? '+' : '−'}${Math.abs(chip.roc * 100).toFixed(1)}%`;
+          return <button key={chip.symbol} type="button" className={`${on ? 'on' : ''}${off ? ' is-off' : ''}`} disabled={off} aria-current={on ? 'true' : undefined}
+            title={off ? (chip.kind === 'cash' ? '現金部位沒有個股研究' : '只持有選擇權，沒有股票部位') : undefined}
+            onClick={() => { if (!on) onSymbol(chip.symbol); }}>
+            <b>{chip.symbol}</b><small className={chip.kind === 'stock' ? (chip.roc >= 0 ? 'positive' : 'negative') : ''}>{note}</small>
+          </button>;
+        })}
       </nav>}
       <div className="wafu-research-tabs" role="tablist" aria-label="個股研究分頁">
         {tabs.map(([id, label]) => <button key={id} type="button" role="tab" id={`research-tab-${id}`} aria-selected={tab === id} aria-controls="research-panel" className={tab === id ? 'on' : ''} onClick={() => onTab(id)}>{label}</button>)}

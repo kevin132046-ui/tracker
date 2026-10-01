@@ -215,11 +215,12 @@ const TradeImportDialog = lazy(loadTradeImportDialog);
 const loadAssistantPanel = () => import('@/components/wafu/AssistantPanel');
 const AssistantPanel = lazy(loadAssistantPanel);
 
-// Allocation colours per theme: muted inks from each theme's own palette, largest holding in the
-// accent. 桔梗: indigo, wisteria, moss, old gold, persimmon; 時雨: teal, frost, lavender, amber.
+// Allocation colours per theme: tonal steps of the theme's own accents (the largest holding in the
+// main accent), with the theme's gold as the one warm note. 桔梗: periwinkle → wisteria → indigo;
+// 時雨: teal → frost → lavender.
 const palettes: Record<WafuTheme, string[]> = {
-  kikyo: ['#8fb0e8', '#a397dc', '#6fa996', '#c2a162', '#c77a66', '#6f86b0', '#9d9ab0', '#b3a386'],
-  shigure: ['#56c2c0', '#3f8f9c', '#8fb3cf', '#a596cf', '#d2b36e', '#6f97a3', '#bcd3d6', '#7f9e93'],
+  kikyo: ['#9dbcf0', '#b3a5f0', '#7d93d6', '#8f7fd0', '#c9a45c', '#6479b4', '#a9b6dc', '#5c5a9e'],
+  shigure: ['#62d4d2', '#3fa7ae', '#9fd8e6', '#b69ae8', '#f0c24b', '#2f8590', '#c7e6ea', '#7c8fd6'],
 };
 const companyNames: Record<string, string> = {
   AAPL: 'Apple', AMZN: 'Amazon', AXP: 'American Express', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',

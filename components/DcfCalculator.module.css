@@ -54,3 +54,14 @@
 
 /* 和風: headings and figures in the display face. */
 .identity h2, .cardHeading h3, .summaryGrid strong { font-family: var(--wa-f-display); letter-spacing: .03em; }
+
+/* AI lookup in the data line: badge, sources and the ask buttons. */
+.dataStatus { flex-wrap: wrap; }
+.aiBadge { padding: 1px 7px; color: var(--wa-accent); border: 1px dashed var(--wa-accent); border-radius: 999px; font-style: normal; font-weight: 700; letter-spacing: .04em; }
+.aiSources { display: inline-flex; flex-wrap: wrap; gap: 2px 8px; }
+.aiSources a { max-width: 200px; overflow: hidden; color: var(--wa-accent); text-decoration: underline; text-underline-offset: 2px; text-overflow: ellipsis; white-space: nowrap; }
+.aiActions { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.aiActions button { min-height: 26px; padding: 0 10px; color: var(--wa-on-accent, var(--wa-bg)); background: var(--wa-accent); border: 1px solid var(--wa-accent); border-radius: 999px; font-size: 10.5px; font-weight: 700; cursor: pointer; }
+.aiActions button.aiAlt { color: var(--wa-ink-2); background: none; border-color: var(--wa-line); }
+.aiWorking { color: var(--wa-accent); }
+.aiError { color: var(--wa-down); }

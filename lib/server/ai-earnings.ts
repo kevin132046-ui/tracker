@@ -49,7 +49,8 @@ function parseAnswer(text: string, today: string): ParsedAnswer {
   }
 }
 
-const cleanSources = (sources: Array<{ url?: string; title?: string | null }>) => {
+/** Web sources an AI answer cited: http(s) only, de-duplicated, at most five. */
+export const cleanSources = (sources: Array<{ url?: string; title?: string | null }>) => {
   const seen = new Set<string>();
   return sources.flatMap((source) => {
     if (!source.url || !/^https?:\/\//.test(source.url) || seen.has(source.url)) return [];

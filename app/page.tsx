@@ -1096,7 +1096,7 @@ export default function Home() {
   const [allocationGroupSelection, setAllocationGroupSelection] = useState<{ label: string; members: string[] } | null>(null);
   const [allocationHoveredLabel, setAllocationHoveredLabel] = useState<string | null>(null);
   const [allocationPinnedLabel, setAllocationPinnedLabel] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterMode>('all');
+  const [filter, setFilter] = useState<FilterMode>('open');
   const [positionView, setPositionView] = useState<PositionViewMode>('visual');
   const [query, setQuery] = useState('');
   const [activeSection, setActiveSection] = useState<'overview' | 'positions' | 'returns' | 'valuation'>('overview');

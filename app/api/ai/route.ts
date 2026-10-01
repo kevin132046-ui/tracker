@@ -9,7 +9,7 @@ import { estimateTokens } from '@/lib/openai-free-tier';
 import { anthropicModel, dateLookupEstimate, findEarningsDate, openAiModelPattern } from '@/lib/server/ai-earnings';
 import type { AiCompanyPayload } from '@/lib/company-ai';
 import { companyLookupEstimate, findCompanyFigures } from '@/lib/server/company-ai';
-import { claudeModels, resolveClaudeModel, safeAiError } from '@/lib/ai-models';
+import { aiErrorHint, claudeModels, resolveClaudeModel, safeAiError } from '@/lib/ai-models';
 import type { OpenTradeHint } from '@/lib/ai-trade-entry';
 import { maxEntryLength, maxOpenTradeHints } from '@/lib/ai-trade-entry';
 import { parseEntryImage, parseTrades, tradeParseRequest } from '@/lib/server/trade-parse';
@@ -171,7 +171,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ provider, model: result.model, rows: result.rows, questions: result.questions }, { headers: noStore });
     } catch (error) {
       console.warn(`Trade parse failed (${provider} ${model}):`, error instanceof Error ? error.message : error);
-      return fail(error instanceof Error && error.message.startsWith('AI ') ? `${providerName(provider)} 的回覆格式不正確，請再試一次或換個模型。` : `${providerName(provider)} 解析失敗，請稍後再試。`, 502);
+      return fail(error instanceof Error && aiErrorHint(error.message) ? `${providerName(provider)} 解析失敗：${aiErrorHint(error.message)}` : error instanceof Error && error.message.startsWith('AI ') ? `${providerName(provider)} 的回覆格式不正確，請再試一次或換個模型。` : `${providerName(provider)} 解析失敗，請稍後再試。`, 502);
     }
   }
 
@@ -238,7 +238,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ suggestion, cached: false }, { headers: noStore });
     } catch (error) {
       console.warn(`AI earnings lookup failed (${provider} ${symbol}):`, error instanceof Error ? error.message : error);
-      return fail(`${providerName(provider)} 查詢失敗，請稍後再試。`, 502);
+      return fail(`${providerName(provider)} 查詢失敗：${(error instanceof Error && aiErrorHint(error.message)) || '請稍後再試。'}`, 502);
     }
   }
 
@@ -280,6 +280,6 @@ export async function POST(request: Request) {
     }, { headers: noStore });
   } catch (error) {
     console.warn(`Filing ${task} failed (${provider} ${symbol}):`, error instanceof Error ? error.message : error);
-    return fail(`${providerName(provider)} 產生失敗，請稍後再試。`, 502);
+    return fail(`${providerName(provider)} 產生失敗：${(error instanceof Error && aiErrorHint(error.message)) || '請稍後再試。'}`, 502);
   }
 }

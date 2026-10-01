@@ -106,5 +106,21 @@ export const openAiReasoning = (model: string, maxOutput: number) => /^(gpt-5(?!
   ? { reasoning: { effort: 'low' as const }, max_output_tokens: Math.max(maxOutput, 4000) }
   : { max_output_tokens: maxOutput };
 
-/** A provider error for the user: short, with anything that looks like a key masked. */
-export const safeAiError = (message: string) => message.replace(/\bsk-[A-Za-z0-9_*-]{6,}/g, 'sk-••••').slice(0, 180);
+/**
+ * What to do about the provider errors people actually hit (billing, key, model, rate limit), in
+ * plain words; null for anything else. OpenAI's free daily tokens still need a prepaid balance
+ * above zero: with none left every call fails with 429 "no credits remaining".
+ */
+export function aiErrorHint(message: string): string | null {
+  if (/no credits remaining|insufficient_quota|exceeded your current quota/i.test(message)) return 'OpenAI API 帳戶的儲值餘額是 0：免費的每日額度也要餘額大於 0 才能用。請到 platform.openai.com → Settings → Billing 儲值（例如 US$5；ChatGPT Plus 訂閱不含 API 額度），或改用 Claude。';
+  if (/credit balance is too low/i.test(message)) return 'Claude（Anthropic）帳戶的餘額不足：請到 console.anthropic.com → Billing 儲值，或改用 ChatGPT。';
+  if (/OpenAI returned 401|incorrect api key|invalid_api_key/i.test(message)) return 'OpenAI 金鑰無效或已撤銷，請在「設定 → AI 設定」更新金鑰。';
+  if (/authentication_error|invalid x-api-key/i.test(message)) return 'Claude 金鑰無效或已撤銷，請在「設定 → AI 設定」更新金鑰。';
+  if (/OpenAI returned 404|model_not_found|model .{1,80} does not exist/i.test(message)) return '這個 ChatGPT 模型不存在，或這把金鑰沒有權限使用，請在「設定 → AI 設定」換一個模型。';
+  if (/rate limit|rate_limit_exceeded|OpenAI returned 429/i.test(message)) return '請求太頻繁，已達供應商的速率上限，請等一分鐘再試。';
+  if (/overloaded/i.test(message)) return 'AI 供應商目前忙碌，請稍後再試。';
+  return null;
+}
+
+/** A provider error for the user: the plain-words hint when there is one, else short with keys masked. */
+export const safeAiError = (message: string) => aiErrorHint(message) ?? message.replace(/\bsk-[A-Za-z0-9_*-]{6,}/g, 'sk-••••').slice(0, 180);

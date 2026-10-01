@@ -412,3 +412,68 @@
 .wafu-research-switch button.is-off b { color: var(--wa-muted); font-weight: 600; }
 .wafu-research-switch button.is-off small { color: var(--wa-muted); font-weight: 500; }
 @media (max-width: 720px) { .wafu-research-switch { padding: 2px 16px 10px; } }
+
+/* ---- 益損 (third tab of 交易與持倉): broker-style realized / unrealized report ---- */
+.wafu-gains { padding: 0 28px 22px; }
+.wafu-gains-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 10px 16px; margin: 6px 0 10px; }
+.wafu-gains-head h3 { margin: 0; color: var(--wa-ink); font: 600 18px/1.2 var(--wa-f-display, serif); letter-spacing: .06em; }
+.wafu-gains-head span { display: block; margin-top: 3px; color: var(--wa-muted); font-size: 11.5px; }
+.wafu-gains-actions { display: flex; gap: 8px; }
+.wafu-gains-actions button { min-height: 32px; padding: 0 12px; color: var(--wa-accent); background: none; border: 1px solid var(--wa-line); border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.wafu-gains-actions button:hover { border-color: var(--wa-accent); }
+.wafu-gains-tabs { display: flex; gap: 4px; margin-bottom: 10px; overflow-x: auto; border-bottom: 1px solid var(--wa-line); scrollbar-width: none; }
+.wafu-gains-tabs button { padding: 9px 12px; color: var(--wa-muted); background: none; border: 0; border-bottom: 2px solid transparent; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.wafu-gains-tabs button.on { color: var(--wa-ink); border-bottom-color: var(--wa-accent); }
+.wafu-gains-wrap { overflow-x: auto; background: rgb(0 0 0 / .12); border: 1px solid var(--wa-line); border-radius: 10px; }
+.wafu-gains-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.wafu-gains-table th { padding: 11px 14px; color: var(--wa-ink-2, var(--wa-ink)); border-bottom: 1px solid var(--wa-line); font-size: 12px; font-weight: 600; text-align: right; white-space: nowrap; }
+.wafu-gains-table td { padding: 11px 14px; color: var(--wa-ink); border-bottom: 1px solid rgb(255 255 255 / .05); font-size: 13px; text-align: right; white-space: nowrap; }
+.wafu-gains-table th:first-child, .wafu-gains-table td:first-child { text-align: left; }
+.wafu-gains-table td.positive { color: var(--wa-up); }
+.wafu-gains-table td.negative { color: var(--wa-down); }
+.wafu-gains-table td button { display: inline-flex; align-items: center; gap: 8px; padding: 0; color: inherit; background: none; border: 0; font: inherit; cursor: pointer; }
+.wafu-gains-table td button i { display: inline-block; width: 12px; color: var(--wa-muted); font-style: normal; transition: transform .15s ease; }
+.wafu-gains-table td button[aria-expanded='true'] i { transform: rotate(90deg); }
+.wafu-gains-table td small { margin-left: 4px; color: var(--wa-muted); font-size: 11px; }
+.wafu-gains-ticker td { background: rgb(255 255 255 / .02); font-size: 12.5px; }
+.wafu-gains-ticker td:first-child { padding-left: 34px; }
+.wafu-gains-ticker td b { color: var(--wa-ink); letter-spacing: .03em; }
+.wafu-gains-lot td { color: var(--wa-ink-2, var(--wa-ink)); font-size: 12px; }
+.wafu-gains-lot td:first-child { padding-left: 56px; }
+.wafu-gains-lot td:first-child span { display: block; color: var(--wa-ink); }
+.wafu-gains-lot td:first-child small { display: block; margin: 2px 0 0; }
+.wafu-gains-empty td { padding-left: 34px; color: var(--wa-muted); font-size: 12px; text-align: left; }
+.wafu-gains-total td { font-weight: 600; border-bottom: 0; }
+.wafu-gains-note { margin: 10px 2px 0; color: var(--wa-muted); font-size: 11px; line-height: 1.6; }
+.wafu-gains-note b { color: var(--wa-ink-2, var(--wa-ink)); font-weight: 600; }
+.wafu-gains-table td small.wafu-gains-sub { display: none; }
+@media (max-width: 720px) {
+  .wafu-gains { padding: 0 17px 18px; }
+  .wafu-gains-table { min-width: 0; font-size: 12px; }
+  .wafu-gains-table th, .wafu-gains-table td { padding: 9px 10px; font-size: 12px; }
+  /* 銷售所得 / 調整成本 / WS move under the name. */
+  .wafu-gains-table th:nth-child(n+2):nth-child(-n+4), .wafu-gains-table td:nth-child(n+2):nth-child(-n+4) { display: none; }
+  .wafu-gains-table td:first-child { width: 100%; white-space: normal; }
+  .wafu-gains-table th:not(:first-child), .wafu-gains-table td:not(:first-child) { width: 1%; padding-left: 6px; }
+  .wafu-gains-table td button { display: inline; text-align: left; }
+  .wafu-gains-table td button i { margin-right: 6px; }
+  .wafu-gains-cat td button { font-size: 13px; }
+  .wafu-gains-table td small.wafu-gains-sub { display: block; margin: 3px 0 0 20px; font-size: 10.5px; }
+  .wafu-gains-lot td small.wafu-gains-sub, .wafu-gains-total td small.wafu-gains-sub { margin-left: 0; }
+  .wafu-gains-ticker td:first-child { padding-left: 22px; }
+  .wafu-gains-lot td:first-child { padding-left: 34px; }
+}
+
+/* 列印: only the 益損 report (everything else is taken out of the layout), dark ink on paper. */
+@media print {
+  :root[data-print='gains'], :root[data-print='gains'] body { background: #fff !important; }
+  :root[data-print='gains'] body *:not(:has(.wafu-gains)):not(.wafu-gains):not(.wafu-gains *) { display: none !important; }
+  :root[data-print='gains'] body *:has(.wafu-gains) { display: block !important; width: auto !important; margin: 0 !important; padding: 0 !important; background: none !important; border: 0 !important; box-shadow: none !important; translate: none !important; }
+  :root[data-print='gains'] .wafu-gains, :root[data-print='gains'] .wafu-gains * { color: #111 !important; background: none !important; border-color: #bbb !important; box-shadow: none !important; }
+  :root[data-print='gains'] .wafu-gains { padding: 0 !important; }
+  :root[data-print='gains'] .wafu-gains-actions, :root[data-print='gains'] .wafu-gains-tabs button:not(.on) { display: none !important; }
+  :root[data-print='gains'] .wafu-gains-wrap { overflow: visible; }
+  :root[data-print='gains'] .wafu-gains-table { min-width: 0; }
+  :root[data-print='gains'] .wafu-gains-table td.positive { color: #0a7a3a !important; }
+  :root[data-print='gains'] .wafu-gains-table td.negative { color: #b3261e !important; }
+}

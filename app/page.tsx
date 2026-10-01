@@ -111,7 +111,7 @@ type Trade = {
 };
 
 type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock' | 'cash';
-type PositionViewMode = 'visual' | 'details';
+type PositionViewMode = 'visual' | 'details' | 'gains';
 type AllocationChartMode = 'donut' | 'bars';
 type SymbolSuggestion = { symbol: string; name: string; exchange: string; type: string };
 type QuoteSession = 'pre' | 'regular' | 'post' | 'closed';
@@ -210,6 +210,7 @@ const loadCompanyFundamentals = () => import('@/components/CompanyFundamentals')
 const loadTradeImportDialog = () => import('@/components/TradeImportDialog');
 const BrokerHub = lazy(loadBrokerHub);
 const DcfCalculator = lazy(loadDcfCalculator);
+const GainsLedger = lazy(() => import('@/components/wafu/GainsLedger'));
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
 const TradeImportDialog = lazy(loadTradeImportDialog);
 // The AI assistant panel is only fetched when it is opened.
@@ -241,6 +242,8 @@ const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
 const aiEnabledKey = 'optionflow-ai-enabled';
 const notifyCenterKey = 'optionflow-notify-center';
 const notifyBarKey = 'optionflow-notify-bar';
+// The 益損 tab in 交易與持倉 ('off' hides it).
+const gainsTabKey = 'optionflow-gains-tab';
 const bottomNavKey = 'optionflow-bottom-nav';
 type SettingsTab = 'look' | 'sound' | 'ai' | 'modules' | 'data';
 const settingsTabs: ReadonlyArray<readonly [SettingsTab, string]> = [['look', '外觀'], ['sound', '音樂'], ['ai', 'AI'], ['modules', '模組'], ['data', '資料']];
@@ -1047,6 +1050,7 @@ export default function Home() {
   const [notifyEnabled, setNotifyEnabled] = useState(true);
   // The notice bar in the middle of the top bar (wide screens); can be turned off in the settings.
   const [notifyBar, setNotifyBar] = useState(true);
+  const [gainsTab, setGainsTab] = useState(true);
   const [noticeNow, setNoticeNow] = useState<number | null>(null);
   // Phones: the main menu as a bar along the bottom instead of the top strip.
   // Bottom navigation: the guide bar (every screen, default), the phone menu bar, or nothing.
@@ -1282,6 +1286,7 @@ export default function Home() {
       if (window.localStorage.getItem(holidayNoticeKey) === 'off') queueMicrotask(() => setHolidayNoticeEnabled(false));
       if (window.localStorage.getItem(notifyCenterKey) === 'off') queueMicrotask(() => setNotifyEnabled(false));
       if (window.localStorage.getItem(notifyBarKey) === 'off') queueMicrotask(() => setNotifyBar(false));
+      if (window.localStorage.getItem(gainsTabKey) === 'off') queueMicrotask(() => setGainsTab(false));
       const storedNav = window.localStorage.getItem(bottomNavKey);
       if (storedNav === 'menu' || storedNav === 'off') queueMicrotask(() => setBottomNav(storedNav));
     } catch { /* storage unavailable: keep the default */ }
@@ -1508,6 +1513,13 @@ export default function Home() {
   const toggleNotifyBar = useCallback(() => {
     setNotifyBar((current) => {
       try { window.localStorage.setItem(notifyBarKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
+  }, []);
+  const toggleGainsTab = useCallback(() => {
+    setGainsTab((current) => {
+      try { window.localStorage.setItem(gainsTabKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      if (current) setPositionView((view) => view === 'gains' ? 'visual' : view);
       return !current;
     });
   }, []);
@@ -3380,13 +3392,13 @@ export default function Home() {
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
             <div><p className="eyebrow">Active book</p><h2>交易與持倉</h2></div>
-            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" ref={importTriggerRef} className="toolbar-io-button" aria-haspopup="dialog" onClick={() => { void loadTradeImportDialog(); setImportOpen(true); }}>匯入</button><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button><button type="button" className="toolbar-io-button" aria-haspopup="dialog" title="一次輸入無法自動報價的價格" onClick={() => setManualQuotesOpen(true)}>✎ 手動報價</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
+            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button>{gainsTab && <button className={positionView === 'gains' ? 'active' : ''} onClick={() => setPositionView('gains')}>益損</button>}</div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" ref={importTriggerRef} className="toolbar-io-button" aria-haspopup="dialog" onClick={() => { void loadTradeImportDialog(); setImportOpen(true); }}>匯入</button><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button><button type="button" className="toolbar-io-button" aria-haspopup="dialog" title="一次輸入無法自動報價的價格" onClick={() => setManualQuotesOpen(true)}>✎ 手動報價</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
           </div>
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
           {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}
-          <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['cash', '現金'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? portfolioTrades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : portfolioTrades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : mode === 'cash' ? isCashTrade(trade) : trade.type !== 'SDI' && !isCashTrade(trade)).length}</span></button>)}{positionView === 'details' && <TradeColumnPicker columns={tradeColumnSet} onChange={updateTradeColumns} />}{positionView === 'visual' && <VisualFieldPicker fields={visualFieldSet} onChange={updateVisualFields} />}</div>
-          {optionRisk && <OptionRiskStrip risk={optionRisk} premium={yearPremium} />}
-          {positionView === 'visual' ? <div className="visual-positions">
+          {positionView !== 'gains' && <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['cash', '現金'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? portfolioTrades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : portfolioTrades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : mode === 'cash' ? isCashTrade(trade) : trade.type !== 'SDI' && !isCashTrade(trade)).length}</span></button>)}{positionView === 'details' && <TradeColumnPicker columns={tradeColumnSet} onChange={updateTradeColumns} />}{positionView === 'visual' && <VisualFieldPicker fields={visualFieldSet} onChange={updateVisualFields} />}</div>}
+          {optionRisk && positionView !== 'gains' && <OptionRiskStrip risk={optionRisk} premium={yearPremium} />}
+          {positionView === 'gains' ? <Suspense fallback={<div className="visual-empty">正在整理益損…</div>}><GainsLedger trades={portfolioTrades} usdJpyRate={usdJpyRate} today={todayKey} query={query} /></Suspense> : positionView === 'visual' ? <div className="visual-positions">
             <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>成本均價／現價</span><span>標的價格波動／今日漲跌</span><span>損益／報酬率</span><span>組合占比</span></div>
             {!loading && !visualPositions.length && <div className="visual-empty">沒有符合目前篩選條件的持倉。</div>}
             {loading && <div className="visual-empty">正在整理圖形化持倉…</div>}
@@ -3440,7 +3452,7 @@ export default function Home() {
               </tbody>
             </table>
           </div>}
-          <footer className="table-footer"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span><p>現金不呼叫股票報價；股息依持有期間、除息事件與設定的外國投資人預扣稅率試算。</p></footer>
+          {positionView !== 'gains' && <footer className="table-footer"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span><p>現金不呼叫股票報價；股息依持有期間、除息事件與設定的外國投資人預扣稅率試算。</p></footer>}
         </section>
         </div>
       </div>
@@ -3519,6 +3531,14 @@ export default function Home() {
                 <span>頂欄中央的通知條（寬螢幕）；關閉後只留右側的鈴鐺。</span>
                 <button type="button" className={`settings-toggle ${notifyBar ? 'is-on' : ''}`} role="switch" aria-checked={notifyBar} aria-label="頂欄通知條" onClick={toggleNotifyBar}><i /><b>{notifyBar ? '開啟' : '關閉'}</b></button>
               </div>}
+            </section>
+            <section className={`settings-feature-card ${gainsTab ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">益</span><div><p>Gains &amp; losses</p><h3>益損分頁</h3></div><span className="settings-feature-status">{gainsTab ? '已開啟' : '已關閉'}</span></div>
+              <p>在「交易與持倉」加上益損分頁：今年、去年的已實現損益與未實現損益，分短期與長期，可展開到每檔與每筆交易，並可列印或下載 CSV。</p>
+              <div className="settings-feature-actions">
+                <span>關閉後只隱藏分頁，不影響其他計算。</span>
+                <button type="button" className={`settings-toggle ${gainsTab ? 'is-on' : ''}`} role="switch" aria-checked={gainsTab} aria-label="益損分頁" onClick={toggleGainsTab}><i /><b>{gainsTab ? '開啟' : '關閉'}</b></button>
+              </div>
             </section>
             <section className={`settings-feature-card ${brokerHubEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon" aria-hidden="true">◎</span><div><p>Optional module</p><h3>跨券商資產追蹤與再平衡</h3></div><span className="settings-feature-status">{brokerHubLoading ? '讀取中' : brokerHubEnabled ? '已開啟' : '預設關閉'}</span></div>

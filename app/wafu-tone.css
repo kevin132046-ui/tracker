@@ -88,7 +88,17 @@
 :root[data-wafu] .metric-grid > .metric-card-link:nth-child(2) { --card-tint: var(--wa-up); }
 :root[data-wafu] .metric-grid > .metric-card-link:nth-child(3) { --card-tint: var(--wa-gold); }
 :root[data-wafu] .metric-grid > .metric-card-link:nth-child(4) { --card-tint: var(--wa-accent-2); }
-:root[data-wafu] .metric-card-link { background-color: color-mix(in srgb, var(--card-tint) 6%, transparent); }
+/* All four see-through over the artwork (the featured first card included), with only a faint tint;
+   the text carries a glow of the page ground so it reads on any picture. */
+:root[data-wafu] .metric-grid > .metric-card { --card-halo: rgb(var(--wa-bg-rgb) / .9); background-color: color-mix(in srgb, var(--card-tint, var(--wa-accent)) 5%, transparent); }
+:root[data-wafu] .metric-grid > .metric-card:not(:hover) { background-image: none; }
+:root[data-tone='washi'] .metric-grid > .metric-card { --card-halo: rgb(251 246 236 / .95); }
+:root[data-wafu] .metric-grid > .metric-card :is(p, strong, span, small) { text-shadow: 0 0 2px var(--card-halo), 0 0 6px var(--card-halo), 0 0 14px var(--card-halo), 0 0 24px var(--card-halo); }
+:root[data-wafu] .metric-grid > .metric-card p { color: var(--wa-ink); font-weight: 600; }
+/* Small lines need a tight outline, not just a glow. */
+:root[data-wafu] .metric-grid > .metric-card :is(p, > span:not(.metric-return), small) { text-shadow: 0 0 1px var(--card-halo), 0 0 1px var(--card-halo), 0 0 2px var(--card-halo), 0 0 3px var(--card-halo), 0 0 6px var(--card-halo), 0 0 12px var(--card-halo); }
+:root[data-wafu] .metric-grid > .metric-card > span:not(.positive):not(.negative) { color: var(--wa-ink); font-weight: 600; }
+:root[data-wafu] .metric-grid > .metric-card .metric-card-action > span { text-shadow: none; background: var(--card-halo); }
 :root[data-wafu] .metric-card-link::before { background: color-mix(in srgb, var(--card-tint) 55%, transparent) !important; }
 :root[data-wafu] .metric-card-link:hover { border-color: color-mix(in srgb, var(--card-tint) 45%, var(--wa-line)); }
 :root[data-wafu] .metric-card-link:active { transform: translateY(1px) scale(.992); border-color: var(--card-tint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--card-tint) 22%, transparent), 0 8px 18px -12px rgb(0 0 0 / .5); }

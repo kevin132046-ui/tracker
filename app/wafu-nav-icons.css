@@ -10,10 +10,10 @@
 }
 :root[data-wafu][data-tone='washi'] { --sw-blue: #2a55d6; --sw-yellow: #d99a00; --sw-green: #11865b; --sw-ink: #1d1d1d; }
 
-:root[data-wafu] .side-nav { counter-reset: swnav; gap: 0; padding: 5px; overflow: hidden; border: 1px solid var(--wa-line-2); border-radius: var(--wa-r-lg, 16px); background: rgb(var(--wa-bg-rgb) / .78); box-shadow: none; }
+:root[data-wafu] .side-nav { counter-reset: swnav; gap: 0; padding: 5px; overflow: hidden; border: 1px solid var(--wa-line-2); border-radius: 16px; background: rgb(var(--wa-bg-rgb) / .78); box-shadow: none; }
 :root[data-wafu] .side-nav > a, :root[data-wafu] .side-nav > .settings-nav-button, :root[data-wafu] .side-nav .background-trigger {
   --sw: var(--sw-ink); --sw-text: var(--sw-on);
-  position: relative; counter-increment: swnav; border-radius: var(--wa-r, 10px); color: var(--wa-ink-2); background: transparent;
+  position: relative; counter-increment: swnav; border-radius: 10px; color: var(--wa-ink-2); background: transparent;
   border: 0; transition: background .15s ease, color .15s ease;
 }
 /* Hairline rules between rows, inset from the rounded edges. */

@@ -273,3 +273,13 @@
 @media (prefers-reduced-motion: reduce) { .wafu-research, .wafu-research-body > * { animation: none; } }
 
 :root[data-wafu] .company-logo img[hidden] { display: none !important; }
+
+/* Halo depth (HaloIcon): darker edge layers under the face, a thin highlight on top, a soft shadow. */
+.halo-ico { shape-rendering: geometricPrecision; }
+.halo-ico .h-depth path { stroke: var(--halo-edge, #2b3a6e) !important; fill: none !important; }
+.halo-shigure .h-depth path { --halo-edge: #4c4f8f; }
+.halo-kikyo.tone-paper .h-depth path { --halo-edge: #0d1530; }
+.halo-ico .h-shine path { stroke: #ffffff !important; fill: none !important; opacity: .55; }
+.halo-kikyo.tone-paper .h-shine path { opacity: .35; }
+.halo-ico .h-shadow { color: #000; }
+.halo-ico.tone-paper .h-shadow { color: #3a2a14; opacity: .6; }

@@ -48,14 +48,14 @@ export const assistantPresets: Record<AssistantLanguage, string[]> = {
 /** The panel's greeting, in the character's voice or a neutral one. */
 export const assistantGreeting: Record<AssistantPersona, Record<AssistantLanguage, string>> = {
   kikyo: {
-    zh: '先生，戰況資料已整理好。想先看哪一處布陣？',
-    ja: '先生、戦況の資料は揃っています。どの布陣から確認しますか？',
-    en: 'Sensei, the situation report is ready. Which part of the line shall we look at first?',
+    zh: 'Sensai，戰況資料已整理好。想先看哪一處布陣？',
+    ja: 'Sensai、戦況の資料は揃っています。どの布陣から確認しますか？',
+    en: 'Sensai, the situation report is ready. Which part of the line shall we look at first?',
   },
   shigure: {
-    zh: '先生，先喝口熱茶吧。持倉的事，我們慢慢看就好。',
-    ja: '先生、まずは温かいお茶でもどうぞ。持高のことは、ゆっくり見ていきましょう。',
-    en: 'Sensei, have some warm tea first. We can look over the positions slowly.',
+    zh: 'Sensai，先喝口熱茶吧。持倉的事，我們慢慢看就好。',
+    ja: 'Sensai、まずは温かいお茶でもどうぞ。持高のことは、ゆっくり見ていきましょう。',
+    en: 'Sensai, have some warm tea first. We can look over the positions slowly.',
   },
   neutral: {
     zh: '可以問我關於你持倉的問題，例如到期、風險或損益。',

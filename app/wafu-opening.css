@@ -283,7 +283,7 @@
 :root[data-op-icon] .op-crest > svg, :root[data-op-icon] .op-halo svg { visibility: hidden; }
 :root[data-op-icon] .op-halo {
   --ink-b: 0; --ink-i: 1; --glow: rgb(98 212 210 / .45);
-  width: calc(var(--crest) * 2); z-index: 2; opacity: 0; scale: .62; rotate: 0deg;
+  width: calc(var(--crest) * 2); z-index: 2; opacity: 0; scale: .5; rotate: 0deg;
   filter: brightness(var(--ink-b)) invert(var(--ink-i)) drop-shadow(0 0 0 transparent);
   transition: opacity .9s ease .15s, scale 1.2s cubic-bezier(.2, .8, .2, 1), filter 1.1s ease;
 }

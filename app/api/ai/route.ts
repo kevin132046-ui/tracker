@@ -15,7 +15,7 @@ import { maxEntryLength, maxOpenTradeHints } from '@/lib/ai-trade-entry';
 import { parseEntryImage, parseTrades, tradeParseRequest } from '@/lib/server/trade-parse';
 import { parseDateKey } from '@/lib/market-calendar';
 import { maxAssistantQuestion } from '@/lib/ai-assistant';
-import { chatRequest, cleanSnapshot, cleanTurns, completeChat } from '@/lib/server/portfolio-chat';
+import { chatRequest, chatSearchEstimate, cleanSnapshot, cleanTurns, completeChat } from '@/lib/server/portfolio-chat';
 import { analysisRequest, completeFilingRequest, followUpRequest, type FilingContext } from '@/lib/server/filing-analysis';
 import { checkOpenAiQuota, quotaReport, recordOpenAiUsage } from '@/lib/server/openai-quota';
 import { SecNotConfigured, filingText, findFiling, isAccession, lookupCik, quarterlyFigures } from '@/lib/server/sec';
@@ -184,7 +184,9 @@ export async function POST(request: Request) {
     const persona = body.persona === 'kikyo' || body.persona === 'shigure' ? body.persona : 'neutral';
     const language = body.language === 'ja' || body.language === 'en' ? body.language : 'zh';
     const aiRequest = chatRequest(persona, language, snapshot, cleanTurns(body.turns), question);
-    const estimate = estimateTokens(`${aiRequest.system}\n${aiRequest.portfolio}\n${aiRequest.turns.map((turn) => turn.text).join('\n')}\n${aiRequest.question}`) + aiRequest.maxOutput;
+    const estimate = estimateTokens(`${aiRequest.system}\n${aiRequest.portfolio}\n${aiRequest.turns.map((turn) => turn.text).join('\n')}\n${aiRequest.question}`) + aiRequest.maxOutput
+      // Room for web-search results the model may pull in.
+      + chatSearchEstimate;
     const blocked = await guardQuota(estimate);
     if (blocked) return blocked;
     try {

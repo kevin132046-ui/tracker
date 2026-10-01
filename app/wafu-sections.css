@@ -267,10 +267,14 @@
 /* Figures a touch bolder, as in the prototype list. */
 :root[data-wafu] .visual-value strong, :root[data-wafu] .visual-price-flow > div:last-child strong, :root[data-wafu] .visual-gain strong { font-weight: 600; }
 
-/* Very wide screens: the page stays centred (max 1760px) but the rail keeps to the left edge
-   of the window instead of floating inward with the page. */
+/* Wide screens: the page grows to --wa-page-max (was 1760px) so the sides are not left empty;
+   below 1785px nothing changes. The rail keeps to the left edge of the window. */
+:root { --wa-page-max: 2240px; }
+@media (min-width: 1785px) {
+  :root[data-wafu] .page-frame, :root[data-wafu] .holiday-notice { width: min(var(--wa-page-max), calc(100% - 24px)); }
+}
 @media (min-width: 1800px) {
-  :root[data-wafu] .side-nav { translate: calc((1760px - 100vw) / 2 + 12px) 0; }
+  :root[data-wafu] .side-nav { translate: calc((min(var(--wa-page-max), 100vw - 24px) - 100vw) / 2 + 12px) 0; }
 }
 
 /* ---- 通知中心 (prototype): 財報 / 休市 / 其他 tabs, upcoming earnings, 財報解讀 ---- */
@@ -343,8 +347,11 @@
 .wafu-perf-legend button.is-off { opacity: .42; text-decoration: line-through; }
 .wafu-perf-body { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 22px; margin-top: 14px; align-items: start; }
 .wafu-perf-main { min-width: 0; }
+.wafu-perf-side { container-type: inline-size; }
 .wafu-perf-side .wafu-kpis { margin-top: 0; padding-top: 0; border-top: 0; }
 .wafu-perf-side .wafu-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container (min-width: 560px) { .wafu-perf-side .wafu-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (min-width: 820px) { .wafu-perf-side .wafu-kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .wafu-perf-empty { display: grid; gap: 6px; margin: 0; padding: 14px; border: 1px dashed var(--wa-line); border-radius: 10px; color: var(--wa-muted); font-size: 12px; }
 .wafu-perf-empty b { color: var(--wa-ink); font: 600 14px/1.3 var(--wa-f-display, serif); }
 .wafu-perf-chart { position: relative; width: 100%; }
@@ -372,12 +379,13 @@
 .macro-panel .panel-heading { align-items: center; }
 .macro-panel .macro-market-actions { display: flex; align-items: center; gap: 8px; }
 .macro-panel-meta { margin: 2px 0 0; color: var(--wa-muted); font-size: 10.5px; }
+.macro-panel { container-type: inline-size; }
 .macro-market-grid.wafu-macro-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 12px; }
+@container (min-width: 780px) { .macro-market-grid.wafu-macro-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .wafu-macro-grid .macro-market-card { padding: 12px 13px; }
 :root[data-wafu] .wafu-macro-grid .macro-history-chart { height: 56px; margin-top: 8px; }
 @media (max-width: 1180px) {
   .wafu-perf-body { grid-template-columns: 1fr; }
-  .wafu-perf-side .wafu-kpi-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
   .content-grid.wafu-pair-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
@@ -388,10 +396,19 @@
   .wafu-macro-grid .macro-market-quote strong { font-size: 17px; }
 }
 @media (max-width: 420px) { .macro-market-grid.wafu-macro-grid { grid-template-columns: 1fr; } }
-/* 個股研究: switch between held tickers */
-.wafu-research-switch { display: flex; gap: 6px; overflow-x: auto; padding: 0 24px 10px; scrollbar-width: none; }
+/* 個股研究: the holdings as chips with their P&L % (prototype); cash and option-only are dashed */
+.wafu-research-switch { display: flex; gap: 6px; overflow-x: auto; padding: 2px 24px 12px; scrollbar-width: none; }
 .wafu-research-switch::-webkit-scrollbar { display: none; }
-.wafu-research-switch button { flex: 0 0 auto; padding: 4px 11px; border: 1px solid var(--wa-line); border-radius: 999px; background: transparent; color: var(--wa-muted); font: 600 11px/1.2 var(--wa-f-mono, monospace); letter-spacing: .04em; cursor: pointer; }
-.wafu-research-switch button:hover { color: var(--wa-ink); border-color: var(--wa-accent); }
-.wafu-research-switch button.on { color: var(--wa-bg); background: var(--wa-accent); border-color: var(--wa-accent); }
-@media (max-width: 720px) { .wafu-research-switch { padding: 0 16px 8px; } }
+.wafu-research-switch button { flex: none; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border: 1px solid var(--wa-line); border-radius: 999px; background: rgb(255 255 255 / .024); color: var(--wa-ink-2, var(--wa-ink)); font-size: 12.5px; white-space: nowrap; cursor: pointer; transition: border-color .2s, background .2s, color .2s; }
+.wafu-research-switch button b { color: var(--wa-ink); font-weight: 700; letter-spacing: .03em; }
+.wafu-research-switch button small { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.wafu-research-switch button small.positive { color: var(--wa-up); }
+.wafu-research-switch button small.negative { color: var(--wa-down); }
+.wafu-research-switch button:hover:not(:disabled) { border-color: var(--wa-accent); }
+.wafu-research-switch button.on { border-color: var(--wa-accent); background: var(--wa-accent-soft); }
+.wafu-research-switch button.on b { color: var(--wa-accent); }
+:root[data-wafu='kikyo'] .wafu-research-switch button.on { box-shadow: inset 0 -2px 0 var(--wa-accent); }
+.wafu-research-switch button.is-off { cursor: not-allowed; background: none; border-style: dashed; }
+.wafu-research-switch button.is-off b { color: var(--wa-muted); font-weight: 600; }
+.wafu-research-switch button.is-off small { color: var(--wa-muted); font-weight: 500; }
+@media (max-width: 720px) { .wafu-research-switch { padding: 2px 16px 10px; } }

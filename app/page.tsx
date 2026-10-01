@@ -63,7 +63,7 @@ import type { ManualQuoteRow } from '@/components/wafu/ManualQuotes';
 import { computeRiskMetrics, monthlyGrid } from '@/lib/wafu/metrics';
 import HankoTile from '@/components/wafu/HankoTile';
 import ResearchDrawer from '@/components/wafu/ResearchDrawer';
-import type { ResearchTab } from '@/components/wafu/ResearchDrawer';
+import type { ResearchChip, ResearchTab } from '@/components/wafu/ResearchDrawer';
 import HomeBar from '@/components/wafu/HomeBar';
 import type { NoticeCalendar, NoticeItem } from '@/components/wafu/NotifyCenter';
 import WafuMediaCard from '@/components/wafu/WafuMediaCard';
@@ -303,7 +303,10 @@ const yenMoney = new Intl.NumberFormat('ja-JP', { style: 'currency', currency: '
 const quantityNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 });
 const percent = new Intl.NumberFormat('zh-TW', { style: 'percent', maximumFractionDigits: 1 });
 const precisePercent = new Intl.NumberFormat('zh-TW', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const signedPrecisePercent = (value: number) => `${value > 0 ? '+' : ''}${precisePercent.format(value)}`;
+// Rounded first, so a tiny loss shows 0.00% rather than −0.00%.
+const signedPrecisePercent = (value: number) => { const rounded = Math.round(value * 10000) / 10000 || 0; return `${rounded > 0 ? '+' : ''}${precisePercent.format(rounded)}`; };
+// 收益分析 labels: 36 months span three years, so month labels carry the year (2025/9).
+const perfLabel = (mode: string, item: { key: string; label: string }) => mode === 'month' ? `${item.key.slice(0, 4)}/${Number(item.key.slice(5, 7))}` : item.label;
 const dateLabel = (date: string | null) => date ? new Intl.DateTimeFormat('zh-TW', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${date}T00:00:00Z`)) : '—';
 const clockFormatter = (timeZone: string) => new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 const easternClockFormatter = clockFormatter('America/New_York');
@@ -2601,17 +2604,22 @@ export default function Home() {
     };
     return { SPY: align(source?.SPY ?? []), BOXX: align(source?.BOXX ?? []) };
   }, [benchmarks, rangeMode, returnSeries]);
-  const spyCumulative = activeBenchmarks.SPY.length ? activeBenchmarks.SPY.reduce((growth, value) => growth * (1 + value), 1) - 1 : null;
   const estimatedReturnTickers = returnAnalytics.estimatedTickers;
   const returnEstimateNote = priceHistoryPending
     ? '（股價資料讀取中，暫以線性估算）'
     : estimatedReturnTickers.length
       ? `（估算：${estimatedReturnTickers.slice(0, 6).join('、')}${estimatedReturnTickers.length > 6 ? ` 等 ${estimatedReturnTickers.length} 檔` : ''}）`
       : '';
-  // 36 months span three years, so month labels carry the year (2025/9).
-  const perfLabels = useMemo(() => returnSeries.map((item) => rangeMode === 'month' ? `${item.key.slice(0, 4)}/${Number(item.key.slice(5, 7))}` : item.label), [rangeMode, returnSeries]);
-  const perfSeries = useMemo(() => ({ mine: returnSeries.map((item) => item.value), spy: activeBenchmarks.SPY, boxx: activeBenchmarks.BOXX }), [activeBenchmarks, returnSeries]);
-  const returnWindowLabel = rangeMode === 'day' ? '近 60 個交易日' : rangeMode === 'week' ? '近 52 週' : rangeMode === 'month' ? '近 36 個月' : '近 6 年';
+  // The chart and the figures above it start at the first period with money in the market: the
+  // portfolio has no return before that, and compounding SPY over those periods made 相對 SPY meaningless.
+  const perfStart = useMemo(() => {
+    const first = returnSeries.findIndex((item) => item.capital > 0);
+    return first < 0 ? 0 : Math.min(first, Math.max(0, returnSeries.length - 2));
+  }, [returnSeries]);
+  const perfLabels = useMemo(() => returnSeries.slice(perfStart).map((item) => perfLabel(rangeMode, item)), [perfStart, rangeMode, returnSeries]);
+  const perfSeries = useMemo(() => ({ mine: returnSeries.slice(perfStart).map((item) => item.value), spy: activeBenchmarks.SPY.slice(perfStart), boxx: activeBenchmarks.BOXX.slice(perfStart) }), [activeBenchmarks, perfStart, returnSeries]);
+  const spyCumulative = perfSeries.spy.length ? perfSeries.spy.reduce((growth, value) => growth * (1 + value), 1) - 1 : null;
+  const returnWindowLabel = perfStart > 0 ? `${perfLabels[0]} 起` : rangeMode === 'day' ? '近 60 個交易日' : rangeMode === 'week' ? '近 52 週' : rangeMode === 'month' ? '近 36 個月' : '近 6 年';
   // Metrics leave out the stretch before the first position.
   const riskMetrics = useMemo(() => {
     const first = returnSeries.findIndex((item) => item.capital > 0);
@@ -2619,7 +2627,7 @@ export default function Home() {
     const rows = returnSeries.map((item, index) => ({ item, index })).filter(({ index }) => index >= first);
     if (rows.length < 2) return null;
     return computeRiskMetrics({
-      labels: rows.map(({ item }) => item.label),
+      labels: rows.map(({ item }) => perfLabel(rangeMode, item)),
       mine: rows.map(({ item }) => item.value),
       spy: rows.map(({ index }) => activeBenchmarks.SPY[index] ?? 0),
       boxx: rows.map(({ index }) => activeBenchmarks.BOXX[index] ?? 0),
@@ -2762,8 +2770,36 @@ export default function Home() {
     }));
   }, [filteredTrades, usdJpyRate]);
   // The research drawer's header: holding, average cost and unrealised P&L of the ticker in view.
-  // Every held ticker (the list itself is filtered to the open one while the drawer is up).
-  const researchSymbols = useMemo(() => [...new Set(openTrades.filter((item) => !isCashTrade(item.trade)).map((item) => item.trade.ticker).filter((ticker): ticker is string => Boolean(ticker) && ticker !== 'USD' && ticker !== 'JPY'))].sort(), [openTrades]);
+  // 個股研究 chip row (prototype): every current holding with its P&L % as in the 持倉 list (all of the
+  // ticker's trades, like the drawer's header); the list itself is filtered to one ticker while the
+  // drawer is up, so this groups the unfiltered trades. Stocks by value first, then cash, then options.
+  const researchChips = useMemo(() => {
+    const groups = new Map<string, { symbol: string; pnl: number; capital: number; value: number; stock: boolean; option: boolean; cash: boolean }>();
+    for (const item of enriched) {
+      const symbol = item.trade.ticker || 'OTHER';
+      const group = groups.get(symbol) ?? { symbol, pnl: 0, capital: 0, value: 0, stock: false, option: false, cash: false };
+      group.pnl += item.pnl;
+      group.capital += investedCapitalUsd(item.trade, usdJpyRate);
+      group.value += item.marketValue;
+      if (item.trade.status === 'open') {
+        if (isCashTrade(item.trade)) group.cash = true;
+        else if (item.trade.type === 'SDI' || item.trade.event === 'STOCK') group.stock = true;
+        else group.option = true;
+      }
+      groups.set(symbol, group);
+    }
+    const rank = { stock: 0, cash: 1, option: 2 } as const;
+    return [...groups.values()]
+      .filter((group) => group.symbol !== 'OTHER' && (group.stock || group.option || group.cash))
+      .map((group): ResearchChip & { value: number } => ({
+        symbol: group.symbol,
+        kind: group.symbol === 'USD' || group.symbol === 'JPY' ? 'cash' : group.stock ? 'stock' : group.option ? 'option' : 'cash',
+        roc: group.capital > 0 ? group.pnl / group.capital : 0,
+        value: group.value,
+      }))
+      .sort((a, b) => rank[a.kind] - rank[b.kind] || b.value - a.value);
+  }, [enriched, usdJpyRate]);
+  const researchSymbols = useMemo(() => researchChips.filter((chip) => chip.kind === 'stock').map((chip) => chip.symbol), [researchChips]);
   const researchPosition = drilledTicker ? visualPositions.find((position) => position.ticker === drilledTicker) ?? null : null;
   const researchSummary = useMemo(() => {
     if (!drilledTicker || !researchPosition) return [];
@@ -3024,7 +3060,6 @@ export default function Home() {
     openTickerDetails(symbol);
     setResearchTab('dcf');
   }
-
 
   function selectAllocationItem(item: { label: string; members: string[] }) {
     setAllocationPinnedLabel(item.label);
@@ -3306,7 +3341,7 @@ export default function Home() {
           tab={researchTab}
           onTab={setResearchTab}
           onClose={returnToPositionsOverview}
-          symbols={researchSymbols}
+          chips={researchChips}
           onSymbol={(symbol) => { const keep = researchTab; openTickerDetails(symbol); setResearchTab(keep); }}
         >
           {researchTab === 'dcf'
@@ -3334,7 +3369,6 @@ export default function Home() {
           onDeleteLot={(trade) => setDeleteCandidate(trade)}
         />}
         </ResearchDrawer>}
-
 
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">

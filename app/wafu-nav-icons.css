@@ -1,32 +1,57 @@
-/* Side-navigation icons (components/wafu/NavIcon.tsx): each object's moving part, on hover and on the current page. */
-.wafu-nav-icon :is(.ni-spin, .ni-lid, .ni-paw, .ni-flag, .ni-beads, .ni-eyes, .ni-sway) { transform-box: view-box; }
-.ni-spin { transform-origin: 12px 10px; }
-.ni-lid { transform-origin: 12px 5.7px; transition: transform .35s cubic-bezier(.3, 1.6, .5, 1); }
-.ni-paw { transform-origin: 16.4px 13.4px; }
-.ni-flag { transform-origin: 4px 7px; }
-.ni-flag-2 { transform-origin: 4px 14.7px; }
-.ni-sway { transform-origin: 12px 1.4px; }
+/*
+ * Side navigation in the Swiss manner: a strict column of numbered rows on hairline rules, flat
+ * geometric marks, one strong colour per destination, grotesque type, square corners. The current
+ * page is a solid block of its colour. No halo.
+ */
+:root[data-wafu] {
+  --sw-red: #e8412c; --sw-blue: #3d6ff0; --sw-yellow: #f2b705; --sw-green: #18a874;
+  --sw-orange: #f07b1d; --sw-violet: #8d63e6; --sw-ink: #e9eef0; --sw-on: #ffffff; --sw-on-light: #111111;
+  --sw-font: 'Helvetica Neue', Helvetica, Arial, 'Noto Sans TC', 'Noto Sans JP', sans-serif;
+}
+:root[data-wafu][data-tone='washi'] { --sw-blue: #2a55d6; --sw-yellow: #d99a00; --sw-green: #11865b; --sw-ink: #1d1d1d; }
 
-:root[data-wafu] :is(.side-nav a, .side-nav button, .wafu-homebar button):is(:hover, .active, [aria-current='page']) .ni-spin { animation: ni-spin 1.8s linear infinite; }
-:root[data-wafu] :is(.side-nav a, .side-nav button, .wafu-homebar button):is(:hover, .active, [aria-current='page']) .ni-lid { transform: translate(1px, -2.2px) rotate(-8deg); }
-:root[data-wafu] :is(.side-nav a, .side-nav button, .wafu-homebar button):is(:hover, .active, [aria-current='page']) .ni-paw { animation: ni-beckon 1.1s ease-in-out infinite; }
-:root[data-wafu] :is(.side-nav a, .side-nav button, .wafu-homebar button):is(:hover, .active, [aria-current='page']) .ni-flag { animation: ni-flutter 1.4s ease-in-out infinite; }
-:root[data-wafu] :is(.side-nav a, .side-nav button, .wafu-homebar button):is(:hover, .active, [aria-current='page']) .ni-flag-2 { animation-delay: -.5s; }
-:root[data-wafu] :is(.side-nav a, .side-nav button, .wafu-homebar button):is(:hover, .active, [aria-current='page']) .ni-beads { animation: ni-beads 1.2s ease-in-out infinite alternate; }
-:root[data-wafu] :is(.side-nav a, .side-nav button, .wafu-homebar button):is(:hover, .active, [aria-current='page']) .ni-eyes { animation: ni-glint 2.4s ease-in-out infinite; }
-:root[data-wafu] :is(.side-nav a, .side-nav button, .wafu-homebar button):is(:hover, .active, [aria-current='page']) .ni-sway { animation: ni-sway 2.2s ease-in-out infinite; }
+:root[data-wafu] .side-nav { counter-reset: swnav; gap: 0; padding: 0; overflow: hidden; border: 1px solid var(--wa-line-2); border-radius: 0; background: rgb(var(--wa-bg-rgb) / .78); box-shadow: none; }
+:root[data-wafu] .side-nav > a, :root[data-wafu] .side-nav > .settings-nav-button, :root[data-wafu] .side-nav .background-trigger {
+  --sw: var(--sw-ink); --sw-text: var(--sw-on);
+  position: relative; counter-increment: swnav; border-radius: 0; color: var(--wa-ink-2); background: transparent;
+  border-bottom: 1px solid var(--wa-line); transition: background .15s ease, color .15s ease;
+}
+:root[data-wafu] .side-nav .background-control { border-bottom: 0; }
+:root[data-wafu] .side-nav .background-trigger { border-bottom: 0; }
+/* One colour per destination. */
+:root[data-wafu] .side-nav :is(a, button):has(.ni-settings) { --sw: var(--sw-red); }
+:root[data-wafu] .side-nav :is(a, button):has(.ni-overview) { --sw: var(--sw-blue); }
+:root[data-wafu] .side-nav :is(a, button):has(.ni-positions) { --sw: var(--sw-yellow); --sw-text: var(--sw-on-light); }
+:root[data-wafu] .side-nav :is(a, button):has(.ni-returns) { --sw: var(--sw-green); }
+:root[data-wafu] .side-nav :is(a, button):has(.ni-valuation) { --sw: var(--sw-orange); --sw-text: var(--sw-on-light); }
+:root[data-wafu] .side-nav :is(a, button):has(.ni-ai) { --sw: var(--sw-violet); }
+:root[data-wafu] .side-nav :is(a, button):has(:is(.ni-background, .ni-saving)) { --sw: var(--sw-ink); --sw-text: var(--wa-bg); }
 
-@keyframes ni-spin { to { transform: rotate(360deg); } }
-@keyframes ni-beckon { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-22deg); } }
-@keyframes ni-flutter { 0%, 100% { transform: skewY(0) scaleX(1); } 50% { transform: skewY(-5deg) scaleX(.94); } }
-@keyframes ni-beads { from { transform: translateY(0); } to { transform: translateY(1.4px); } }
-@keyframes ni-glint { 0%, 70%, 100% { opacity: 1; } 80% { opacity: .2; } 90% { opacity: 1; filter: drop-shadow(0 0 2px currentColor); } }
-@keyframes ni-sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+/* The row number, top left. */
+:root[data-wafu] .side-nav > a::before, :root[data-wafu] .side-nav > .settings-nav-button::before, :root[data-wafu] .side-nav .background-trigger::before {
+  content: counter(swnav, decimal-leading-zero); position: absolute; top: 6px; left: 7px; font: 700 9px/1 var(--sw-font); letter-spacing: .02em; color: currentColor; opacity: .5;
+}
+:root[data-wafu] .side-nav .wafu-nav-glyph { width: 26px; height: 26px; color: var(--sw); }
+:root[data-wafu] .side-nav .wafu-nav-icon { width: 24px; height: 24px; }
+:root[data-wafu] .side-nav span, :root[data-wafu] .side-nav .background-trigger span { font: 700 12px/1.1 var(--sw-font); letter-spacing: .04em; }
 
-/* The current page: the icon in the accent with a small seal dot; no halo. */
-:root[data-wafu] .wafu-nav-glyph.is-current::after { content: ''; position: absolute; top: -2px; right: -5px; width: 6px; height: 6px; border-radius: 50%; background: var(--wa-seal); box-shadow: 0 0 6px rgb(var(--wa-accent-rgb) / .5); }
-:root[data-wafu] .side-nav .wafu-nav-glyph { width: 30px; height: 30px; }
-:root[data-wafu] .side-nav .wafu-nav-icon { width: 29px; height: 29px; stroke-width: 1.45; }
+/* Hover: a bar of the item's colour on the left edge. */
+:root[data-wafu] .side-nav :is(a, .settings-nav-button, .background-trigger):hover { color: var(--wa-ink); background: color-mix(in srgb, var(--sw) 10%, transparent); box-shadow: inset 4px 0 0 var(--sw); transform: none; }
+/* Current: a solid block. */
+:root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active), :root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active):hover { color: var(--sw-text); background: var(--sw); box-shadow: none; }
+:root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active) .wafu-nav-glyph { color: var(--sw-text); }
+:root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active)::before { opacity: .75; }
+:root[data-wafu] .side-nav .wafu-nav-halo { display: none; }
+:root[data-wafu] .side-nav :is(a, .settings-nav-button, .background-trigger):focus-visible { outline: 2px solid var(--sw); outline-offset: -2px; }
 
-:root[data-perf='lite'] .wafu-nav-icon :is(.ni-spin, .ni-paw, .ni-flag, .ni-beads, .ni-eyes, .ni-sway) { animation: none !important; }
-@media (prefers-reduced-motion: reduce) { .wafu-nav-icon :is(.ni-spin, .ni-paw, .ni-flag, .ni-beads, .ni-eyes, .ni-sway) { animation: none !important; } }
+/* Rows become columns on tablets and phones. */
+@media (max-width: 1180px) {
+  :root[data-wafu] .side-nav > a, :root[data-wafu] .side-nav > .settings-nav-button { border-bottom: 0; border-right: 1px solid var(--wa-line); }
+  :root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active) { box-shadow: none; }
+}
+
+/* The mobile home bar keeps its own look; its icons take the item colours too. */
+:root[data-wafu] .wafu-homebar .ni-settings { color: var(--sw-red); }
+:root[data-wafu] .wafu-homebar .ni-overview { color: var(--sw-blue); }
+:root[data-wafu] .wafu-homebar .ni-positions { color: var(--sw-yellow); }
+:root[data-wafu] .wafu-homebar .ni-returns { color: var(--sw-green); }

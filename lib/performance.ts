@@ -415,8 +415,15 @@ export type ReturnBucket = { key: string; label: string; pnl: number; capital: n
  */
 export function aggregateBuckets(days: ReadonlyArray<DailyReturn>, buckets: ReadonlyArray<RangeBucket>, mode: RangeMode): ReturnBucket[] {
   const totals = new Map(buckets.map((bucket) => [bucket.key, { growth: 1, pnl: 0, capital: 0, deployedDays: 0 }]));
+  // Day buckets are weekdays only: a weekend day's P&L joins the next weekday's bucket.
+  const dayKeys = mode === 'day' ? buckets.map((bucket) => bucket.key).sort() : [];
+  const keyFor = (date: string) => {
+    const key = bucketKeyForDate(date, mode);
+    if (mode !== 'day' || totals.has(key)) return key;
+    return dayKeys.find((candidate) => candidate > key) ?? key;
+  };
   for (const day of days) {
-    const total = totals.get(bucketKeyForDate(day.date, mode));
+    const total = totals.get(keyFor(day.date));
     if (!total) continue;
     total.growth *= 1 + day.value;
     total.pnl += day.pnl;
@@ -466,14 +473,17 @@ export function priceHistoryRequest(trades: ReadonlyArray<PerformanceTrade>): { 
   let yen = false;
   let from = '';
   for (const trade of trades) {
-    if (trade.derived || isCashTrade(trade) || !isStockTrade(trade) || !isDateKey(trade.openDate)) continue;
+    if (trade.derived || isCashTrade(trade) || !isDateKey(trade.openDate)) continue;
+    // Any yen position (options too) is converted through the USD/JPY history.
+    if (isYenTrade(trade)) { yen = true; if (!from || trade.openDate < from) from = trade.openDate; }
+    if (!isStockTrade(trade)) continue;
     const symbol = priceSymbolFor(trade);
     if (!priceSymbolPattern.test(symbol)) continue;
     stockSymbols.add(symbol);
     yen ||= isYenTrade(trade);
     if (!from || trade.openDate < from) from = trade.openDate;
   }
-  if (!stockSymbols.size || !from) return null;
+  if ((!stockSymbols.size && !yen) || !from) return null;
   const symbols = [...(yen ? [usdJpySymbol] : []), ...[...stockSymbols].sort()].slice(0, maxPriceHistorySymbols);
   return { symbols, from: `${from.slice(0, 7)}-01` };
 }

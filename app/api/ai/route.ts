@@ -41,6 +41,15 @@ const accessMessages = {
 const byokNote = (gate: AiGate) => gate.mode === 'byok' ? accessMessages[gate.access] : null;
 
 const noStore = { 'Cache-Control': 'no-store' };
+/**
+ * Whose key an answer was paid with, for the answer caches: the Worker's own keys (behind Access) and
+ * each browser key get separate entries, so a cached answer never crosses from one to the other.
+ */
+async function keyScope(gate: AiGate, apiKey: string) {
+  if (gate.mode === 'access') return 'server';
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey)));
+  return `byok-${[...digest.slice(0, 8)].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
 const fail = (error: string, status: number) => NextResponse.json({ error }, { status, headers: noStore });
 const providerName = (provider: AiProvider) => provider === 'anthropic' ? 'Claude' : 'ChatGPT';
 
@@ -201,7 +210,7 @@ export async function POST(request: Request) {
 
   // Company figures by web search, for when the usual market-data source has nothing for a symbol.
   if (task === 'company-figures') {
-    const key = `${provider}:${model}:${symbol}`;
+    const key = `${await keyScope(gate, apiKey)}:${provider}:${model}:${symbol}`;
     const cached = companyCache.get(key);
     if (cached && Date.now() - cached.fetchedAt < answerFreshMs) return NextResponse.json({ company: cached.company, cached: true }, { headers: noStore });
     const blocked = await guardQuota(companyLookupEstimate);
@@ -223,7 +232,7 @@ export async function POST(request: Request) {
   }
 
   if (task === 'earnings-date') {
-    const key = `${provider}:${model}:${symbol}`;
+    const key = `${await keyScope(gate, apiKey)}:${provider}:${model}:${symbol}`;
     const cached = answerCache.get(key);
     if (cached && Date.now() - cached.fetchedAt < answerFreshMs) return NextResponse.json({ suggestion: cached.suggestion, cached: true }, { headers: noStore });
     const blocked = await guardQuota(dateLookupEstimate);

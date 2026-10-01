@@ -5,6 +5,21 @@ export const dynamic = 'force-dynamic';
 
 type TradeInput = Omit<TradeRow, 'id' | 'createdAt' | 'updatedAt' | 'sourceRow'> & { sourceRow?: number | null };
 
+const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+/** A number from the form or an import ("1,000" included); anything else is refused, never stored as NaN. */
+function amount(value: unknown, field: string, fallback = 0) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const parsed = typeof value === 'number' ? value : Number(String(value).replace(/,/g, '').trim());
+  if (!Number.isFinite(parsed)) throw new Error(`${field} must be a number.`);
+  return Math.max(0, parsed);
+}
+const optionalDate = (value: unknown, field: string) => {
+  if (!value) return null;
+  const text = String(value).slice(0, 10);
+  if (!datePattern.test(text)) throw new Error(`${field} must be a YYYY-MM-DD date.`);
+  return text;
+};
+
 function clean(input: Partial<TradeInput>): TradeInput {
   const requestedType = String(input.type ?? 'Sell').trim().slice(0, 12);
   const cash = requestedType.toUpperCase() === 'CASH';
@@ -13,7 +28,8 @@ function clean(input: Partial<TradeInput>): TradeInput {
   const event = cash ? 'CASH' : String(input.event ?? 'PUT').trim().toUpperCase().slice(0, 24);
   const type = cash ? 'CASH' : requestedType;
   const openDate = String(input.openDate ?? '').slice(0, 10);
-  const closeDate = input.closeDate ? String(input.closeDate).slice(0, 10) : null;
+  if (openDate && !datePattern.test(openDate)) throw new Error('Open date must be a YYYY-MM-DD date.');
+  const closeDate = optionalDate(input.closeDate, 'Close date');
   const status = closeDate ? 'closed' : 'open';
   const rawCurrent = input.currentPrice as unknown;
   if (!openDate) throw new Error('Open date is required.');
@@ -23,16 +39,16 @@ function clean(input: Partial<TradeInput>): TradeInput {
   return {
     type,
     openDate,
-    expiryDate: cash ? null : input.expiryDate ? String(input.expiryDate).slice(0, 10) : null,
+    expiryDate: cash ? null : optionalDate(input.expiryDate, 'Expiry date'),
     closeDate,
     ticker,
     event,
     strike: cash ? null : input.strike ? String(input.strike).trim().slice(0, 30) : null,
-    quantity: Math.max(0, Number(input.quantity ?? 0)),
-    entryPrice: cash ? 1 : Math.max(0, Number(input.entryPrice ?? 0)),
-    currentPrice: cash ? 1 : rawCurrent === null || rawCurrent === undefined || rawCurrent === '' ? null : Math.max(0, Number(rawCurrent)),
-    fees: cash ? 0 : Math.max(0, Number(input.fees ?? 0)),
-    collateral: cash ? Math.max(0, Number(input.quantity ?? 0)) : Math.max(0, Number(input.collateral ?? 0)),
+    quantity: amount(input.quantity, 'Quantity'),
+    entryPrice: cash ? 1 : amount(input.entryPrice, 'Entry price'),
+    currentPrice: cash ? 1 : rawCurrent === null || rawCurrent === undefined || rawCurrent === '' ? null : amount(rawCurrent, 'Current price'),
+    fees: cash ? 0 : amount(input.fees, 'Fees'),
+    collateral: cash ? amount(input.quantity, 'Quantity') : amount(input.collateral, 'Collateral'),
     notes: String(input.notes ?? '').trim().slice(0, 1000),
     status,
     quoteMode: input.quoteMode === 'auto' && type === 'SDI' ? 'auto' : 'manual',

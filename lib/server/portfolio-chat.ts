@@ -138,7 +138,7 @@ export type ChatRequest = ReturnType<typeof chatRequest>;
 /** Up to four cited pages, listed under the answer. */
 const withSources = (text: string, sources: Array<{ url?: string; title?: string | null }>) => {
   const list = cleanSources(sources).slice(0, 4);
-  return list.length ? `${text}\n\n來源：\n${list.map((source) => `- ${source.title} ${source.url}`).join('\n')}` : text;
+  return list.length ? `${text}\n\n來源：\n${list.map((source) => source.title && source.title !== source.url ? `- ${source.title} ${source.url}` : `- ${source.url}`).join('\n')}` : text;
 };
 const maxPauseResumes = 3;
 /** Extra tokens the free-quota check reserves for search results. */
@@ -165,9 +165,13 @@ async function claudeChat(apiKey: string, model: string, request: ChatRequest) {
   }
   if (!response) throw new Error('Claude 沒有回覆。');
   if (response.stop_reason === 'refusal') throw new Error('Claude 拒絕了這次請求。');
-  const text = response.content.flatMap((block) => block.type === 'text' ? [block.text] : []).join('').trim();
+  if (response.stop_reason === 'pause_turn') throw new Error('搜尋時間過長，請稍後再試或把問題問得更具體。');
+  // The answer is the text after the last search; what came before is Claude saying it will search.
+  const lastSearch = response.content.reduce((at, block, i) => block.type === 'web_search_tool_result' ? i : at, -1);
+  const answerBlocks = response.content.slice(lastSearch + 1);
+  const text = answerBlocks.flatMap((block) => block.type === 'text' ? [block.text] : []).join('').trim();
   if (!text) throw new Error('Claude 沒有回傳文字。');
-  const sources = response.content.flatMap((block) => block.type === 'text' ? (block.citations ?? []).flatMap((citation) => citation.type === 'web_search_result_location' ? [{ url: citation.url, title: citation.title }] : []) : []);
+  const sources = answerBlocks.flatMap((block) => block.type === 'text' ? (block.citations ?? []).flatMap((citation) => citation.type === 'web_search_result_location' ? [{ url: citation.url, title: citation.title }] : []) : []);
   const body = response.stop_reason === 'max_tokens' ? `${text}\n\n（回覆過長被截斷）` : text;
   return { text: withSources(body, sources), model: response.model, usageTokens: 0 };
 }
@@ -175,6 +179,16 @@ async function claudeChat(apiKey: string, model: string, request: ChatRequest) {
 type OpenAiResponse = { model?: string; status?: string; output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string; annotations?: Array<{ type?: string; url?: string; title?: string }> }> }>; usage?: { total_tokens?: number } | null; error?: { message?: string } | null };
 
 async function chatGptChat(apiKey: string, model: string, request: ChatRequest) {
+  try {
+    return await chatGptRequest(apiKey, model, request, true);
+  } catch (error) {
+    // Models without hosted tools refuse the search tool: ask again without it.
+    if (error instanceof Error && /OpenAI returned 400/.test(error.message) && /tool|web_search/i.test(error.message)) return chatGptRequest(apiKey, model, request, false);
+    throw error;
+  }
+}
+
+async function chatGptRequest(apiKey: string, model: string, request: ChatRequest, search: boolean) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   try {
@@ -186,7 +200,7 @@ async function chatGptChat(apiKey: string, model: string, request: ChatRequest) 
         instructions: `${request.system}\n\n${request.portfolio}`,
         input: [...request.turns.map((turn) => ({ role: turn.role, content: turn.text })), { role: 'user', content: request.question }],
         // The model searches only when a question needs current information.
-        tools: [{ type: 'web_search', search_context_size: 'low' }],
+        ...(search ? { tools: [{ type: 'web_search', search_context_size: 'low' }] } : {}),
         ...openAiReasoning(model, request.maxOutput),
       }),
       signal: controller.signal,

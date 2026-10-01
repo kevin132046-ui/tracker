@@ -95,7 +95,9 @@
 :root[data-wafu] .donut::after { background: var(--wa-panel-solid); box-shadow: 0 0 0 1px var(--wa-line); }
 :root[data-wafu] .donut-center strong { color: var(--wa-ink); font-family: var(--wa-f-display); font-weight: 700; letter-spacing: 0; }
 :root[data-wafu] .donut-svg-label { fill: var(--wa-bg); stroke: none; paint-order: normal; font-family: var(--wa-f-mono); font-weight: 500; }
-:root[data-wafu] .donut-svg-label.is-small { fill: var(--wa-ink-2); }
+:root[data-wafu] .donut-svg-label.is-small { fill: var(--wa-bg); }
+/* A thin dark edge keeps each figure readable whatever slice or neighbour it sits over. */
+:root[data-wafu] .donut-svg-label { stroke: rgb(0 0 0 / .35); stroke-width: .5px; paint-order: stroke fill; }
 :root[data-wafu] .donut-segment-outline { stroke: var(--wa-ink); }
 
 /* ---------- Top bar (prototype): date with the solar term, a centred notice pill, a lantern for the market ---------- */
@@ -185,8 +187,16 @@
 .wafu-vstrip b { color: var(--wa-ink); font-size: 12px; font-weight: 600; }
 .wafu-vstrip .positive b { color: var(--wa-up); }
 .wafu-vstrip .negative b { color: var(--wa-down); }
-.wafu-vrange { position: relative; align-self: center; width: 64px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--wa-down), var(--wa-gold), var(--wa-up)); opacity: .75; }
-.wafu-vrange em { position: absolute; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--wa-ink); box-shadow: 0 0 6px var(--wa-accent); }
+/* Where the price sits in its range, as a 和風 ruler: a fine ink rule with end and centre ticks,
+   the stretch up to the price drawn in the theme's accent, a 菱 (diamond) marking the price. */
+.wafu-vrange { --pos: 50%; position: relative; align-self: center; width: 68px; height: 9px;
+  background:
+    linear-gradient(var(--wa-line-2), var(--wa-line-2)) 0 50% / 1px 9px no-repeat,
+    linear-gradient(var(--wa-line-2), var(--wa-line-2)) 100% 50% / 1px 9px no-repeat,
+    linear-gradient(var(--wa-line-2), var(--wa-line-2)) 50% 50% / 1px 5px no-repeat,
+    linear-gradient(90deg, rgb(var(--wa-accent-rgb) / .25), var(--wa-accent)) 0 50% / var(--pos) 2px no-repeat,
+    linear-gradient(var(--wa-line-2), var(--wa-line-2)) 0 50% / 100% 1px no-repeat; }
+.wafu-vrange em { position: absolute; top: 50%; left: var(--pos); width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; rotate: 45deg; background: var(--wa-accent); border: 1px solid var(--wa-panel-solid); box-shadow: 0 0 0 1px rgb(var(--wa-accent-rgb) / .5), 0 0 6px rgb(var(--wa-accent-rgb) / .45); }
 @media (max-width: 1180px) { .wafu-vstrip { padding-left: 0; } }
 @media (max-width: 640px) { .wafu-vfields-panel { left: 12px; right: 12px !important; top: auto !important; bottom: calc(76px + env(safe-area-inset-bottom)); width: auto; } }
 

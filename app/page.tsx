@@ -464,7 +464,9 @@ const AllocationDonut = memo(function AllocationDonut({ items, total, loading, a
     const start = items.slice(0, index).reduce((sum, previous) => sum + previous.share, 0);
     const midpoint = start + item.share / 2;
     const angle = midpoint * Math.PI * 2 - Math.PI / 2;
-    const labelRadius = item.share < .04 ? (index % 2 ? 34 : 43) : 39;
+    // Thin slices (3–4%) alternate their labels in and out so neighbours don't collide; under 3% the
+    // share is left to the list beside the ring and the hover readout.
+    const labelRadius = item.share < .04 ? (index % 2 ? 34 : 42) : 39;
     return { ...item, index, start, path: donutSegmentPath(start, item.share), labelX: 50 + Math.cos(angle) * labelRadius, labelY: 50 + Math.sin(angle) * labelRadius };
   }), [items]);
   const active = segments.find((item) => item.label === activeLabel) ?? null;
@@ -494,7 +496,7 @@ const AllocationDonut = memo(function AllocationDonut({ items, total, loading, a
           if (event.key === 'Escape') { event.preventDefault(); onPin(null); onHover(null); }
         }}
       />)}
-      {segments.map((item) => <text key={`label-${item.label}`} x={item.labelX} y={item.labelY} className={`donut-svg-label ${item.share < .04 ? 'is-small' : ''}`}>{percent.format(item.share)}</text>)}
+      {segments.filter((item) => item.share >= .03).map((item) => <text key={`label-${item.label}`} x={item.labelX} y={item.labelY} className={`donut-svg-label ${item.share < .04 ? 'is-small' : ''}`}>{percent.format(item.share)}</text>)}
     </svg>
     <span className={`donut-center ${active ? 'has-active-segment' : ''}`}>
       <strong>{loading ? '讀取中…' : active ? active.label : money.format(total)}</strong>
@@ -651,7 +653,7 @@ const LiveMarketClocks = memo(function LiveMarketClocks({ lastQuoteAt }: { lastQ
   ];
   return <div className="as-of">
     <div className="clock-stack-heading"><span>即時市場時間</span><div className="clock-zone-switch" role="group" aria-label="切換即時時區">{clocks.map((clock) => <button type="button" key={clock.id} className={activeZone === clock.id ? 'active' : ''} aria-pressed={activeZone === clock.id} onClick={() => setActiveZone(clock.id)}>{clock.label}</button>)}</div></div>
-    <div className="stacked-clock-deck" aria-live="polite">{clocks.map((clock) => <div key={clock.id} className={`stacked-clock-card ${activeZone === clock.id ? 'is-active' : 'is-behind'}`} aria-hidden={activeZone !== clock.id}><span>{clock.label}</span><strong>{clock.time}</strong><b>[{clock.zone}]</b>{clockNow !== null && <em className="clock-jikan">{jikanOf(clockNow)}</em>}</div>)}</div>
+    <div className="stacked-clock-deck" aria-live="polite">{clocks.map((clock) => <div key={clock.id} className={`stacked-clock-card ${activeZone === clock.id ? 'is-active' : 'is-behind'}`} aria-hidden={activeZone !== clock.id}><span>{clock.label}</span><strong>{clock.time}</strong><b>{clock.zone}</b>{clockNow !== null && <em className="clock-jikan">{jikanOf(clockNow)}</em>}</div>)}</div>
     <p>報價每 60 秒更新 · 上次 {lastQuoteLabel}</p>
   </div>;
 });
@@ -1019,7 +1021,7 @@ function VisualFieldStrip({ fields, values }: { fields: VisualFieldId[]; values:
     const value = values[field.id]!;
     return <span key={field.id} className={value.tone ?? ''} title={field.hint}>
       <small>{field.label}</small>
-      {value.range !== undefined ? <><i className="wafu-vrange"><em style={{ left: `${value.range * 100}%` }} /></i><b>{value.text}</b></> : <b>{value.text}</b>}
+      {value.range !== undefined ? <><i className="wafu-vrange" style={{ '--pos': `${value.range * 100}%` } as CSSProperties}><em /></i><b>{value.text}</b></> : <b>{value.text}</b>}
     </span>;
   })}</div>;
 }

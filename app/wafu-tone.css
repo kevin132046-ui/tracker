@@ -75,12 +75,12 @@
 :root[data-wafu='kikyo'][data-tone='washi'][data-wafu-intro] body::after { background: #0c0d11; }
 :root[data-wafu='shigure'][data-tone='washi'][data-wafu-intro] body::after { background: #07141a; }
 /* 和紙's deep ink slices need light figures on the donut. */
-:root[data-tone='washi'] .donut-segment-label { color: #fbf6ec; fill: #fbf6ec; text-shadow: 0 1px 2px rgb(40 30 20 / .45); }
+:root[data-tone='washi'] .donut-segment-label, :root[data-tone='washi'] .donut-svg-label { color: #fbf6ec; fill: #fbf6ec; text-shadow: 0 1px 2px rgb(40 30 20 / .45); }
 
 /* 文字大小 (設定 → 外觀): the page content scales evenly, layout included, so proportions hold.
    大 is the default; 標準 is the original size. */
-:root[data-text-scale='large'] .dashboard { zoom: 1.12; }
-:root[data-text-scale='xlarge'] .dashboard { zoom: 1.2; }
+:root[data-text-scale='large'] .dashboard { zoom: 1.2; }
+:root[data-text-scale='xlarge'] .dashboard { zoom: 1.32; }
 
 /* ---- Summary cards: each a light tint of its own, a press effect, and a jump to its section ---- */
 :root[data-wafu] .metric-card-link { --card-tint: var(--wa-accent); cursor: pointer; transition: transform .12s ease, border-color .2s ease, box-shadow .2s ease; }
@@ -112,7 +112,7 @@
 :root[data-wafu] .visual-weight b i { height: 100%; border-radius: 99px; }
 
 /* 和紙: the market clock and its notes sit on a paper backing over the artwork. */
-:root[data-tone='washi'] .hero .as-of { padding: 10px 14px; background: rgb(251 246 236 / .82); border-radius: 12px; box-shadow: 0 8px 22px -16px rgb(70 50 20 / .5); backdrop-filter: blur(6px); }
+:root[data-tone='washi'] .hero .as-of { padding: 10px 14px; background: rgb(251 246 236 / .82); border-radius: 12px; backdrop-filter: blur(6px); }
 :root[data-tone='washi'] .hero .as-of, :root[data-tone='washi'] .hero .as-of p, :root[data-tone='washi'] .clock-stack-heading > span { color: var(--wa-ink-2); }
 :root[data-tone='washi'] .hero-sub, :root[data-tone='washi'] .wafu-hero-sub { color: var(--wa-ink-2); text-shadow: 0 1px 0 rgb(255 255 255 / .6); }
 /* Jumps (cards, rail) land below the sticky top bar. */
@@ -121,3 +121,20 @@
 /* Placeholder while a settings card's code loads (first open only). */
 .settings-card-loading { min-height: 140px; border-radius: var(--wa-r-lg, 14px); background: linear-gradient(90deg, var(--wa-raise), rgb(var(--wa-raise-rgb) / .09), var(--wa-raise)) 0 0 / 200% 100%; animation: settings-card-shimmer 1.2s linear infinite; }
 @keyframes settings-card-shimmer { to { background-position: -200% 0; } }
+
+/* ---- 市場時間: a 和風 time plate. No drop shadow; the zone name runs vertically like a seal column,
+   the zone code is a small stamped tag, the 刻 sits under the time. The hidden zone fades out instead
+   of peeking from behind. ---- */
+:root[data-wafu] .stacked-clock-deck { height: 76px; }
+:root[data-wafu] .stacked-clock-card {
+  grid-template-columns: auto 1fr auto; grid-template-rows: 1fr auto; column-gap: 12px; row-gap: 2px; padding: 9px 16px 9px 12px;
+  background: rgb(var(--wa-bg-rgb) / .5); border: 1px solid var(--wa-line-2); box-shadow: none;
+  outline: 1px solid var(--wa-line); outline-offset: -5px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  transition: opacity .35s ease, transform .35s ease;
+}
+:root[data-wafu] .stacked-clock-card.is-behind { opacity: 0; transform: translate3d(0, 6px, 0) scale(.98); filter: none; pointer-events: none; }
+:root[data-wafu] .stacked-clock-card > span { grid-row: 1 / span 2; align-self: stretch; display: flex; align-items: center; writing-mode: vertical-rl; padding-right: 10px; border-right: 1px solid var(--wa-line-2); font-family: var(--wa-f-display); font-size: 13px; letter-spacing: .18em; }
+:root[data-wafu] .stacked-clock-card strong { align-self: end; text-shadow: none; }
+:root[data-wafu] .stacked-clock-card > b { align-self: end; margin-bottom: 2px; padding: 2px 6px; font-size: 10.5px; line-height: 1.2; letter-spacing: .14em; border: 1px solid rgb(var(--wa-accent-rgb) / .6); border-radius: 3px; background: rgb(var(--wa-accent-rgb) / .08); }
+:root[data-wafu] .stacked-clock-card .clock-jikan { grid-column: 2 / -1; justify-self: start; font-size: 11.5px; }
+:root[data-perf='lite'] .stacked-clock-card { backdrop-filter: none; -webkit-backdrop-filter: none; }

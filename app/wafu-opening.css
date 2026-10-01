@@ -274,3 +274,14 @@
 :root[data-wafu-reveal] .dashboard > :nth-child(4) { animation-delay: 0.56s; }
 @keyframes op-rise { from { opacity: 0; transform: translateY(14px); } }
 @media (prefers-reduced-motion: reduce) { :root[data-wafu-reveal] .topbar, :root[data-wafu-reveal] .side-nav, :root[data-wafu-reveal] .dashboard > * { animation: none; } }
+
+/* 開場圖標 (設定 → 和風背景與音樂): an uploaded emblem takes the place of the drawn crest and halo,
+   with the same entrance (fade in, grow, unturn) and the halo's timing. */
+:root[data-op-icon] .op-crest > svg, :root[data-op-icon] .op-halo svg { visibility: hidden; }
+:root[data-op-icon] .op-halo { width: calc(var(--crest) * 1.9); }
+:root[data-op-icon] .op-halo::after { content: ''; position: absolute; inset: 0; background: var(--op-icon) center / contain no-repeat; filter: drop-shadow(0 0 18px rgb(98 212 210 / .35)); }
+:root[data-op-icon] .op-halo { opacity: 0; scale: .7; rotate: -12deg; }
+:root[data-op-icon] .op-halo { animation: op-icon-in 1.2s cubic-bezier(.2, .8, .2, 1) .2s forwards; }
+:root[data-op-icon][data-op='opening'] .op-halo, :root[data-op-icon][data-op='fading'] .op-halo { animation: none; opacity: 1; scale: 1; rotate: 0deg; }
+@keyframes op-icon-in { to { opacity: 1; scale: 1; rotate: 0deg; } }
+@media (prefers-reduced-motion: reduce) { :root[data-op-icon] .op-halo { animation: none; opacity: 1; scale: 1; rotate: 0deg; } }

@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import type { WafuAssetKind, WafuAssetSlot } from '@/lib/wafu/asset-slots';
 import { assetKind, assetSlotCount, maxAssetBytes, themeSlots } from '@/lib/wafu/asset-slots';
 import { isZipFile, unzip } from '@/lib/wafu/unzip';
-import { deleteWafuAsset, prepareBackdrop, prepareSilhouette, uploadWafuAsset, useWafuAssets } from '@/lib/wafu/assets';
+import { deleteWafuAsset, prepareBackdrop, prepareIcon, prepareSilhouette, uploadWafuAsset, useWafuAssets } from '@/lib/wafu/assets';
 import type { WafuMediaPrefs } from '@/lib/wafu/media';
 import { setMediaPrefs, useMediaPrefs } from '@/lib/wafu/media';
 import { playSfx, unlockAudio } from '@/lib/wafu/sfx';
@@ -13,6 +13,7 @@ import type { WafuTheme } from '@/lib/wafu/theme';
 const kinds: ReadonlyArray<{ kind: WafuAssetKind; label: string; accept: string; hint: string }> = [
   { kind: 'bg', label: '背景圖', accept: 'image/jpeg,image/png,image/webp', hint: '會縮到 2400 px 並轉成 JPEG' },
   { kind: 'sil', label: '開場剪影', accept: 'image/png,image/webp,image/jpeg', hint: '去背 PNG 最好；一般圖片以邊緣顏色自動去背' },
+  { kind: 'icon', label: '開場圖標', accept: 'image/png,image/webp,image/jpeg', hint: '取代開場中央的圖騰；彩色保留，單色背景會自動去除' },
   { kind: 'bgm', label: '背景音樂', accept: 'audio/*,.mp3,.m4a,.ogg,.wav,.flac,.webm', hint: `MP3、M4A、OGG、WAV、FLAC，${maxAssetBytes.bgm / 1024 / 1024} MB 內` },
 ];
 const themes: ReadonlyArray<{ id: WafuTheme; label: string; sil: string }> = [
@@ -31,7 +32,7 @@ function targetForFile(file: File): { kind: WafuAssetKind; theme: WafuTheme } | 
   const theme: WafuTheme | null = /桔梗|kikyo/.test(name) ? 'kikyo' : /時雨|shigure/.test(name) ? 'shigure' : null;
   if (!theme) return null;
   const audio = file.type.startsWith('audio/') || /\.(mp3|m4a|aac|ogg|opus|wav|flac|webm)$/.test(name);
-  const kind: WafuAssetKind = audio ? 'bgm' : /剪影|silhouette|sil/.test(name) ? 'sil' : 'bg';
+  const kind: WafuAssetKind = audio ? 'bgm' : /剪影|silhouette|sil/.test(name) ? 'sil' : /圖標|icon|emblem/.test(name) ? 'icon' : 'bg';
   return { kind, theme };
 }
 const sizeLabel = (bytes: number) => bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -48,7 +49,7 @@ export default function WafuMediaCard({ theme }: { theme: WafuTheme }) {
 
   const send = async (slot: WafuAssetSlot, file: File) => {
     const kind = assetKind(slot);
-    const body = kind === 'bg' ? await prepareBackdrop(file) : kind === 'sil' ? await prepareSilhouette(file) : file;
+    const body = kind === 'bg' ? await prepareBackdrop(file) : kind === 'sil' ? await prepareSilhouette(file) : kind === 'icon' ? await prepareIcon(file) : file;
     if (body.size > maxAssetBytes[kind]) throw new Error(`檔案超過 ${maxAssetBytes[kind] / 1024 / 1024} MB。`);
     await uploadWafuAsset(slot, body, kind === 'bgm' ? file.name : undefined);
   };
@@ -156,7 +157,7 @@ export default function WafuMediaCard({ theme }: { theme: WafuTheme }) {
             const adding = !asset && filled.length > 0;
             return <div key={slot} className={`wafu-media-row${adding ? ' is-add' : ''}`}>
               <div className={`wafu-media-thumb is-${kind.kind}`} aria-hidden="true">
-                {asset && kind.kind !== 'bgm' ? <span style={{ [kind.kind === 'bg' ? 'backgroundImage' : 'maskImage']: `url("${asset.url}")`, ...(kind.kind === 'sil' ? { WebkitMaskImage: `url("${asset.url}")` } : {}) }} /> : <span>{adding ? '＋' : kind.kind === 'bgm' ? '♪' : '—'}</span>}
+                {asset && kind.kind !== 'bgm' ? <span style={{ [kind.kind === 'bg' || kind.kind === 'icon' ? 'backgroundImage' : 'maskImage']: `url("${asset.url}")`, ...(kind.kind === 'sil' ? { WebkitMaskImage: `url("${asset.url}")` } : {}) }} /> : <span>{adding ? '＋' : kind.kind === 'bgm' ? '♪' : '—'}</span>}
               </div>
               <div className="wafu-media-info">
                 <b>{adding ? `新增${kind.label}` : `${kind.label}${filled.length > 1 || index > 0 ? ` ${index + 1}` : ''}`}</b>

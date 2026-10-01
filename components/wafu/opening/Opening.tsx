@@ -45,6 +45,7 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
 }) {
   const { assets } = useWafuAssets();
   const silhouette = visitPick(assets, 'sil', theme)?.url ?? null;
+  const icon = visitPick(assets, 'icon', theme)?.url ?? null;
   const prefs = useMediaPrefs();
   const callbacks = useRef({ onDone, onReveal });
   const readyRef = useRef(ready);
@@ -62,6 +63,13 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
     if (silhouette) { root.style.setProperty('--op-sil', `url("${silhouette}")`); root.dataset.opSil = '1'; }
     return () => { root.style.removeProperty('--op-sil'); delete root.dataset.opSil; };
   }, [silhouette]);
+
+  // The uploaded emblem in place of the drawn crest and halo.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (icon) { root.style.setProperty('--op-icon', `url("${icon}")`); root.dataset.opIcon = '1'; }
+    return () => { root.style.removeProperty('--op-icon'); delete root.dataset.opIcon; };
+  }, [icon]);
 
   // The sound button reflects the preference (sound needs a gesture to start).
   useEffect(() => {

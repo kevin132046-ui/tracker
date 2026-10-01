@@ -190,7 +190,7 @@ const translations: ReadonlyArray<readonly [string, string | null, string | null
   ['1 個月', '1か月', '1 month'], ['3 個月', '3か月', '3 months'], ['歷史日期', '履歴日付', 'History date'],
   ['目前曝險', '現在のエクスポージャー', 'Current exposure'], ['其他', 'その他', 'Other'], ['股票按目前價格、選擇權按擔保金、現金按原幣餘額計算；日圓部位會換算為 USD。', '株式は現在値、オプションは証拠金、現金は現地通貨残高で計算。円建てポジションは USD に換算。', 'Stocks at current price, options at collateral, cash at its original-currency balance; yen positions are converted to USD.'],
   ['匯入', 'インポート', 'Import'], ['等待走勢', 'チャート待ち', 'Waiting for chart'], ['現金／稅後股息', '現金／税引後配当', 'Cash / after-tax dividends'],
-  ['現金不呼叫股票報價；股息依持有期間、除息事件與設定的外國投資人預扣稅率試算。', '現金は株価を取得しません。配当は保有期間、権利落ち日、設定した外国投資家の源泉徴収税率で試算します。', 'Cash needs no stock quote; dividends are estimated from holding periods, ex-dividend events and the foreign-investor withholding rates in Settings.'], ['筆 · 持倉數量', '件 · 保有数量', 'trades · quantity held'], ['股票 API 報價', '株価 API', 'Stock API quote'],
+  ['現金不用查股價。股息會照你持有的期間和除息日，扣掉設定裡的外國人預扣稅後自動估算。', '現金は株価を調べません。配当は保有期間と権利落ち日から、設定した外国人向けの源泉税を引いて自動で見積もります。', 'Cash needs no share price. Dividends are estimated from how long you held and the ex-dividend dates, minus the foreign withholding tax set in Settings.'], ['筆 · 持倉數量', '件 · 保有数量', 'trades · quantity held'], ['股票 API 報價', '株価 API', 'Stock API quote'],
   ['加入背景圖片', '背景画像を追加', 'Add background image'], ['點擊編輯網頁標題', 'クリックしてページタイトルを編集', 'Click to edit the page title'], ['編輯網頁標題', 'ページタイトルを編集', 'Edit page title'],
   ['切換即時時區', 'タイムゾーンを切り替え', 'Switch time zone'], ['投資組合摘要', 'ポートフォリオ概要', 'Portfolio summary'], ['計算明細', '計算の明細', 'calculation details'],
   ['收益率期間', 'リターン期間', 'Return period'], ['宏觀歷史期間', 'マクロ履歴期間', 'Macro history period'], ['調整收益圖與持倉配置寬度', 'リターンチャートと構成の幅を調整', 'Resize the returns chart and allocation'],

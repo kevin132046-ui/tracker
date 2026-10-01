@@ -3542,7 +3542,7 @@ export default function Home() {
               </tbody>
             </table>
           </div>}
-          {positionView !== 'gains' && <footer className="table-footer"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span><p>現金不呼叫股票報價；股息依持有期間、除息事件與設定的外國投資人預扣稅率試算。</p></footer>}
+          {positionView !== 'gains' && <footer className="table-footer"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span><p>現金不用查股價。股息會照你持有的期間和除息日，扣掉設定裡的外國人預扣稅後自動估算。</p></footer>}
         </section>
         </div>
       </div>

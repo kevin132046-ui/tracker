@@ -1,0 +1,77 @@
+/*
+ * 新增／編輯交易 in the 和風 themes: ledger-style fields on a fine rule, one row of trade types, and the
+ * live preview as a 和紙 trade slip (伝票). Styling only: the editor's markup and logic are unchanged.
+ */
+:root[data-wafu] .trade-modal { --ed-field: rgb(var(--wa-raise-rgb) / .035); }
+
+/* Sections: the number as a small seal, the heading in the display face, a dotted rule between. */
+:root[data-wafu] .trade-modal .editor-section { border-bottom: 1px dashed var(--wa-line-2); }
+:root[data-wafu] .trade-modal .editor-section-heading { align-items: center; }
+:root[data-wafu] .trade-modal .editor-section-heading > span { width: 30px; height: 30px; color: var(--wa-accent); background: transparent; border: 1px solid var(--wa-accent); border-radius: 4px; font-family: var(--wa-f-mono); font-size: 11px; letter-spacing: .04em; box-shadow: inset 0 0 0 2px var(--wa-panel-solid), inset 0 0 0 3px rgb(var(--wa-accent-rgb) / .35); }
+:root[data-wafu] .trade-modal .editor-section-heading h3 { font-family: var(--wa-f-display); font-size: 19px; letter-spacing: .06em; }
+:root[data-wafu] .trade-modal .editor-section-heading p { font-size: 12.5px; }
+
+/* Labels: small, spaced, muted ink. */
+:root[data-wafu] .trade-modal :is(.choice-field legend, .form-grid label, .notes-field, .editor-market-switch > legend) { color: var(--wa-ink-2); font-size: 12px; font-weight: 600; letter-spacing: .08em; }
+
+/* Fields: a ledger line instead of a filled box; the line turns accent on focus. */
+:root[data-wafu] .trade-modal :is(.form-grid input, .notes-field textarea), :root[data-wafu] .trade-modal .money-input {
+  min-height: 46px; color: var(--wa-ink); background: var(--ed-field); border: 0; border-bottom: 1px solid var(--wa-line-2); border-radius: 6px 6px 0 0; box-shadow: none; font-size: 15px;
+}
+:root[data-wafu] .trade-modal .money-input input, :root[data-wafu] .trade-modal .money-input input:focus { min-height: 44px; color: var(--wa-ink); background: transparent; border: 0; border-radius: 0; box-shadow: none; font-size: 15px; }
+:root[data-wafu] .trade-modal .form-grid { column-gap: 16px; }
+:root[data-wafu] .trade-modal :is(.form-grid input, .notes-field textarea):focus, :root[data-wafu] .trade-modal .money-input:focus-within {
+  background: rgb(var(--wa-accent-rgb) / .06); border-bottom-color: var(--wa-accent); box-shadow: inset 0 -1px 0 var(--wa-accent);
+}
+:root[data-wafu] .trade-modal .notes-field textarea { border: 1px solid var(--wa-line); border-radius: 6px; line-height: 1.6; }
+:root[data-wafu] .trade-modal input::placeholder, :root[data-wafu] .trade-modal textarea::placeholder { color: rgb(var(--wa-muted-rgb) / .8); }
+:root[data-wafu] .trade-modal .date-picker-trigger { width: 32px; height: 32px; bottom: 7px; background: transparent; border-color: var(--wa-line-2); border-radius: 6px; }
+
+/* Market and holding-state switches: an underlined choice, as the page's other 和風 switches. */
+:root[data-wafu] .trade-modal :is(.market-choice, .compact-choice > div) { gap: 0; padding: 0; background: transparent; border: 0; border-bottom: 1px solid var(--wa-line-2); border-radius: 0; }
+:root[data-wafu] .trade-modal :is(.market-choice, .compact-choice > div) button { min-height: 42px; color: var(--wa-muted); background: transparent; border-radius: 0; box-shadow: none; font-size: 14px; letter-spacing: .06em; }
+:root[data-wafu] .trade-modal :is(.market-choice, .compact-choice > div) button.active { color: var(--wa-accent); background: linear-gradient(transparent 60%, rgb(var(--wa-accent-rgb) / .08)); box-shadow: inset 0 -2px 0 var(--wa-accent); }
+
+/* Trade types: all five on one row (3 + 2 on narrow screens); the chosen one takes the accent. */
+:root[data-wafu] .trade-modal .trade-type-picker { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+:root[data-wafu] .trade-modal .trade-type-picker button { min-height: 66px; flex-direction: column; align-items: flex-start; gap: 7px; padding: 10px 11px; background: var(--ed-field); border: 1px solid var(--wa-line); border-radius: 8px; }
+:root[data-wafu] .trade-modal .trade-type-picker button > i { width: 24px; height: 24px; color: var(--wa-accent); background: transparent; border: 1px solid var(--wa-line-2); border-radius: 5px; box-shadow: none; font-size: 13px; }
+:root[data-wafu] .trade-modal .trade-type-picker strong { font-size: 14px; letter-spacing: .04em; }
+:root[data-wafu] .trade-modal .trade-type-picker small { font-size: 11px; }
+:root[data-wafu] .trade-modal .trade-type-picker button:hover:not(:disabled) { border-color: rgb(var(--wa-accent-rgb) / .5); }
+:root[data-wafu] .trade-modal .trade-type-picker button.active { color: var(--wa-accent); background: rgb(var(--wa-accent-rgb) / .08); border-color: var(--wa-accent); box-shadow: inset 0 0 0 1px var(--wa-accent); }
+:root[data-wafu] .trade-modal .trade-type-picker button.active > i { color: var(--wa-on-accent); background: var(--wa-accent); border-color: var(--wa-accent); }
+@media (max-width: 720px) { :root[data-wafu] .trade-modal .trade-type-picker { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* Quick strategies: quiet chips beside a label, buy/sell told apart by a side mark. */
+:root[data-wafu] .trade-modal .strategy-shortcuts > span { font-size: 12px; letter-spacing: .08em; }
+:root[data-wafu] .trade-modal .strategy-shortcuts button { min-height: 32px; padding: 0 12px; color: var(--wa-ink-2); background: transparent; border: 1px solid var(--wa-line-2); border-radius: 4px; font-size: 13px; }
+:root[data-wafu] .trade-modal .strategy-shortcuts button.is-sell { border-left: 3px solid var(--wa-down); }
+:root[data-wafu] .trade-modal .strategy-shortcuts button.is-buy { border-left: 3px solid var(--wa-up); }
+:root[data-wafu] .trade-modal .strategy-shortcuts button.active { color: var(--wa-accent); background: rgb(var(--wa-accent-rgb) / .08); border-color: var(--wa-accent); box-shadow: none; }
+
+/* ---- Live preview as a 和紙 trade slip ---- */
+:root[data-wafu] .trade-modal .editor-summary { background: color-mix(in srgb, var(--wa-panel-solid) 88%, var(--wa-gold)); border-left: 1px dashed var(--wa-line-2); }
+:root[data-wafu] .trade-modal .editor-summary h3 { margin-bottom: 16px; font-size: 20px; letter-spacing: .1em; }
+:root[data-wafu] .trade-modal .summary-symbol { padding: 12px 0 14px; background: transparent; border: 0; border-bottom: 1px solid var(--wa-line-2); border-radius: 0; box-shadow: none; }
+:root[data-wafu] .trade-modal .summary-symbol > span { width: 42px; height: 42px; color: var(--wa-seal); background: transparent; border: 2px solid var(--wa-seal); border-radius: 6px; font-family: var(--wa-f-display); font-size: 20px; rotate: -4deg; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--wa-panel-solid) 88%, var(--wa-gold)), inset 0 0 0 3px rgb(181 83 60 / .45); }
+:root[data-wafu] .trade-modal .summary-symbol strong { font-family: var(--wa-f-display); font-size: 17px; color: var(--wa-ink); }
+:root[data-wafu] .trade-modal .summary-price-pair { padding: 12px 0; background: transparent; border: 0; border-bottom: 1px solid var(--wa-line); border-radius: 0; }
+:root[data-wafu] .trade-modal .summary-price-pair span { font-size: 11px; letter-spacing: .06em; }
+:root[data-wafu] .trade-modal .summary-price-pair strong { color: var(--wa-ink); font-family: var(--wa-f-mono); font-size: 15px; }
+:root[data-wafu] .trade-modal .summary-result { margin-top: 6px; padding: 14px 0 16px; text-align: center; background: transparent; border: 0; border-top: 3px double var(--wa-line-2); border-bottom: 3px double var(--wa-line-2); border-radius: 0; }
+:root[data-wafu] .trade-modal .summary-result span { font-size: 11px; letter-spacing: .14em; }
+:root[data-wafu] .trade-modal .summary-result strong { font-size: 32px; }
+/* Each line of the slip: label … dotted leader … value. */
+:root[data-wafu] .trade-modal .editor-summary dl div { align-items: baseline; gap: 6px; padding: 9px 0; border-bottom: 0; }
+:root[data-wafu] .trade-modal .editor-summary dl div::after { content: ''; order: 1; flex: 1; min-width: 12px; border-bottom: 1px dotted var(--wa-line-2); translate: 0 -4px; }
+:root[data-wafu] .trade-modal .editor-summary dd { order: 2; font-family: var(--wa-f-mono); font-size: 13px; }
+:root[data-wafu] .trade-modal .editor-summary dt { font-size: 12px; }
+:root[data-wafu] .trade-modal .option-summary .eyebrow { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--wa-line-2); }
+:root[data-wafu] .trade-modal .summary-tip { font-size: 11.5px; }
+
+/* Footer: frosted so the fields behind it stay legible; the notes field scrolls clear of it. */
+:root[data-wafu] .trade-modal .editor-actions { background: rgb(var(--wa-bg-rgb) / .72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid var(--wa-line-2); }
+:root[data-perf='lite'] .trade-modal .editor-actions { background: var(--wa-panel-solid); backdrop-filter: none; -webkit-backdrop-filter: none; }
+:root[data-wafu] .trade-modal .editor-actions p { font-size: 12px; }
+:root[data-wafu] .trade-modal .editor-fields { padding-bottom: 28px; }

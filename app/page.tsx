@@ -22,7 +22,7 @@ import {
   dailyTimeWeightedReturns,
 } from '@/lib/performance';
 import type { AnnualRocSummary, CapitalBasis, PriceHistorySeries, RangeMode } from '@/lib/performance';
-import { addDaysToKey, dateKey, japaneseHolidays, parseDateKey, upcomingClosures, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
+import { addDaysToKey, dateKey, isTradingDay, japaneseHolidays, parseDateKey, upcomingClosures, usEarlyCloseName, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
 import type { UpcomingClosure } from '@/lib/market-calendar';
 import { earningsReminders, exchangeTodayKey, mergeEarnings, pruneManualEarnings } from '@/lib/earnings';
 import type { AiEarningsSuggestion, AiProvider, EarningsEntry, EarningsEvent, EarningsReminder } from '@/lib/earnings';
@@ -1038,7 +1038,19 @@ function marketSessionAt(timestamp: number): MarketSession {
   const easternDate = zonedDate(timestamp, 'America/New_York');
   const holiday = usMarketHolidays(easternDate.year).has(zonedDateKey(easternDate));
   if (holiday || ['Sat', 'Sun'].includes(day)) return 'closed';
-  return clock >= 570 && clock < 960 ? 'open' : clock >= 240 && clock < 570 ? 'pre' : clock >= 960 && clock < 1200 ? 'post' : 'closed';
+  // Early-close days (day after Thanksgiving, Christmas Eve…) end the regular session at 13:00.
+  const close = usEarlyCloseName(zonedDateKey(easternDate)) ? 780 : 960;
+  return clock >= 570 && clock < close ? 'open' : clock >= 240 && clock < 570 ? 'pre' : clock >= close && clock < 1200 ? 'post' : 'closed';
+}
+
+type JapanSession = 'open' | 'lunch' | 'closed';
+/** Tokyo Stock Exchange: 09:00–11:30 and 12:30–15:30 JST on trading days. */
+function japanSessionAt(timestamp: number): JapanSession {
+  const tokyo = zonedDate(timestamp, 'Asia/Tokyo');
+  if (!isTradingDay(zonedDateKey(tokyo), 'JP')) return 'closed';
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(timestamp));
+  const clock = Number(parts.find((part) => part.type === 'hour')?.value ?? 0) % 24 * 60 + Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
+  return (clock >= 540 && clock < 690) || (clock >= 750 && clock < 930) ? 'open' : clock >= 690 && clock < 750 ? 'lunch' : 'closed';
 }
 
 export default function Home() {
@@ -3265,8 +3277,9 @@ export default function Home() {
 
   // Worked out in the browser (and every 30 s) so the pill never differs from the server's render.
   const [marketSession, setMarketSession] = useState<MarketSession>('closed');
+  const [japanSession, setJapanSession] = useState<JapanSession>('closed');
   useEffect(() => {
-    const update = () => setMarketSession(marketSessionAt(Date.now()));
+    const update = () => { const now = Date.now(); setMarketSession(marketSessionAt(now)); setJapanSession(japanSessionAt(now)); };
     update();
     const timer = window.setInterval(update, 30_000);
     return () => window.clearInterval(timer);
@@ -3299,7 +3312,8 @@ export default function Home() {
         <div className="header-actions">
           <LanguageSwitcher />
           {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
-          <span className={`market-pill is-${marketSession}`}><span />{marketSession === 'open' ? '美股交易中' : marketSession === 'pre' ? '盤前' : marketSession === 'post' ? '盤後' : '非交易時段'}</span>
+          <span className={`market-pill is-${marketSession}`}><span />{marketSession === 'open' ? '美股交易中' : marketSession === 'pre' ? '美股盤前' : marketSession === 'post' ? '美股盤後' : '美股休市'}</span>
+          <span className={`market-pill is-${japanSession === 'lunch' ? 'pre' : japanSession}`}><span />{japanSession === 'open' ? '日股交易中' : japanSession === 'lunch' ? '日股午休' : '日股休市'}</span>
           <button className="secondary-button" type="button" onClick={() => refreshQuotes()} disabled={refreshing}>{refreshing ? '更新中…' : '↻ 更新報價'}</button>
           <button className="primary-button" type="button" onClick={() => setEditor(blankTrade())}>＋新增交易</button>
         </div>

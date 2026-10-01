@@ -525,3 +525,11 @@
 .wafu-perf-legend .wafu-color-dot, .wafu-chart-color-row .wafu-color-dot { flex: 0 0 16px; width: 16px; min-width: 0; height: 16px; min-height: 0; padding: 0; }
 .wafu-perf-legend .wafu-color-auto i, .wafu-color-auto i { width: 12px; height: 12px; border-radius: 50%; }
 .wafu-perf-legend .wafu-color-grid button { width: auto; min-width: 0; min-height: 0; height: auto; padding: 0; }
+
+/* Market lights: green while trading, amber in pre/post-market or Tokyo's lunch break, red when closed. */
+:root[data-wafu] .market-pill > span { width: 9px; height: 9px; border-radius: 50%; border: 0; }
+:root[data-wafu] .market-pill.is-open > span { background: #3fbf6a; box-shadow: 0 0 0 3px rgb(63 191 106 / .18), 0 0 10px rgb(63 191 106 / .7); animation: wafu-tube 2.4s infinite; }
+:root[data-wafu] .market-pill.is-pre > span, :root[data-wafu] .market-pill.is-post > span { background: #e0a84a; box-shadow: 0 0 0 3px rgb(224 168 74 / .18), 0 0 8px rgb(224 168 74 / .7); }
+:root[data-wafu] .market-pill.is-closed > span { background: #d9483b; box-shadow: 0 0 0 3px rgb(217 72 59 / .16), 0 0 6px rgb(217 72 59 / .55); }
+:root[data-wafu] .market-pill.is-pre, :root[data-wafu] .market-pill.is-post { background: transparent; }
+:root[data-wafu] .market-pill + .market-pill { margin-left: 6px; }

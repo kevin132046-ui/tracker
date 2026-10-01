@@ -130,22 +130,21 @@
 :root[data-op='form'] .op-halo, :root[data-op='stamp'] .op-halo { opacity: 1; scale: 1; rotate: 0deg; }
 :root[data-op='form'] .op-crest > svg, :root[data-op='stamp'] .op-crest > svg { opacity: 0; }
 .op-halo-ring { z-index: 1; border-radius: 50%; border: 1px dashed rgba(64, 160, 230, .45); opacity: 0; scale: .8; transition: opacity 1s ease .3s, scale 1.2s ease .2s; animation: op-turn 14s linear infinite; }
-.op-shigure .op-halo-ring { border-color: rgba(200, 190, 255, .45); }
+.op-shigure .op-halo-ring { border-color: rgba(79, 200, 245, .45); }
 :root[data-op='form'] .op-halo-ring, :root[data-op='stamp'] .op-halo-ring { opacity: 1; scale: 1.12; }
 @keyframes op-turn { to { rotate: 360deg; } }
 .op-ripple { z-index: 1; border-radius: 50%; border: 1.5px solid rgba(40, 120, 220, .5); opacity: 0; }
-.op-shigure .op-ripple { border-color: rgba(220, 210, 255, .55); }
+.op-shigure .op-ripple { border-color: rgba(120, 215, 250, .55); }
 :root[data-op='stamp'] .op-ripple { animation: op-ripple .9s ease-out forwards; }
 @keyframes op-ripple { from { opacity: .8; scale: 1; } to { opacity: 0; scale: 1.55; } }
 :root[data-op='stamp'] .op-crest { animation: op-press .55s ease-in-out; }
 @keyframes op-press { 35% { scale: .95; } 70% { scale: 1.02; } }
 /* 桔梗's halo on the paper window: dark ink with a blue glint (the page's halo is drawn for dark ground). */
-.op-kikyo .halo-kikyo .h-ring { stroke: rgba(26, 40, 74, .88); fill: none; }
-.op-kikyo .halo-kikyo .h-inner { stroke: rgba(120, 200, 255, .6); fill: none; }
-.op-kikyo .halo-kikyo .h-glint { stroke: #40c4ff; fill: none; }
-.op-kikyo .halo-kikyo .h-eye { stroke: rgba(26, 40, 74, .9); fill: rgba(64, 196, 255, .06); }
-.op-kikyo .halo-kikyo .h-pupil { stroke: rgba(26, 40, 74, .9); color: rgba(26, 40, 74, .9); }
-.op-shigure .halo-ico { filter: drop-shadow(0 0 6px rgba(200, 190, 255, .45)); }
+.op-kikyo .halo-kikyo .h-glint { stroke: #2f63c8; fill: none; }
+.op-kikyo .halo-kikyo .h-ring { stroke: #1d2230; fill: none; }
+.op-kikyo .halo-kikyo .h-eye { stroke: #1d2230; fill: #1d2230; }
+.op-kikyo .halo-kikyo .h-pupil { stroke: #8fb4ff; fill: none; }
+.op-shigure .halo-ico { filter: drop-shadow(0 0 8px rgba(79, 200, 245, .6)); }
 
 /* ---- Ink washes: laid down one per step, drawn to the centre as the halo forms ---- */
 .op-washes { position: absolute; inset: 0; z-index: 2; pointer-events: none; transition: scale 1.4s cubic-bezier(.3, .7, .2, 1), opacity 1s ease; transform-origin: 50% 44%; }

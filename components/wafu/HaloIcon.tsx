@@ -11,7 +11,7 @@ export const HALO_CENTER = { x: VIEW.x + VIEW.w / 2, y: VIEW.y + VIEW.h / 2 } as
 export const haloTiltScale = (tilt: number) => Math.cos((tilt * Math.PI) / 180);
 
 /**
- * 角色光環圖示（向量）：桔梗＝紺環＋青色光弧＋杏眼；時雨＝淡紫冰藍六角蜂巢環。
+ * 角色光環圖示（向量）：桔梗＝藍色雙 C 外環＋深色雙臂螺旋＋杏眼；時雨＝相連六角蜂巢的齒輪狀環（粗的青藍發光線）。
  * spin 時外環（與光弧／蜂巢）緩慢旋轉，桔梗的眼睛保持正向。
  * tilt（度）把光環往後傾：在 SVG 內壓扁，不用 CSS 3D，線條維持向量般清晰。
  * 立體感：下方疊幾層較暗的同形線條當作環的厚度，上緣加一道細高光，底下一圈柔和陰影（depth=false 時關閉）。
@@ -53,9 +53,9 @@ export default function HaloIcon({ theme, size = 44, spin = true, className = ''
       {theme === 'shigure' && (
         <>
           <linearGradient id={grad} x1='-1' y1='-1' x2='1' y2='1' gradientUnits='userSpaceOnUse'>
-            <stop offset='0' stopColor='#d9c8ff' />
-            <stop offset='0.55' stopColor='#c3d6ff' />
-            <stop offset='1' stopColor='#b8f0ff' />
+            <stop offset='0' stopColor='#8fe4ff' />
+            <stop offset='0.5' stopColor='#46c6f5' />
+            <stop offset='1' stopColor='#9eeaff' />
           </linearGradient>
           <linearGradient id={`${grad}-f`} x1='-1' y1='-1' x2='1' y2='1' gradientUnits='userSpaceOnUse'>
             <stop offset='0' stopColor='#d9c8ff' stopOpacity='0.16' />

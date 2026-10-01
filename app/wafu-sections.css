@@ -67,7 +67,8 @@
 :root[data-wafu] .macro-market-quote span { font-family: var(--wa-f-mono); font-size: 11.5px; font-weight: 400; }
 :root[data-wafu] .macro-market-card.positive .macro-market-quote span { color: var(--wa-up); }
 :root[data-wafu] .macro-market-card.negative .macro-market-quote span { color: var(--wa-down); }
-:root[data-wafu] .macro-history-chart { height: 40px; margin-top: 4px; background: none; border: 0; }
+:root[data-wafu] .macro-history-chart { position: relative; height: 40px; margin-top: 4px; background: none; border: 0; }
+:root[data-wafu] .macro-history-chart > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 :root[data-wafu] .macro-market-card > footer { display: flex; justify-content: space-between; margin-top: 2px; padding: 0; color: var(--wa-muted); background: none; border: 0; font-family: var(--wa-f-mono); font-size: 10px; }
 :root[data-wafu] .macro-market-card > footer b { display: none; }
 
@@ -227,24 +228,15 @@
 .wafu-concentration small { grid-column: 2; color: var(--wa-muted); font-size: 10.5px; }
 
 /* ---- 殖利率曲線 ---- */
-.wafu-curve { margin-top: 12px; padding: 12px 14px 8px; border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg, 12px); background: rgb(0 0 0 / .16); }
-.wafu-curve > header { display: flex; justify-content: space-between; align-items: start; gap: 12px; flex-wrap: wrap; }
-.wafu-curve h4 { margin: 0; color: var(--wa-accent); font-size: 13px; }
-.wafu-curve header small { color: var(--wa-muted); font-size: 10px; }
-.wafu-curve dl { display: flex; gap: 16px; margin: 0; }
-.wafu-curve dl div { display: grid; justify-items: end; }
-.wafu-curve dt { color: var(--wa-muted); font-size: 10px; }
-.wafu-curve dd { margin: 0; color: var(--wa-ink); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.wafu-curve dl .negative dd { color: var(--wa-down); }
-.wafu-curve dd em { margin-left: 6px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--wa-down); font-style: normal; font-size: 10px; }
-.wafu-curve svg { display: block; width: 100%; height: auto; max-height: 150px; margin-top: 6px; overflow: visible; }
-.wafu-curve-line { fill: none; stroke: var(--wa-accent); stroke-width: 1.4; stroke-linejoin: round; }
-.wafu-curve-area { fill: color-mix(in srgb, var(--wa-accent) 12%, transparent); stroke: none; }
-.wafu-curve.is-inverted .wafu-curve-line { stroke: var(--wa-down); }
-.wafu-curve circle { fill: var(--wa-ink); }
-.wafu-curve text { fill: var(--wa-ink); font-size: 5.5px; font-variant-numeric: tabular-nums; }
-.wafu-curve text.tenor { fill: var(--wa-muted); font-size: 5px; letter-spacing: .05em; }
-.wafu-curve-empty { margin: 14px 0 8px; color: var(--wa-muted); font-size: 11px; text-align: center; }
+/* 30Y − 10Y 利差 card (宏觀行情) */
+.wafu-spread-card .macro-market-quote strong small { font-size: 12px; color: var(--wa-muted); letter-spacing: 0; }
+.wafu-spread-line { fill: none; stroke: var(--wa-accent); stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.wafu-spread-area { fill: color-mix(in srgb, var(--wa-accent) 14%, transparent); stroke: none; }
+.wafu-spread-card.is-inverted .wafu-spread-line { stroke: var(--wa-down); }
+.wafu-spread-dot { position: absolute; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: var(--wa-ink); }
+.wafu-spread-tenor { position: absolute; bottom: -2px; translate: -50% 0; color: var(--wa-muted); font: 9px/1 var(--wa-f-mono, monospace); }
+:root[data-wafu] .wafu-spread-card > footer b { display: inline; color: var(--wa-ink-2); font-size: 10px; font-weight: 500; }
+.wafu-spread-card > footer b.negative { color: var(--wa-down); }
 
 /* Market pill: 盤前 / 盤後 light the lamp amber (a quieter glow than the red of the open session). */
 :root[data-wafu] .market-pill.is-pre, :root[data-wafu] .market-pill.is-post { color: var(--wa-ink); border-color: color-mix(in srgb, #e0a84a 35%, var(--wa-line)); background: rgb(0 0 0 / .22); }
@@ -328,3 +320,78 @@
 .ntc-pop .ntc-head { padding: 0 0 10px; }
 .ntc-pop .ntc-body .wafu-notify-empty { text-align: left; padding: 6px 8px; }
 .wafu-notify-panel.ntc-pop { background: var(--wa-panel-solid, var(--wa-bg)); box-shadow: 0 24px 60px rgb(0 0 0 / .55); }
+
+/* ---- 收益分析 panel + layout (from the prototype) ---- */
+.wafu-perf-panel { margin-bottom: 14px; }
+.wafu-perf-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+:root[data-wafu] .wafu-perf-controls .wafu-return-views { margin: 0; }
+.wafu-perf-summary { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 28px; margin-top: 10px; }
+.wafu-perf-big { display: grid; gap: 2px; }
+.wafu-perf-big strong { font: 600 clamp(28px, 3.4vw, 40px)/1.05 var(--wa-f-display, serif); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.wafu-perf-big span { color: var(--wa-muted); font-size: 11.5px; letter-spacing: .04em; }
+.wafu-perf-summary dl { display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 0; padding-bottom: 3px; }
+.wafu-perf-summary dl div { display: grid; gap: 1px; }
+.wafu-perf-summary dt { color: var(--wa-muted); font-size: 10.5px; }
+.wafu-perf-summary dd { margin: 0; color: var(--wa-ink); font: 600 15px/1.25 var(--wa-f-display, serif); font-variant-numeric: tabular-nums; }
+.wafu-perf-summary dd small { margin-left: 6px; color: var(--wa-muted); font: 400 10px/1 var(--wa-f-body, sans-serif); }
+.wafu-perf-summary .positive, .wafu-perf-big .positive { color: var(--wa-up); }
+.wafu-perf-summary .negative, .wafu-perf-big .negative { color: var(--wa-down); }
+.wafu-perf-legend { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; }
+.wafu-perf-legend button { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--wa-line); border-radius: 999px; background: transparent; color: var(--wa-ink); font-size: 11px; cursor: pointer; transition: opacity .15s ease, border-color .15s ease; }
+.wafu-perf-legend button:hover { border-color: var(--wa-accent); }
+.wafu-perf-legend button i { width: 16px; height: 3px; border-radius: 99px; }
+.wafu-perf-legend button.is-off { opacity: .42; text-decoration: line-through; }
+.wafu-perf-body { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 22px; margin-top: 14px; align-items: start; }
+.wafu-perf-main { min-width: 0; }
+.wafu-perf-side .wafu-kpis { margin-top: 0; padding-top: 0; border-top: 0; }
+.wafu-perf-side .wafu-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wafu-perf-empty { display: grid; gap: 6px; margin: 0; padding: 14px; border: 1px dashed var(--wa-line); border-radius: 10px; color: var(--wa-muted); font-size: 12px; }
+.wafu-perf-empty b { color: var(--wa-ink); font: 600 14px/1.3 var(--wa-f-display, serif); }
+.wafu-perf-chart { position: relative; width: 100%; }
+.wafu-perf-chart svg { display: block; overflow: visible; touch-action: pan-y; }
+.wafu-perf-chart.is-empty { min-height: 200px; display: grid; place-items: center; color: var(--wa-muted); font-size: 12px; }
+.wafu-perf-chart .grid { stroke: var(--wa-line); stroke-width: 1; stroke-dasharray: 2 4; }
+.wafu-perf-chart .grid.zero { stroke: var(--wa-muted); stroke-dasharray: none; opacity: .6; }
+.wafu-perf-chart .axis { fill: var(--wa-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.wafu-perf-chart .axis.mdd { fill: var(--wa-down); font-weight: 600; }
+.wafu-perf-chart .crosshair { stroke: var(--wa-muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.wafu-perf-end { transform-box: fill-box; transform-origin: center; animation: wafu-perf-spin 9s linear infinite; }
+@keyframes wafu-perf-spin { to { rotate: 360deg; } }
+:root[data-perf=lite] .wafu-perf-end { animation: none; }
+.wafu-perf-tip { position: absolute; top: 6px; z-index: 3; translate: -50% 0; display: grid; gap: 3px; min-width: 150px; padding: 8px 10px; border: 1px solid var(--wa-line); border-radius: 8px; background: var(--wa-bg); box-shadow: 0 8px 22px rgb(0 0 0 / .28); font-size: 11px; pointer-events: none; }
+.wafu-perf-tip b { color: var(--wa-ink); font-weight: 600; margin-bottom: 2px; }
+.wafu-perf-tip span { display: flex; align-items: center; gap: 6px; color: var(--wa-muted); }
+.wafu-perf-tip span i { width: 8px; height: 8px; border-radius: 2px; }
+.wafu-perf-tip em { margin-left: auto; padding-left: 12px; font-style: normal; font-variant-numeric: tabular-nums; color: var(--wa-ink); }
+.wafu-perf-tip em.positive { color: var(--wa-up); }
+.wafu-perf-tip em.negative { color: var(--wa-down); }
+.wafu-perf-tip .excess { margin-top: 2px; padding-top: 4px; border-top: 1px solid var(--wa-line); }
+/* 持倉配置 + 宏觀行情 side by side */
+.content-grid.wafu-pair-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: stretch; }
+.wafu-pair-grid > .panel { min-width: 0; flex: none; }
+.macro-panel .panel-heading { align-items: center; }
+.macro-panel .macro-market-actions { display: flex; align-items: center; gap: 8px; }
+.macro-panel-meta { margin: 2px 0 0; color: var(--wa-muted); font-size: 10.5px; }
+.macro-market-grid.wafu-macro-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 12px; }
+.wafu-macro-grid .macro-market-card { padding: 12px 13px; }
+:root[data-wafu] .wafu-macro-grid .macro-history-chart { height: 56px; margin-top: 8px; }
+@media (max-width: 1180px) {
+  .wafu-perf-body { grid-template-columns: 1fr; }
+  .wafu-perf-side .wafu-kpi-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+  .content-grid.wafu-pair-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .wafu-perf-panel .panel-heading { flex-direction: column; align-items: stretch; gap: 10px; }
+  .wafu-perf-controls { justify-content: space-between; }
+  .wafu-perf-legend { margin-left: 0; }
+  .macro-market-grid.wafu-macro-grid { grid-template-columns: 1fr 1fr; }
+  .wafu-macro-grid .macro-market-quote strong { font-size: 17px; }
+}
+@media (max-width: 420px) { .macro-market-grid.wafu-macro-grid { grid-template-columns: 1fr; } }
+/* 個股研究: switch between held tickers */
+.wafu-research-switch { display: flex; gap: 6px; overflow-x: auto; padding: 0 24px 10px; scrollbar-width: none; }
+.wafu-research-switch::-webkit-scrollbar { display: none; }
+.wafu-research-switch button { flex: 0 0 auto; padding: 4px 11px; border: 1px solid var(--wa-line); border-radius: 999px; background: transparent; color: var(--wa-muted); font: 600 11px/1.2 var(--wa-f-mono, monospace); letter-spacing: .04em; cursor: pointer; }
+.wafu-research-switch button:hover { color: var(--wa-ink); border-color: var(--wa-accent); }
+.wafu-research-switch button.on { color: var(--wa-bg); background: var(--wa-accent); border-color: var(--wa-accent); }
+@media (max-width: 720px) { .wafu-research-switch { padding: 0 16px 8px; } }

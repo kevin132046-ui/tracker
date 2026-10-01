@@ -11,6 +11,7 @@ type YahooChart = {
       regularMarketOpen?: number;
       regularMarketDayHigh?: number;
       regularMarketDayLow?: number;
+      regularMarketVolume?: number;
       previousClose?: number;
       chartPreviousClose?: number;
       regularMarketTime?: number;
@@ -22,6 +23,7 @@ type YahooChart = {
         high?: Array<number | null>;
         low?: Array<number | null>;
         close?: Array<number | null>;
+        volume?: Array<number | null>;
       }>;
     };
   }> };
@@ -167,7 +169,7 @@ export async function GET(request: Request) {
       const open = finite(quote?.open?.[index]) ? quote!.open![index]! : close;
       const highValue = finite(quote?.high?.[index]) ? quote!.high![index]! : Math.max(open, close);
       const lowValue = finite(quote?.low?.[index]) ? quote!.low![index]! : Math.min(open, close);
-      return [{ timestamp, date: new Date(timestamp * 1000).toISOString().slice(0, 10), open, high: Math.max(highValue, open, close), low: Math.min(lowValue, open, close), close }];
+      return [{ timestamp, date: new Date(timestamp * 1000).toISOString().slice(0, 10), open, high: Math.max(highValue, open, close), low: Math.min(lowValue, open, close), close, volume: finite(quote?.volume?.[index]) ? quote!.volume![index]! : null }];
     });
     if (interval === '1d' && finite(meta?.regularMarketPrice) && finite(meta?.regularMarketTime)) {
       const marketDate = new Date(meta.regularMarketTime * 1000).toISOString().slice(0, 10);
@@ -175,7 +177,7 @@ export async function GET(request: Request) {
       const open = finite(meta.regularMarketOpen) ? meta.regularMarketOpen : meta.regularMarketPrice;
       const high = finite(meta.regularMarketDayHigh) ? meta.regularMarketDayHigh : Math.max(open, meta.regularMarketPrice);
       const low = finite(meta.regularMarketDayLow) ? meta.regularMarketDayLow : Math.min(open, meta.regularMarketPrice);
-      const marketPoint = { timestamp: meta.regularMarketTime, date: marketDate, open, high: Math.max(high, open, meta.regularMarketPrice), low: Math.min(low, open, meta.regularMarketPrice), close: meta.regularMarketPrice };
+      const marketPoint = { timestamp: meta.regularMarketTime, date: marketDate, open, high: Math.max(high, open, meta.regularMarketPrice), low: Math.min(low, open, meta.regularMarketPrice), close: meta.regularMarketPrice , volume: finite(meta.regularMarketVolume) ? meta.regularMarketVolume : last?.volume ?? null };
       if (!last || marketDate > last.date) raw.push(marketPoint);
       else if (marketDate === last.date) raw[raw.length - 1] = marketPoint;
     }

@@ -533,3 +533,15 @@
 :root[data-wafu] .market-pill.is-closed > span { background: #d9483b; box-shadow: 0 0 0 3px rgb(217 72 59 / .16), 0 0 6px rgb(217 72 59 / .55); }
 :root[data-wafu] .market-pill.is-pre, :root[data-wafu] .market-pill.is-post { background: transparent; }
 :root[data-wafu] .market-pill + .market-pill { margin-left: 6px; }
+
+/* 成交量 under the price chart. */
+.technical-volume { position: relative; height: 64px; margin: 6px 0 6px 66px; padding-top: 16px; border-top: 1px dashed var(--wa-line); }
+.technical-volume svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.technical-volume rect { opacity: .55; }
+.technical-volume rect.rising { fill: var(--wa-up); }
+.technical-volume rect.falling { fill: var(--wa-down); }
+.technical-volume rect.active { opacity: 1; }
+.technical-volume-label { position: absolute; top: 0; left: 0; color: var(--wa-muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.technical-volume-label b { margin-left: 4px; color: var(--wa-ink); font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) { .technical-volume { margin-left: 55px; } }
+.technical-volume-label { left: 0; }

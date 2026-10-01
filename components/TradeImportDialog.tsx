@@ -9,15 +9,24 @@ import type { AiCloseUpdate } from '@/lib/ai-trade-entry';
 import { planAiImport } from '@/lib/ai-trade-entry';
 import { autoMapHeaders, decodeCsv, defaultImportSelection, importFields, mapImportRows, parseCsvTable } from '@/lib/trade-csv';
 import type { CsvEncoding, CsvTrade, ImportField, ImportRow } from '@/lib/trade-csv';
+import { likelyTradeLines, linesToTsv } from '@/lib/pdf-table';
 
-type LoadedFile = { name: string; size: number; bytes: ArrayBuffer };
+/** What the table came from: a CSV file (its encoding can be changed), or text made from an Excel sheet, a PDF or a paste. */
+type LoadedFile = { name: string; size: number; bytes: ArrayBuffer; source: 'csv' | 'xlsx' | 'text' };
+/** An Excel workbook kept so another sheet can be chosen. */
+type Workbook = { name: string; size: number; bytes: ArrayBuffer; sheets: string[]; sheet: number };
+/** A PDF's extracted lines, all of them and the ones that look like trades. */
+type PdfLines = { name: string; pages: number; all: string[][]; likely: string[][] };
 type Outcome = { imported: number; updated?: number; total: number; failedLine?: number; failedLabel?: string; error?: string };
 type RowState = 'imported' | 'error' | 'merged' | 'duplicate' | 'ready';
-type Mode = 'csv' | 'ai';
+type Mode = 'csv' | 'paste' | 'ai';
 /** An AI reply frozen at the moment it arrived, so importing does not reshuffle it. */
 type AiPlan = { result: AiEntryResult; rows: ImportRow[]; closes: AiCloseUpdate[] };
 
 const maxFileBytes = 5 * 1024 * 1024;
+const maxBinaryBytes = 20 * 1024 * 1024;
+const utf8 = new TextEncoder();
+const startsWith = (bytes: ArrayBuffer, ...magic: number[]) => { const head = new Uint8Array(bytes, 0, Math.min(magic.length, bytes.byteLength)); return magic.every((value, index) => head[index] === value); };
 const maxRows = 2_000;
 const delimiterLabels: Record<string, string> = { ',': '逗號', '\t': 'Tab', ';': '分號' };
 const stateLabels: Record<RowState, string> = { imported: '已匯入', error: '錯誤', merged: '已合併', duplicate: '重複', ready: '可匯入' };
@@ -170,6 +179,11 @@ export default function TradeImportDialog({ existingTrades, onClose, onImported,
   const [closeApplied, setCloseApplied] = useState<Set<number>>(new Set());
   const [dragging, setDragging] = useState(false);
   const [readError, setReadError] = useState('');
+  const [reading, setReading] = useState('');
+  const [pasteText, setPasteText] = useState('');
+  const [workbook, setWorkbook] = useState<Workbook | null>(null);
+  const [pdf, setPdf] = useState<PdfLines | null>(null);
+  const [pdfAll, setPdfAll] = useState(false);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -184,7 +198,7 @@ export default function TradeImportDialog({ existingTrades, onClose, onImported,
   const missingFields = mapping.length ? requiredFields.filter(([field]) => !mapping.includes(field)).map(([, label]) => label) : [];
   const aiQueue = aiPlan ? aiPlan.rows.filter((row) => row.trade && aiSelected.has(row.line) && !aiImported.has(row.line)) : [];
   const closeQueue = aiPlan ? aiPlan.closes.filter((close) => close.next && closeSelected.has(close.index) && !closeApplied.has(close.index)) : [];
-  const pending = mode === 'csv' ? queue.length : aiQueue.length + closeQueue.length;
+  const pending = mode !== 'ai' ? queue.length : aiQueue.length + closeQueue.length;
 
   useEffect(() => {
     pickRef.current?.focus();
@@ -212,22 +226,82 @@ export default function TradeImportDialog({ existingTrades, onClose, onImported,
     return nextTable;
   };
 
+  // Any table text (a CSV file, an Excel sheet, a PDF's lines, a paste) goes through the same mapping.
+  const loadTable = (name: string, size: number, bytes: ArrayBuffer, source: LoadedFile['source']) => {
+    const nextTable = parseCsvTable(decodeCsv(bytes, source === 'csv' ? 'auto' : 'utf-8').text);
+    if (!nextTable.header.length || !nextTable.rows.length) return setReadError('找不到資料列：第一列需為欄位標題，之後每列一筆交易。');
+    if (nextTable.rows.length > maxRows) return setReadError(`資料列超過 ${maxRows} 列，請分批匯入。`);
+    setFile({ name, size, bytes, source });
+    reset({ bytes, encoding: source === 'csv' ? 'auto' : 'utf-8' }, false);
+  };
+  const loadText = (name: string, text: string, source: LoadedFile['source'] = 'text') => {
+    const bytes = utf8.encode(text).buffer as ArrayBuffer;
+    loadTable(name, bytes.byteLength, bytes, source);
+  };
+
+  const openSheet = async (book: Omit<Workbook, 'sheets' | 'sheet'>, sheet: number) => {
+    const { readXlsx, rowsToCsv } = await import('@/lib/xlsx-read');
+    const { sheets, sheet: read } = await readXlsx(book.bytes, sheet);
+    setWorkbook({ ...book, sheets, sheet });
+    if (!read.rows.length) return setReadError(`工作表「${read.name}」是空的。`);
+    loadText(`${book.name} · ${read.name}`, rowsToCsv(read.rows), 'xlsx');
+  };
+
   const loadFile = async (picked: File | undefined) => {
     if (!picked || importing) return;
     setReadError('');
     setOutcome(null);
-    if (picked.size > maxFileBytes) return setReadError('檔案超過 5 MB，請分批匯入。');
+    const lower = picked.name.toLowerCase();
+    if (lower.endsWith('.xls')) return setReadError('不支援舊版 Excel（.xls），請在 Excel 另存為 .xlsx 或 CSV。');
+    if (picked.size > maxBinaryBytes) return setReadError('檔案超過 20 MB，請分批匯入。');
     let bytes: ArrayBuffer;
     try {
       bytes = await picked.arrayBuffer();
     } catch {
       return setReadError('無法讀取這個檔案。');
     }
-    const nextTable = parseCsvTable(decodeCsv(bytes, 'auto').text);
-    if (!nextTable.header.length || !nextTable.rows.length) return setReadError('找不到資料列：第一列需為欄位標題，之後每列一筆交易。');
-    if (nextTable.rows.length > maxRows) return setReadError(`資料列超過 ${maxRows} 列，請分批匯入。`);
-    setFile({ name: picked.name, size: picked.size, bytes });
-    reset({ bytes, encoding: 'auto' }, false);
+    // %PDF
+    if (startsWith(bytes, 0x25, 0x50, 0x44, 0x46)) {
+      setReading('正在讀取 PDF…');
+      try {
+        const { readPdfTable } = await import('@/lib/pdf-table');
+        const read = await readPdfTable(bytes);
+        const likely = likelyTradeLines(read.lines);
+        setPdf({ name: picked.name, pages: read.pages, all: read.lines, likely });
+        setPdfAll(!likely.length);
+        setPasteText(linesToTsv(likely.length ? likely : read.lines));
+        setFile(null);
+        setMode('paste');
+      } catch (error) {
+        setReadError(error instanceof Error ? error.message : '無法讀取這份 PDF。');
+      } finally {
+        setReading('');
+      }
+      return;
+    }
+    // PK.. (a ZIP: .xlsx)
+    if (startsWith(bytes, 0x50, 0x4b, 0x03, 0x04)) {
+      setReading('正在讀取 Excel…');
+      try {
+        await openSheet({ name: picked.name, size: picked.size, bytes }, 0);
+      } catch (error) {
+        setReadError(error instanceof Error ? error.message : '無法讀取這個 Excel 檔。');
+      } finally {
+        setReading('');
+      }
+      return;
+    }
+    if (picked.size > maxFileBytes) return setReadError('檔案超過 5 MB，請分批匯入。');
+    setWorkbook(null);
+    loadTable(picked.name, picked.size, bytes, 'csv');
+  };
+
+  const readPaste = () => {
+    setReadError('');
+    setOutcome(null);
+    if (!pasteText.trim()) return setReadError('先貼上表格內容：第一列是欄位標題，之後每列一筆交易。');
+    setWorkbook(null);
+    loadText(pdf ? `${pdf.name}（PDF 擷取）` : '貼上的表格', pasteText);
   };
 
   const changeMapping = (column: number, field: ImportField | '') => {
@@ -267,7 +341,7 @@ export default function TradeImportDialog({ existingTrades, onClose, onImported,
     let updated = 0;
     let failure: Outcome | null = null;
     const step = () => { done += 1; setProgress({ done, total: pending }); };
-    if (mode === 'csv') {
+    if (mode !== 'ai') {
       for (const row of queue) {
         try {
           await postTrade(row.trade!);
@@ -323,7 +397,7 @@ export default function TradeImportDialog({ existingTrades, onClose, onImported,
     setOutcome(null);
   };
 
-  const idleStatus = mode === 'csv'
+  const idleStatus = mode !== 'ai'
     ? file ? <span>已勾選 {queue.length} 筆；重複列預設不勾選，可逐列勾選。</span> : null
     : aiPlan ? <span>已勾選新增 {aiQueue.length} 筆、平倉 {closeQueue.length} 筆；按下「匯入」前不會寫入。</span> : null;
   const outcomeText = (result: Outcome) => {
@@ -336,14 +410,15 @@ export default function TradeImportDialog({ existingTrades, onClose, onImported,
   return <div className="confirm-backdrop import-backdrop" role="presentation" onMouseDown={(event) => { if (!importing && event.target === event.currentTarget) onClose(); }}>
     <section className="import-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <header>
-        <div><p className="eyebrow">{mode === 'csv' ? 'CSV import' : 'AI entry'}</p><h2 id={titleId}>{mode === 'csv' ? '匯入交易 CSV' : '用 AI 記錄交易'}</h2></div>
+        <div><p className="eyebrow">{mode === 'ai' ? 'AI entry' : 'Import trades'}</p><h2 id={titleId}>{mode === 'ai' ? '用 AI 記錄交易' : '匯入交易'}</h2></div>
         <button type="button" className="close-button" onClick={onClose} disabled={importing} aria-label="關閉匯入視窗">×</button>
       </header>
       <div className="import-body">
-        {ai && <div className="import-mode-tabs" role="tablist" aria-label="匯入方式">
-          <button type="button" role="tab" aria-selected={mode === 'csv'} className={mode === 'csv' ? 'active' : ''} disabled={importing} onClick={() => switchMode('csv')}>CSV 檔案</button>
-          <button type="button" role="tab" aria-selected={mode === 'ai'} className={mode === 'ai' ? 'active' : ''} disabled={importing} onClick={() => switchMode('ai')}>AI 輸入（一句話／截圖）</button>
-        </div>}
+        <div className="import-mode-tabs" role="tablist" aria-label="匯入方式">
+          <button type="button" role="tab" aria-selected={mode === 'csv'} className={mode === 'csv' ? 'active' : ''} disabled={importing} onClick={() => switchMode('csv')}>檔案（CSV／Excel／PDF）</button>
+          <button type="button" role="tab" aria-selected={mode === 'paste'} className={mode === 'paste' ? 'active' : ''} disabled={importing} onClick={() => switchMode('paste')}>貼上表格</button>
+          {ai && <button type="button" role="tab" aria-selected={mode === 'ai'} className={mode === 'ai' ? 'active' : ''} disabled={importing} onClick={() => switchMode('ai')}>AI 輸入（一句話／截圖）</button>}
+        </div>
 
         {mode === 'csv' && <>
           <div
@@ -354,12 +429,30 @@ export default function TradeImportDialog({ existingTrades, onClose, onImported,
           >
             <span className="import-dropzone-icon" aria-hidden="true">⇪</span>
             <div>
-              <strong>{file ? file.name : '拖放 CSV 檔到這裡'}</strong>
-              <small>{file && table ? `${table.rows.length} 列資料 · 分隔符號：${delimiterLabels[table.delimiter]} · 編碼：${decoded?.encoding === 'utf-8' ? 'UTF-8' : decoded?.encoding === 'shift_jis' ? 'Shift_JIS' : 'Big5'}` : '支援逗號、Tab、分號分隔與引號欄位；可直接匯入本工具「匯出 CSV」的檔案，也能辨識常見券商欄位（英文／中文／日本語）。'}</small>
+              <strong>{reading || (file && file.source !== 'text' ? file.name : '拖放 CSV、Excel 或 PDF 到這裡')}</strong>
+              <small>{file && file.source !== 'text' && table ? `${table.rows.length} 列資料 · 分隔符號：${delimiterLabels[table.delimiter]} ${file.source === 'csv' ? ` · 編碼：${decoded?.encoding === 'utf-8' ? 'UTF-8' : decoded?.encoding === 'shift_jis' ? 'Shift_JIS' : 'Big5'}` : ''}` : 'CSV（逗號、Tab、分號）、Excel（.xlsx）與券商 PDF 對帳單；檔案只在你的瀏覽器裡讀取，不會上傳。也能辨識常見券商欄位（英文／中文／日本語）。'}</small>
             </div>
-            <button ref={pickRef} type="button" className="import-pick-button" disabled={importing} onClick={() => inputRef.current?.click()}>{file ? '換一個檔案' : '選擇檔案'}</button>
-            <input ref={inputRef} className="visually-hidden" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" tabIndex={-1} onChange={(event) => { const picked = event.target.files?.[0]; event.target.value = ''; void loadFile(picked); }} />
+            <button ref={pickRef} type="button" className="import-pick-button" disabled={importing || Boolean(reading)} onClick={() => inputRef.current?.click()}>{file ? '換一個檔案' : '選擇檔案'}</button>
+            <input ref={inputRef} className="visually-hidden" type="file" accept=".csv,.tsv,.txt,.xlsx,.pdf,text/csv,text/tab-separated-values,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" tabIndex={-1} onChange={(event) => { const picked = event.target.files?.[0]; event.target.value = ''; void loadFile(picked); }} />
           </div>
+          {workbook && workbook.sheets.length > 1 && file?.source === 'xlsx' && <label className="import-sheet-pick">工作表<select value={workbook.sheet} disabled={importing} onChange={(event) => { setReadError(''); void openSheet(workbook, Number(event.target.value)).catch((error: unknown) => setReadError(error instanceof Error ? error.message : '讀不到這張工作表。')); }}>{workbook.sheets.map((name, index) => <option key={`${index}-${name}`} value={index}>{name || `工作表 ${index + 1}`}</option>)}</select></label>}
+        </>}
+
+        {mode === 'paste' && <section className="import-paste" aria-labelledby={`${titleId}-paste`}>
+          <div className="import-section-heading"><h3 id={`${titleId}-paste`}>{pdf ? 'PDF 擷取的表格' : '貼上表格'}</h3>
+            {pdf && <label className="import-pdf-all"><input type="checkbox" checked={pdfAll} disabled={importing || !pdf.likely.length} onChange={(event) => { setPdfAll(event.target.checked); setPasteText(linesToTsv(event.target.checked ? pdf.all : pdf.likely)); }} />顯示全部擷取內容</label>}
+          </div>
+          <p className="import-hint">{pdf
+            ? `已從「${pdf.name}」（${pdf.pages} 頁）擷取${pdfAll ? `全部 ${pdf.all.length} 行` : ` ${pdf.likely.length} 行看起來像交易的內容（含上方的欄位標題）`}。第一行要是欄位標題；刪掉不是交易的行後按「讀取表格」。`
+            : '從 Excel、Google 試算表或券商網頁複製表格後貼上。第一列是欄位標題，之後每列一筆交易；Tab 或逗號分隔都可以。'}</p>
+          <textarea className="import-paste-text" rows={10} value={pasteText} disabled={importing} spellCheck={false} placeholder={'例：\n日期\t代號\t類型\t數量\t價格\n2026-03-14\tMSFT\t賣 PUT\t1\t2.35'} onChange={(event) => setPasteText(event.target.value)} />
+          <div className="import-paste-actions">
+            {(pasteText || pdf) && <button type="button" className="cancel-button" disabled={importing} onClick={() => { setPasteText(''); setPdf(null); setFile(null); }}>清除</button>}
+            <button type="button" className="import-pick-button" disabled={importing || !pasteText.trim()} onClick={readPaste}>讀取表格</button>
+          </div>
+        </section>}
+
+        {mode !== 'ai' && <>
           {readError && <p className="import-alert is-error" role="alert">{readError}</p>}
           {decoded?.utf8Failed && encoding === 'auto' && <p className="import-alert">檔案不是 UTF-8，已改用 Shift_JIS 解讀；若文字顯示錯誤，請在下方改選編碼。</p>}
 
@@ -367,7 +460,7 @@ export default function TradeImportDialog({ existingTrades, onClose, onImported,
             <section className="import-mapping" aria-labelledby={`${titleId}-mapping`}>
               <div className="import-section-heading">
                 <h3 id={`${titleId}-mapping`}>欄位對應</h3>
-                <label className="import-encoding">編碼<select value={encoding} disabled={importing} onChange={(event) => reset({ bytes: file.bytes, encoding: event.target.value as CsvEncoding }, false)}><option value="auto">自動（UTF-8）</option><option value="utf-8">UTF-8</option><option value="shift_jis">Shift_JIS</option><option value="big5">Big5</option></select></label>
+                {file.source === 'csv' && <label className="import-encoding">編碼<select value={encoding} disabled={importing} onChange={(event) => reset({ bytes: file.bytes, encoding: event.target.value as CsvEncoding }, false)}><option value="auto">自動（UTF-8）</option><option value="utf-8">UTF-8</option><option value="shift_jis">Shift_JIS</option><option value="big5">Big5</option></select></label>}
               </div>
               {missingFields.length > 0 && <p className="import-alert">尚未對應：{missingFields.join('、')}（現金列不需代號與成交價）。</p>}
               <div className="import-mapping-grid">

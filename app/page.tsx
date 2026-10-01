@@ -3760,7 +3760,7 @@ export default function Home() {
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帳</span><div><p>Trades data</p><h3>匯入與匯出</h3></div><span className="settings-feature-status">{trades.length} 筆</span></div>
               <p>讀取 CSV（券商成交紀錄或自製表格），或用 AI 辨識券商 App 的截圖與一句話紀錄後匯入；也可把全部交易匯出成 CSV 備份。交易資料存在本站的資料庫。</p>
               <div className="settings-data-actions">
-                <button type="button" className="primary-button" onClick={() => { setSettingsOpen(false); void loadTradeImportDialog(); setImportOpen(true); }}>⇪ 匯入 CSV／截圖</button>
+                <button type="button" className="primary-button" onClick={() => { setSettingsOpen(false); void loadTradeImportDialog(); setImportOpen(true); }}>⇪ 匯入 CSV／Excel／PDF／截圖</button>
                 <button type="button" className="secondary-button" onClick={exportTradesCsv}>匯出 CSV</button>
               </div>
             </section>
@@ -3946,7 +3946,7 @@ export default function Home() {
         onGo={(id) => { if (id === 'valuation') openValuation(drilledTicker ?? undefined); else if (id === 'overview' || id === 'positions' || id === 'returns') goToSection(id); }}
         actions={[
           { id: 'add', label: '新增交易', icon: '＋', run: () => setEditor(blankTrade()) },
-          { id: 'import', label: '匯入 CSV／截圖', icon: '⇪', run: () => { void loadTradeImportDialog(); setImportOpen(true); } },
+          { id: 'import', label: '匯入 CSV／Excel／PDF／截圖', icon: '⇪', run: () => { void loadTradeImportDialog(); setImportOpen(true); } },
           ...(assistantOn ? [{ id: 'ai', label: 'AI 助手', icon: '✦', run: () => setAssistantOpen(true) }] : []),
           ...(researchTicker ? [{ id: 'research', label: '個股研究', icon: '◎', run: () => openTickerDetails(researchTicker) }] : []),
           ...(notifyEnabled ? [{ id: 'notify', label: '通知與休市', icon: '◔', run: () => setNotifySignal((value) => value + 1) }] : []),

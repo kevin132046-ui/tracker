@@ -7,6 +7,8 @@ import { aiGate, byokLimited, openAiUsageScope, providerKey, serverKeys, type Ai
 import type { UsageTier } from '@/lib/openai-free-tier';
 import { estimateTokens } from '@/lib/openai-free-tier';
 import { anthropicModel, dateLookupEstimate, findEarningsDate, openAiModelPattern } from '@/lib/server/ai-earnings';
+import type { AiCompanyPayload } from '@/lib/company-ai';
+import { companyLookupEstimate, findCompanyFigures } from '@/lib/server/company-ai';
 import { claudeModels, resolveClaudeModel, safeAiError } from '@/lib/ai-models';
 import type { OpenTradeHint } from '@/lib/ai-trade-entry';
 import { maxEntryLength, maxOpenTradeHints } from '@/lib/ai-trade-entry';
@@ -25,6 +27,8 @@ const symbolPattern = /^[A-Z0-9.-]{1,15}$/;
 const answerFreshMs = 6 * 60 * 60_000;
 const answerCache = new Map<string, { suggestion: AiEarningsSuggestion; fetchedAt: number }>();
 const pending = new Map<string, Promise<{ suggestion: AiEarningsSuggestion; usageTokens: number }>>();
+const companyCache = new Map<string, { company: AiCompanyPayload; fetchedAt: number }>();
+const companyPending = new Map<string, Promise<{ company: AiCompanyPayload; usageTokens: number }>>();
 const analysisForms = new Set(['8-K', '8-K/A', '10-Q', '10-K']);
 
 // Without Access, AI still works with keys typed into the browser (the Worker's own keys stay locked).
@@ -119,7 +123,7 @@ export async function POST(request: Request) {
     return fail('請求格式錯誤。', 400);
   }
   const task = body.task;
-  if (task !== 'earnings-date' && task !== 'earnings-analysis' && task !== 'filing-question' && task !== 'parse-trades' && task !== 'portfolio-chat') return fail('不支援的查詢類型。', 400);
+  if (task !== 'earnings-date' && task !== 'earnings-analysis' && task !== 'filing-question' && task !== 'parse-trades' && task !== 'portfolio-chat' && task !== 'company-figures') return fail('不支援的查詢類型。', 400);
   const symbol = String(body.symbol ?? '').trim().toUpperCase();
   if (task !== 'parse-trades' && task !== 'portfolio-chat' && !symbolPattern.test(symbol)) return fail('無效的股票代號。', 400);
   const provider: AiProvider | null = body.provider === 'anthropic' || body.provider === 'openai' ? body.provider : null;
@@ -190,6 +194,29 @@ export async function POST(request: Request) {
     } catch (error) {
       console.warn(`Portfolio chat failed (${provider} ${model}):`, error instanceof Error ? error.message : error);
       return fail(`${providerName(provider)} 回覆失敗：${error instanceof Error ? safeAiError(error.message) : '請稍後再試。'}`, 502);
+    }
+  }
+
+  // Company figures by web search, for when the usual market-data source has nothing for a symbol.
+  if (task === 'company-figures') {
+    const key = `${provider}:${model}:${symbol}`;
+    const cached = companyCache.get(key);
+    if (cached && Date.now() - cached.fetchedAt < answerFreshMs) return NextResponse.json({ company: cached.company, cached: true }, { headers: noStore });
+    const blocked = await guardQuota(companyLookupEstimate);
+    if (blocked) return blocked;
+    try {
+      let lookup = companyPending.get(key);
+      if (!lookup) {
+        lookup = findCompanyFigures(provider, apiKey, model, symbol).finally(() => companyPending.delete(key));
+        companyPending.set(key, lookup);
+        void lookup.then(({ company, usageTokens }) => { if (provider === 'openai') recordOpenAiUsage(scope, company.ai.model, usageTokens || companyLookupEstimate); }, () => undefined);
+      }
+      const { company } = await lookup;
+      companyCache.set(key, { company, fetchedAt: Date.now() });
+      return NextResponse.json({ company, cached: false }, { headers: noStore });
+    } catch (error) {
+      console.warn(`AI company lookup failed (${provider} ${symbol}):`, error instanceof Error ? error.message : error);
+      return fail(`${providerName(provider)} 查詢失敗：${error instanceof Error ? safeAiError(error.message) : '請稍後再試。'}`, 502);
     }
   }
 

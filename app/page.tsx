@@ -39,6 +39,7 @@ import type { TradeColumnId } from '@/lib/trade-columns';
 import { tradesToCsv } from '@/lib/trade-csv';
 import AiSettingsCard from '@/components/AiSettingsCard';
 import type { AiStatus } from '@/components/AiSettingsCard';
+import type { AiEntryContext } from '@/components/AiTradeEntry';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
 import FilingAnalysisDialog from '@/components/FilingAnalysisDialog';
 import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
@@ -803,7 +804,7 @@ function lastIndicator(values: Array<number | null>) {
   return values.findLast((value): value is number => typeof value === 'number' && Number.isFinite(value)) ?? null;
 }
 
-const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, range, customFrom, customTo, data, loading, error, stockTrades, lotSavingId, valuationOpen, onRangeChange, onCustomRangeApply, onClose, onOpenDcf, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
+const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, range, customFrom, customTo, data, loading, error, stockTrades, lotSavingId, valuationOpen, ai, onRangeChange, onCustomRangeApply, onClose, onOpenDcf, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
   /** Which part the research drawer shows: the charts, the company fundamentals or the purchase lots. */
   view: 'technical' | 'fundamentals' | 'lots';
   symbol: string;
@@ -816,6 +817,8 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, ra
   stockTrades: Trade[];
   lotSavingId: number | null;
   valuationOpen: boolean;
+  /** AI settings for the fundamentals' AI lookup; null while AI is off. */
+  ai: AiEntryContext | null;
   onRangeChange: (range: TechnicalRange) => void;
   onCustomRangeApply: (from: string, to: string) => void;
   onClose: () => void;
@@ -955,7 +958,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, ra
     </div>}
     <footer className="technical-note">價格、OHLC 與技術指標採同一組交易所時段資料計算；短期間使用分時 K，長期間使用日 K。僅供持倉追蹤，不構成投資建議。</footer>
     </>}
-    {view === 'fundamentals' && <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 公司資料…</div>}><CompanyFundamentals key={symbol} symbol={symbol} valuationOpen={valuationOpen} onOpenDcf={onOpenDcf} onReturn={onClose} /></Suspense>}
+    {view === 'fundamentals' && <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 公司資料…</div>}><CompanyFundamentals key={symbol} symbol={symbol} valuationOpen={valuationOpen} onOpenDcf={onOpenDcf} onReturn={onClose} ai={ai} /></Suspense>}
     {view === 'lots' && <section className="stock-lots-section">
       <div className="stock-lots-heading"><div><p className="eyebrow">Cost basis</p><h3>買入均價與購買紀錄</h3><span>直接修改日期或均價；儲存後持倉、損益與圖表會立即重算。</span></div><button type="button" onClick={onAddLot}>＋新增 {symbol} 買入紀錄</button></div>
       <div className="stock-lot-summary"><div><span>股票加權均價</span><strong>{summaryLots.length ? priceMoney(averageEntry) : '—'}</strong></div><div><span>持股數量</span><strong>{totalQuantity || '—'}</strong></div><div><span>首次買入日期</span><strong>{firstPurchaseDate ? dateLabel(firstPurchaseDate) : '—'}</strong></div><div><span>購買紀錄</span><strong>{stockTrades.length} 筆</strong></div></div>
@@ -986,7 +989,8 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, ra
   && previous.error === next.error
   && previous.stockTrades === next.stockTrades
   && previous.lotSavingId === next.lotSavingId
-  && previous.valuationOpen === next.valuationOpen);
+  && previous.valuationOpen === next.valuationOpen
+  && previous.ai === next.ai);
 
 /** The 欄位 strip under a visual position; a field without a value for this position is left out. */
 function VisualFieldStrip({ fields, values }: { fields: VisualFieldId[]; values: Partial<Record<VisualFieldId, { text: string; tone?: 'positive' | 'negative'; range?: number; title?: string }>> }) {
@@ -1463,6 +1467,8 @@ export default function Home() {
   }, []);
   // The import dialog's AI entry starts from the AI settings and can pick another model per use.
   const importAi = useMemo(() => ({ keys: aiKeys, defaultProvider: defaultAiProvider, openAiModel, claudeModel, usageTier: openAiTier, onUsed: refreshQuota }), [aiKeys, claudeModel, defaultAiProvider, openAiModel, openAiTier, refreshQuota]);
+  // The research drawer's AI lookups (基本面 / DCF) when the usual company data fails.
+  const researchAi = aiEnabled ? importAi : null;
   const updateDefaultAiProvider = useCallback((provider: AiProvider) => { setDefaultAiProvider(provider); saveDefaultProvider(provider); }, []);
   const updateAnalysisQuestions = useCallback((questions: string[]) => { setAnalysisQuestions(questions); saveQuestions(questions); }, []);
   const saveFilingAnalysis = useCallback((analysis: FilingAnalysis) => {
@@ -3345,7 +3351,7 @@ export default function Home() {
           onSymbol={(symbol) => { const keep = researchTab; openTickerDetails(symbol); setResearchTab(keep); }}
         >
           {researchTab === 'dcf'
-            ? <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在開啟 DCF 估值…</div>}><DcfCalculator key={drilledTicker} initialTicker={drilledTicker} onClose={() => setResearchTab('technical')} /></Suspense>
+            ? <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在開啟 DCF 估值…</div>}><DcfCalculator key={drilledTicker} initialTicker={drilledTicker} onClose={() => setResearchTab('technical')} ai={researchAi} /></Suspense>
             : <StockTechnicalPanel
           view={researchTab}
           key={drilledTicker}
@@ -3359,6 +3365,7 @@ export default function Home() {
           stockTrades={selectedStockTrades}
           lotSavingId={lotSavingId}
           valuationOpen={false}
+          ai={researchAi}
           onRangeChange={selectTechnicalRange}
           onCustomRangeApply={applyTechnicalCustomRange}
           onClose={returnToPositionsOverview}

@@ -100,3 +100,17 @@
 /* In the research drawer the history card is narrower: the controls go on their own row. */
 .historyHeader { grid-template-columns: minmax(0,1fr) auto; }
 .historyControls { grid-column: 1 / -1; flex-wrap: wrap; }
+
+/* AI lookup when the market data fails: actions in the error box, and the banner over AI figures. */
+.error { flex-direction: column; padding: 18px; text-align: center; }
+.error small { max-width: 520px; color: var(--wa-muted); font-size: 11px; line-height: 1.55; }
+.error small.aiError { color: var(--wa-down); }
+.errorActions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.error button.aiButton { color: var(--wa-on-accent, var(--wa-bg)); background: var(--wa-accent); border-color: var(--wa-accent); }
+.error button.aiAlt { color: var(--wa-ink-2); background: none; border-color: var(--wa-line); }
+.aiBanner { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0 27px 16px; padding: 10px 14px; color: var(--wa-ink-2); background: rgb(var(--wa-accent-rgb, 157 188 240) / .08); border: 1px dashed var(--wa-accent); border-radius: 10px; font-size: 11.5px; line-height: 1.5; }
+.aiBanner b { color: var(--wa-accent); font-size: 12px; letter-spacing: .04em; }
+.aiSources { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
+.aiSources a { color: var(--wa-accent); text-decoration: underline; text-underline-offset: 2px; max-width: 260px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.aiBanner button { margin-left: auto; min-height: 30px; padding: 0 10px; color: var(--wa-ink-2); background: none; border: 1px solid var(--wa-line); border-radius: 8px; font-size: 11px; cursor: pointer; }
+@media (max-width: 720px) { .aiBanner { margin: 0 16px 14px; } .aiBanner button { margin-left: 0; } }

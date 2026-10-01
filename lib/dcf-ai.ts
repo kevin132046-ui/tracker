@@ -21,6 +21,14 @@ export type DcfAiSuggestion = {
   sources: Array<{ url: string; title: string }>;
 };
 
+/** AI prose without the citations ChatGPT inlines ("([sec.gov](https://…))"), bare links or markdown marks. */
+export const plainAiText = (text: string) => text
+  .replace(/\s*\(?\[[^\]]{0,120}\]\(https?:\/\/[^)\s]*\)\)?/g, '')
+  .replace(/\s*\(?https?:\/\/\S+\)?/g, '')
+  .replace(/\*\*/g, '')
+  .replace(/\s{2,}/g, ' ')
+  .trim();
+
 /** The calculator's own limits (percent figures); the server and the page both apply them. */
 export function clampDcfAssumptions(input: Partial<Record<DcfAssumptionKey, number>>, japan: boolean): Record<DcfAssumptionKey, number> {
   const clamp = (value: number | undefined, low: number, high: number, fallback: number) => Number.isFinite(value) ? Math.min(high, Math.max(low, value as number)) : fallback;

@@ -37,13 +37,11 @@ import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSu
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
 import type { TradeColumnId } from '@/lib/trade-columns';
 import { tradesToCsv } from '@/lib/trade-csv';
-import AiSettingsCard from '@/components/AiSettingsCard';
 import type { AiStatus } from '@/components/AiSettingsCard';
 import type { AiEntryContext } from '@/components/AiTradeEntry';
 import type { Tone, ToneSetting } from '@/lib/wafu/tone';
 import { applyTone, loadToneSetting, resolveTone, saveToneSetting, toneChoices } from '@/lib/wafu/tone';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
-import FilingAnalysisDialog from '@/components/FilingAnalysisDialog';
 import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import HaloIcon from '@/components/wafu/HaloIcon';
@@ -51,7 +49,6 @@ import HaloIcon from '@/components/wafu/HaloIcon';
 import WafuOpening from '@/components/wafu/opening/Opening';
 import NavIcon from '@/components/wafu/NavIcon';
 import type { WafuNavIconName } from '@/components/wafu/NavIcon';
-import WafuThemeCard from '@/components/wafu/WafuThemeCard';
 import WafuBackdrop from '@/components/wafu/Backdrop';
 import MusicDock from '@/components/wafu/MusicDock';
 import NotifyCenter from '@/components/wafu/NotifyCenter';
@@ -59,7 +56,6 @@ import GuideBar from '@/components/wafu/GuideBar';
 import { MetricsGrid, MonthlyHeatmap } from '@/components/wafu/PerfMetrics';
 import { VisualFieldPicker, defaultVisualFields, loadVisualFields, saveVisualFields, visualFields as visualFieldList } from '@/components/wafu/VisualFields';
 import type { VisualFieldId } from '@/components/wafu/VisualFields';
-import ManualQuotes from '@/components/wafu/ManualQuotes';
 import SpreadCard from '@/components/wafu/SpreadCard';
 import PerfChart from '@/components/wafu/PerfChart';
 import type { ManualQuoteRow } from '@/components/wafu/ManualQuotes';
@@ -69,7 +65,6 @@ import ResearchDrawer from '@/components/wafu/ResearchDrawer';
 import type { ResearchChip, ResearchTab } from '@/components/wafu/ResearchDrawer';
 import HomeBar from '@/components/wafu/HomeBar';
 import type { NoticeCalendar, NoticeItem } from '@/components/wafu/NotifyCenter';
-import WafuMediaCard from '@/components/wafu/WafuMediaCard';
 import { useMediaPrefs } from '@/lib/wafu/media';
 import { applyPerf, probeFramesOnce } from '@/lib/wafu/perf';
 import { jikanOf, sekkiOf } from '@/lib/wafu/koyomi';
@@ -218,6 +213,13 @@ const TradeImportDialog = lazy(loadTradeImportDialog);
 // The AI assistant panel is only fetched when it is opened.
 const loadAssistantPanel = () => import('@/components/wafu/AssistantPanel');
 const AssistantPanel = lazy(loadAssistantPanel);
+// Settings cards and occasional dialogs load on first use, keeping them out of the first download.
+const loadSettingsCards = () => Promise.all([import('@/components/AiSettingsCard'), import('@/components/wafu/WafuThemeCard'), import('@/components/wafu/WafuMediaCard')]);
+const AiSettingsCard = lazy(() => import('@/components/AiSettingsCard'));
+const WafuThemeCard = lazy(() => import('@/components/wafu/WafuThemeCard'));
+const WafuMediaCard = lazy(() => import('@/components/wafu/WafuMediaCard'));
+const FilingAnalysisDialog = lazy(() => import('@/components/FilingAnalysisDialog'));
+const ManualQuotes = lazy(() => import('@/components/wafu/ManualQuotes'));
 
 // Allocation colours per theme: tonal steps of the theme's own accents (the largest holding in the
 // main accent), with the theme's gold as the one warm note. 桔梗: periwinkle → wisteria → indigo;
@@ -3296,7 +3298,7 @@ export default function Home() {
 
       <div className="page-frame">
         <nav className="side-nav" aria-label="頁面切換">
-          <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}>{navGlyph('settings', settingsOpen)}<span>設定</span></button>
+          <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onPointerEnter={() => void loadSettingsCards()} onFocus={() => void loadSettingsCards()} onClick={() => setSettingsOpen(true)}>{navGlyph('settings', settingsOpen)}<span>設定</span></button>
           {([['overview', '總覽'], ['positions', '持倉'], ['returns', '收益']] as const).map(([section, label]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}>{navGlyph(section, activeSection === section)}<span>{label}</span></a>)}
           <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? undefined)}>{navGlyph('valuation', activeSection === 'valuation')}<span>估值</span></button>
           {assistantOn && <button type="button" className={`settings-nav-button wafu-nav-ai ${assistantOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}><i className="wafu-nav-glyph"><HaloIcon theme={wafuTheme} size={24} spin={assistantOpen} minStrokePx={1} /></i><span>AI</span></button>}
@@ -3521,7 +3523,7 @@ export default function Home() {
         </div>
       </div>
 
-      {filingDialogSymbol && secFilings?.filings[filingDialogSymbol] && <FilingAnalysisDialog
+      {filingDialogSymbol && secFilings?.filings[filingDialogSymbol] && <Suspense fallback={null}><FilingAnalysisDialog
         symbol={filingDialogSymbol}
         company={secFilings.filings[filingDialogSymbol]}
         status={aiStatus}
@@ -3535,7 +3537,7 @@ export default function Home() {
         onUsed={refreshQuota}
         usageTier={openAiTier}
         onClose={() => setFilingDialogSymbol(null)}
-      />}
+      /></Suspense>}
 
       {settingsOpen && <div className="settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
         <aside className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -3545,7 +3547,7 @@ export default function Home() {
           </div>
           <div className="settings-body" id="settings-tabpanel" role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} key={settingsTab}>
             {settingsTab === 'look' && <>
-            <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
+            <Suspense fallback={<div className="settings-card-loading" aria-busy="true" />}><WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} /></Suspense>
             <section className="settings-feature-card is-enabled">
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">字</span><div><p>Text size</p><h3>文字大小</h3></div><span className="settings-feature-status">{textScale === 'normal' ? '標準' : textScale === 'large' ? '大' : '特大'}</span></div>
               <p>放大頁面內容的文字與數字，版面比例一起等比放大。</p>
@@ -3583,10 +3585,10 @@ export default function Home() {
             </section>
             </>}
             {settingsTab === 'sound' && <>
-            <WafuMediaCard theme={wafuTheme} />
+            <Suspense fallback={<div className="settings-card-loading" aria-busy="true" />}><WafuMediaCard theme={wafuTheme} /></Suspense>
             </>}
             {settingsTab === 'ai' && <>
-            <AiSettingsCard enabled={aiEnabled} onEnabledChange={updateAiEnabled} status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
+            <Suspense fallback={<div className="settings-card-loading" aria-busy="true" />}><AiSettingsCard enabled={aiEnabled} onEnabledChange={updateAiEnabled} status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} /></Suspense>
             <section className={`settings-feature-card assistant-settings-card ${assistantPrefs.enabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">談</span><div><p>AI assistant</p><h3>AI 助理</h3></div><span className="settings-feature-status">{assistantPrefs.enabled ? '已開啟' : '已關閉'}</span></div>
               <p>側欄的「AI」可以問關於自己持倉的問題：到期、風險、損益。送出時附上持倉摘要（代號、數量、價格與總額，不含備註），使用「AI 設定」中的金鑰與模型；只提供分析，不會更動交易。</p>
@@ -3736,7 +3738,7 @@ export default function Home() {
         </aside>
       </div>}
 
-      {manualQuotesOpen && <ManualQuotes rows={manualQuoteRows} onSave={saveManualQuotes} onClose={() => setManualQuotesOpen(false)} />}
+      {manualQuotesOpen && <Suspense fallback={null}><ManualQuotes rows={manualQuoteRows} onSave={saveManualQuotes} onClose={() => setManualQuotesOpen(false)} /></Suspense>}
       {editor && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditor(null); }}>
         <section className="trade-modal" role="dialog" aria-modal="true" aria-labelledby="trade-editor-title">
           <header><div><p className="eyebrow">Trade workspace</p><div className="editor-title-row"><h2 id="trade-editor-title">{editor.id ? '編輯交易' : '新增交易'}</h2><span>{editor.id ? `#${editor.id}` : 'New position'}</span></div></div><button className="close-button" onClick={() => setEditor(null)} aria-label="關閉">×</button></header>

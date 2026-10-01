@@ -1,5 +1,6 @@
 'use client';
 
+import { visitPick } from '@/lib/wafu/asset-slots';
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { useWafuAssets } from '@/lib/wafu/assets';
@@ -25,7 +26,7 @@ export default function Backdrop({ theme, paused }: { theme: WafuTheme; paused: 
   const reduced = useSyncExternalStore(watchReduced, () => window.matchMedia(reducedQuery).matches, () => null);
   const lite = usePerfLite();
   const ref = useRef<HTMLDivElement>(null);
-  const photo = prefs.photo ? assets[`bg-${theme}`]?.url ?? null : null;
+  const photo = prefs.photo ? visitPick(assets, 'bg', theme)?.url ?? null : null;
   const shown = reduced !== null && (Boolean(photo) || prefs.effects);
 
   // The page's own gradient steps aside while the backdrop is shown.

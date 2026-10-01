@@ -1,5 +1,6 @@
 'use client';
 
+import { visitPick } from '@/lib/wafu/asset-slots';
 import { useEffect, useRef } from 'react';
 import type { IntroLanguage } from '@/lib/wafu/intro';
 import { introLanguage, markIntroSeen } from '@/lib/wafu/intro';
@@ -43,7 +44,7 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
   onReveal?: () => void;
 }) {
   const { assets } = useWafuAssets();
-  const silhouette = assets[`sil-${theme}`]?.url ?? null;
+  const silhouette = visitPick(assets, 'sil', theme)?.url ?? null;
   const prefs = useMediaPrefs();
   const callbacks = useRef({ onDone, onReveal });
   const readyRef = useRef(ready);

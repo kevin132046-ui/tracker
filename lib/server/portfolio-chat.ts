@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { claudeExtras, claudeWebSearch, openAiReasoning } from '@/lib/ai-models';
 import { cleanSources } from '@/lib/server/ai-earnings';
+import { cleanUrl, tidyReply } from '@/lib/chat-text';
 import type { AiProvider } from '@/lib/earnings';
 import type { AssistantLanguage, AssistantPersona, AssistantTurn, PortfolioSnapshot, SnapshotPosition } from '@/lib/ai-assistant';
 import { assistantMaxOutput, maxAssistantQuestion, maxAssistantTurnLength, maxAssistantTurns, maxSnapshotPositions } from '@/lib/ai-assistant';
@@ -119,7 +120,8 @@ export function systemPrompt(persona: AssistantPersona, language: AssistantLangu
     '你可以使用網路搜尋：問到最新消息、經濟數據（例如 PCE、CPI、非農）、財報、股價或市場預期時，先搜尋再回答，並說明數據的日期與來源；不需要外部資訊的問題（例如解讀自己的持倉）就不要搜尋。搜尋不到就直接說查不到，不要猜。推算要標明是推算。',
     '選擇權一口是 100 股；賣出 put 的風險是被指派買進，賣出 call 的風險是被叫走或無限上漲風險（若無持股）。',
     '可以分析、比較選項並指出風險，但這不是投資建議：不要給確定的買賣指令，最後的決定留給使用者。',
-    '回答簡潔（約 350 字以內，除非使用者要求詳細），可用「- 」條列；不要用表格或 Markdown 標題。',
+    '回答簡潔（約 350 字以內，除非使用者要求詳細），可用「- 」條列與 **粗體** 標出重點；不要用表格或 Markdown 標題。',
+    '內文不要放網址或括號引用（例如「([bea.gov](…))」）；來源會自動列在回答最後。',
     languages[language],
   ].join('\n');
 }
@@ -138,7 +140,8 @@ export type ChatRequest = ReturnType<typeof chatRequest>;
 /** Up to four cited pages, listed under the answer. */
 const withSources = (text: string, sources: Array<{ url?: string; title?: string | null }>) => {
   const list = cleanSources(sources).slice(0, 4);
-  return list.length ? `${text}\n\n來源：\n${list.map((source) => source.title && source.title !== source.url ? `- ${source.title} ${source.url}` : `- ${source.url}`).join('\n')}` : text;
+  const body = tidyReply(text);
+  return list.length ? `${body}\n\n來源：\n${list.map((source) => { const url = cleanUrl(source.url ?? ''); return source.title && source.title !== source.url ? `- ${source.title} ${url}` : `- ${url}`; }).join('\n')}` : body;
 };
 const maxPauseResumes = 3;
 /** Extra tokens the free-quota check reserves for search results. */

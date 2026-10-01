@@ -1,11 +1,12 @@
 'use client';
 
+import ChatText from '@/components/wafu/ChatText';
 import { useEffect, useRef, useState } from 'react';
 import type { AiEntryContext } from '@/components/AiTradeEntry';
 import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
 import HaloIcon from '@/components/wafu/HaloIcon';
 import type { AssistantMessage, AssistantPersona, PortfolioSnapshot } from '@/lib/ai-assistant';
-import { assistantGreeting, assistantPresets, loadAssistantChat, maxAssistantQuestion, maxAssistantTurns, saveAssistantChat } from '@/lib/ai-assistant';
+import { assistantGreeting, assistantPresets, currentAssistantSession, loadAssistantChat, maxAssistantQuestion, maxAssistantTurns, saveAssistantChat } from '@/lib/ai-assistant';
 import { claudeModelLabel, requestModel } from '@/lib/ai-models';
 import type { AiProvider } from '@/lib/earnings';
 import { aiKeyHeaders } from '@/lib/filings';
@@ -80,7 +81,7 @@ export default function AssistantPanel({ theme, voice, ai, snapshot, onClose }: 
     const question = text.trim().slice(0, maxAssistantQuestion);
     if (!question || busy || blockedReason) return;
     const history = messages.filter((message) => !message.error).slice(-maxAssistantTurns).map(({ role, text: turn }) => ({ role, text: turn }));
-    const asked: AssistantMessage = { role: 'user', text: question, at: Date.now() };
+    const asked: AssistantMessage = { role: 'user', text: question, at: Date.now(), session: currentAssistantSession() };
     setMessages((current) => [...current, asked]);
     setInput('');
     setBusy(true);
@@ -105,9 +106,9 @@ export default function AssistantPanel({ theme, voice, ai, snapshot, onClose }: 
       });
       const payload = await response.json().catch(() => ({})) as { text?: string; model?: string; error?: string };
       if (!response.ok || !payload.text) throw new Error(payload.error ?? `伺服器回應 ${response.status}`);
-      setMessages((current) => [...current, { role: 'assistant', text: payload.text!, provider, model: payload.model, at: Date.now() }]);
+      setMessages((current) => [...current, { role: 'assistant', text: payload.text!, provider, model: payload.model, at: Date.now(), session: currentAssistantSession() }]);
     } catch (reason) {
-      if (!controller.signal.aborted) setMessages((current) => [...current, { role: 'assistant', text: reason instanceof Error ? reason.message : '回覆失敗，請稍後再試。', at: Date.now(), error: true }]);
+      if (!controller.signal.aborted) setMessages((current) => [...current, { role: 'assistant', text: reason instanceof Error ? reason.message : '回覆失敗，請稍後再試。', at: Date.now(), error: true, session: currentAssistantSession() }]);
     } finally {
       request.current = null;
       setBusy(false);
@@ -130,7 +131,7 @@ export default function AssistantPanel({ theme, voice, ai, snapshot, onClose }: 
       <div className="wafu-assistant-log" ref={listRef} aria-live="polite">
         <p className="wafu-assistant-msg is-assistant is-greeting" data-i18n-skip="">{assistantGreeting[persona][language]}</p>
         {messages.map((message) => <div key={`${message.at}-${message.role}`} className={`wafu-assistant-msg is-${message.role}${message.error ? ' is-error' : ''}`}>
-          <p>{message.text}</p>
+          {message.role === 'assistant' && !message.error ? <ChatText text={message.text} /> : <p>{message.text}</p>}
           {message.role === 'assistant' && message.model && <small>{message.model}</small>}
         </div>)}
         {busy && <div className="wafu-assistant-msg is-assistant is-thinking" aria-label="思考中"><i /><i /><i /></div>}

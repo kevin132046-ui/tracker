@@ -80,20 +80,49 @@ export function saveAssistantPrefs(prefs: AssistantPrefs) {
   try { window.localStorage.setItem(prefsKey, JSON.stringify(prefs)); } catch { /* storage unavailable */ }
 }
 
-/** The conversation, kept in this browser only (the last 40 messages). */
-export type AssistantMessage = AssistantTurn & { provider?: 'openai' | 'anthropic'; model?: string; at: number; error?: boolean };
+/**
+ * The conversation, kept in this browser only: the messages of the last three visits (a visit is one
+ * browser session of the site), at most 40. Messages saved before visits were recorded count as one.
+ */
+export type AssistantMessage = AssistantTurn & { provider?: 'openai' | 'anthropic'; model?: string; at: number; error?: boolean; session?: string };
 const chatKey = 'optionflow-assistant-chat';
+const sessionKey = 'optionflow-assistant-session';
+export const keptVisits = 3;
+
+/** This visit's id (new for each browser session). */
+export function currentAssistantSession() {
+  try {
+    let id = window.sessionStorage.getItem(sessionKey);
+    if (!id) { id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; window.sessionStorage.setItem(sessionKey, id); }
+    return id;
+  } catch {
+    return 'this-visit';
+  }
+}
+
+/** Only the messages of the last `keptVisits` visits, then the last 40. */
+export function keepRecentVisits(messages: AssistantMessage[]) {
+  const visits: string[] = [];
+  for (const message of messages) {
+    const visit = message.session ?? 'earlier';
+    if (!visits.includes(visit)) visits.push(visit);
+  }
+  const kept = new Set(visits.slice(-keptVisits));
+  return messages.filter((message) => kept.has(message.session ?? 'earlier')).slice(-40);
+}
+
 export function loadAssistantChat(): AssistantMessage[] {
   try {
     const saved = JSON.parse(window.localStorage.getItem(chatKey) ?? '[]') as unknown;
-    return Array.isArray(saved) ? saved.filter((item): item is AssistantMessage => Boolean(item) && (item.role === 'user' || item.role === 'assistant') && typeof item.text === 'string').slice(-40) : [];
+    return Array.isArray(saved) ? keepRecentVisits(saved.filter((item): item is AssistantMessage => Boolean(item) && (item.role === 'user' || item.role === 'assistant') && typeof item.text === 'string')) : [];
   } catch {
     return [];
   }
 }
 export function saveAssistantChat(messages: AssistantMessage[]) {
   try {
-    if (messages.length) window.localStorage.setItem(chatKey, JSON.stringify(messages.slice(-40)));
+    const kept = keepRecentVisits(messages);
+    if (kept.length) window.localStorage.setItem(chatKey, JSON.stringify(kept));
     else window.localStorage.removeItem(chatKey);
   } catch { /* storage unavailable */ }
 }

@@ -64,3 +64,16 @@ p.wafu-assistant-msg { white-space: pre-wrap; }
   :root[data-wafu] .side-nav .wafu-nav-ai .halo-ico { width: 18px; height: 18px; }
   :root[data-wafu] .side-nav .wafu-nav-ai { flex-direction: row; gap: 3px; }
 }
+
+/* Formatted replies: paragraphs, lists, bold, links, and the sources as a small numbered list. */
+.wafu-chat-text { display: grid; gap: 8px; overflow-wrap: anywhere; }
+.wafu-chat-text p { margin: 0; white-space: normal; }
+.wafu-chat-text ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; }
+.wafu-chat-text li::marker { color: var(--wa-accent); }
+.wafu-chat-text strong { color: var(--wa-ink); font-weight: 700; }
+.wafu-chat-text a { color: var(--wa-accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.wafu-chat-sources { margin-top: 2px; padding-top: 8px; border-top: 1px dashed var(--wa-line-2); font-size: 12px; }
+.wafu-chat-sources > span { color: var(--wa-muted); letter-spacing: .1em; font-size: 11px; }
+.wafu-chat-sources ol { margin: 4px 0 0; padding-left: 1.4em; display: grid; gap: 3px; }
+.wafu-chat-sources a { text-decoration: none; }
+.wafu-chat-sources a:hover { text-decoration: underline; }

@@ -1,11 +1,14 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import styles from './DcfCalculator.module.css';
 import type { AiEntryContext } from '@/components/AiTradeEntry';
 import type { AiCompanyInfo } from '@/lib/company-ai';
 import { askCompanyAi, cachedCompanyAi, companyAiProviderName } from '@/lib/company-ai';
 import type { AiProvider } from '@/lib/earnings';
+import type { DcfAiSuggestion, DcfAssumptionKey } from '@/lib/dcf-ai';
+import { askDcfAssumptions, dcfAssumptionKeys, savedDcfSuggestion } from '@/lib/dcf-ai';
 
 type Currency = 'USD' | 'JPY';
 
@@ -136,8 +139,10 @@ function money(value: number, currency: Currency) {
   }).format(value);
 }
 
-function NumberField({ label, value, suffix, step = '0.1', min, max, onChange }: {
+function NumberField({ label, value, suffix, step = '0.1', min, max, note, onChange }: {
   label: string;
+  /** A line under the input (the AI's reason for a pre-filled value). */
+  note?: ReactNode;
   value: number;
   suffix?: string;
   step?: string;
@@ -171,7 +176,7 @@ function NumberField({ label, value, suffix, step = '0.1', min, max, onChange }:
         event.currentTarget.blur();
       }
     }}
-  />{suffix && <i>{suffix}</i>}</span></label>;
+  />{suffix && <i>{suffix}</i>}</span>{note}</label>;
 }
 
 export default function DcfCalculator({ initialTicker = 'MSFT', onClose, ai = null }: {
@@ -195,6 +200,10 @@ export default function DcfCalculator({ initialTicker = 'MSFT', onClose, ai = nu
   const [companyGap, setCompanyGap] = useState<{ symbol: string; fields: BaseField[] | 'all' } | null>(null);
   const [aiAsk, setAiAsk] = useState<{ provider: AiProvider; loading: boolean; error: string } | null>(null);
   const [aiSource, setAiSource] = useState<AiCompanyInfo | null>(null);
+  // AI 預填 of the forecast inputs (asked only on the button); fields the user changed keep their value.
+  const [dcfAi, setDcfAi] = useState<{ provider: AiProvider; loading: boolean; error: string } | null>(null);
+  const [suggestion, setSuggestion] = useState<DcfAiSuggestion | null>(null);
+  const [touched, setTouched] = useState<ReadonlySet<DcfAssumptionKey>>(new Set());
   const [scenarioName, setScenarioName] = useState(`${initialTicker || 'MSFT'} Base`);
   const [scenarios, setScenarios] = useState<SavedScenario[]>([]);
   const [scenarioSaving, setScenarioSaving] = useState(false);
@@ -204,6 +213,43 @@ export default function DcfCalculator({ initialTicker = 'MSFT', onClose, ai = nu
     const next = { ...current, [key]: value };
     return typeof value === 'number' ? normalizeAssumptions(next) : next;
   });
+  const setForecast = (key: DcfAssumptionKey, value: number) => {
+    setTouched((current) => current.has(key) ? current : new Set(current).add(key));
+    set(key, value);
+  };
+  const applySuggestion = (next: DcfAiSuggestion, keep: ReadonlySet<DcfAssumptionKey>) => {
+    setSuggestion(next);
+    setAssumptions((current) => normalizeAssumptions({ ...current, ...Object.fromEntries(dcfAssumptionKeys.filter((key) => !keep.has(key)).map((key) => [key, next.values[key]])) }));
+  };
+  const askForecast = async (provider: AiProvider, fresh: boolean) => {
+    if (!ai || dcfAi?.loading) return;
+    const symbol = assumptions.ticker.trim().toUpperCase();
+    setDcfAi({ provider, loading: true, error: '' });
+    try {
+      applySuggestion(await askDcfAssumptions(symbol, ai, provider, fresh), touched);
+      setDcfAi(null);
+    } catch (reason) {
+      setDcfAi({ provider, loading: false, error: reason instanceof Error ? reason.message : 'AI 判斷失敗，請稍後再試。' });
+    }
+  };
+  const resetForecast = () => {
+    const japan = assumptions.currency === 'JPY';
+    setSuggestion(null);
+    setTouched(new Set());
+    setDcfAi(null);
+    setAssumptions((current) => normalizeAssumptions({ ...current, growth: defaultAssumptions.growth, years: defaultAssumptions.years, marginOfSafety: defaultAssumptions.marginOfSafety, ...currencyDefaults[japan ? 'JPY' : 'USD'] }));
+  };
+  const aiNote = (key: DcfAssumptionKey, unitLabel: string) => {
+    if (!suggestion || suggestion.symbol !== assumptions.ticker.trim().toUpperCase()) return undefined;
+    const value = suggestion.values[key];
+    const kept = touched.has(key) && assumptions[key] !== value;
+    return <small className={styles.aiFieldNote}>
+      <b>{kept ? `AI 建議 ${value}${unitLabel}` : 'AI 預填'}</b>{suggestion.reasons[key]}
+      {kept && <button type="button" onClick={() => { setTouched((current) => { const next = new Set(current); next.delete(key); return next; }); set(key, value); }}>套用</button>}
+    </small>;
+  };
+  const otherProvider: AiProvider = ai?.defaultProvider === 'anthropic' ? 'openai' : 'anthropic';
+  const savedForecast = ai ? savedDcfSuggestion(assumptions.ticker.trim()) : null;
   const chartValues = [assumptions.freeCashFlow, ...(result?.projections.map((item) => item.fcf) ?? [])].filter((value) => Number.isFinite(value) && value > 0);
   const fcfMaximum = Math.max(1, ...chartValues);
   const barHeight = (value: number) => `${Math.min(100, Math.max(4, value / fcfMaximum * 100))}%`;
@@ -255,6 +301,8 @@ export default function DcfCalculator({ initialTicker = 'MSFT', onClose, ai = nu
     setCompanyMessage('');
     setAiAsk(null);
     setAiSource(null);
+    setSuggestion((current) => current && current.symbol === symbol ? current : null);
+    setDcfAi(null);
     try {
       const response = await fetch(`/api/company?symbol=${encodeURIComponent(symbol)}`, { cache: 'no-store' });
       const payload = await response.json() as CompanyPayload;
@@ -382,12 +430,28 @@ export default function DcfCalculator({ initialTicker = 'MSFT', onClose, ai = nu
           <NumberField label={`淨現金／（淨負債）（${unit}）`} value={assumptions.netCash} onChange={(value) => set('netCash', value)} />
         </div>
         <div className={styles.sectionHeading}><div><b>02</b><span><strong>預測與折現</strong><small>百分比欄位輸入 9 代表 9%。</small></span></div></div>
+        {ai && <div className={styles.aiForecast}>
+          <div className={styles.aiActions}>
+            {!dcfAi?.loading && <>
+              <button type="button" onClick={() => void askForecast(ai.defaultProvider, Boolean(suggestion))}>✦ {suggestion ? '重新請 AI 判斷' : savedForecast ? 'AI 預填（7 天內已查過，不另計費）' : `AI 預填（${companyAiProviderName(ai.defaultProvider)}）`}</button>
+              <button type="button" className={styles.aiAlt} onClick={() => void askForecast(otherProvider, Boolean(suggestion))}>改用 {companyAiProviderName(otherProvider)}</button>
+              {(suggestion || touched.size > 0) && <button type="button" className={styles.aiAlt} onClick={resetForecast}>改回預設值</button>}
+            </>}
+          </div>
+          {dcfAi?.loading && <p className={styles.aiWorking} role="status">正在用 {companyAiProviderName(dcfAi.provider)} 上網判斷 {assumptions.ticker} 的假設…（約 20–60 秒）</p>}
+          {dcfAi?.error && <p className={styles.aiError} role="alert">{dcfAi.error}</p>}
+          {suggestion && suggestion.symbol === assumptions.ticker.trim().toUpperCase() && <p className={styles.aiForecastNote}>
+            {suggestion.summary && <span>{suggestion.summary}</span>}
+            <small>{companyAiProviderName(suggestion.provider)}（{suggestion.model}）· {suggestion.asOf} · 僅供參考，請核對{touched.size > 0 ? ' · 你改過的欄位已保留' : ''}</small>
+            {suggestion.sources.length > 0 && <span className={styles.aiSources}>{suggestion.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title}>{source.title}</a>)}</span>}
+          </p>}
+        </div>}
         <div className={styles.fieldGrid}>
-          <NumberField label="FCF 年成長率" value={assumptions.growth} suffix="%" min={-50} max={50} onChange={(value) => set('growth', value)} />
-          <NumberField label="預測年數" value={assumptions.years} step="1" min={3} max={10} suffix="年" onChange={(value) => set('years', Math.max(3, Math.min(10, Math.round(value))))} />
-          <NumberField label="WACC" value={assumptions.wacc} suffix="%" min={4} max={25} onChange={(value) => set('wacc', value)} />
-          <NumberField label="永續成長率" value={assumptions.terminalGrowth} suffix="%" min={-2} max={Math.min(3.5, assumptions.wacc - 1)} onChange={(value) => set('terminalGrowth', value)} />
-          <NumberField label="安全邊際" value={assumptions.marginOfSafety} suffix="%" min={0} max={90} onChange={(value) => set('marginOfSafety', value)} />
+          <NumberField label="FCF 年成長率" value={assumptions.growth} suffix="%" min={-50} max={50} note={aiNote('growth', '%')} onChange={(value) => setForecast('growth', value)} />
+          <NumberField label="預測年數" value={assumptions.years} step="1" min={3} max={10} suffix="年" note={aiNote('years', '年')} onChange={(value) => setForecast('years', Math.max(3, Math.min(10, Math.round(value))))} />
+          <NumberField label="WACC" value={assumptions.wacc} suffix="%" min={4} max={25} note={aiNote('wacc', '%')} onChange={(value) => setForecast('wacc', value)} />
+          <NumberField label="永續成長率" value={assumptions.terminalGrowth} suffix="%" min={-2} max={Math.min(3.5, assumptions.wacc - 1)} note={aiNote('terminalGrowth', '%')} onChange={(value) => setForecast('terminalGrowth', value)} />
+          <NumberField label="安全邊際" value={assumptions.marginOfSafety} suffix="%" min={0} max={90} note={aiNote('marginOfSafety', '%')} onChange={(value) => setForecast('marginOfSafety', value)} />
         </div>
         <p className={styles.rangeHint}>輸入框會整欄取代原值；永續成長率上限為 3.5%，並至少低於 WACC 1 個百分點。</p>
         {!result && <p className={styles.error}>{modelErrors.length ? modelErrors.join('；') : '目前假設無法完成估值。'}</p>}
@@ -415,7 +479,9 @@ export default function DcfCalculator({ initialTicker = 'MSFT', onClose, ai = nu
                 const cell = calculateDcf(assumptions, wacc, terminalGrowth);
                 const base = wacc === assumptions.wacc && terminalGrowth === assumptions.terminalGrowth;
                 const below = cell && assumptions.currentPrice > 0 && cell.intrinsicValue < assumptions.currentPrice;
-                row.push(<span key={`${wacc}-${terminalGrowth}`} className={`${base ? styles.baseCell : ''} ${below ? styles.belowCell : ''}`}>{cell ? money(cell.intrinsicValue, assumptions.currency) : '無效'}</span>);
+                // Each value with its gap to the current price, as (+18%).
+                const gap = cell?.upside ?? null;
+                row.push(<span key={`${wacc}-${terminalGrowth}`} className={`${base ? styles.baseCell : ''} ${below ? styles.belowCell : ''}`}>{cell ? money(cell.intrinsicValue, assumptions.currency) : '無效'}{gap !== null && <small className={styles.cellGap}>({gap >= 0 ? '+' : '−'}{Math.abs(Math.round(gap * 100))}%)</small>}</span>);
               });
               return row;
             })}

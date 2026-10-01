@@ -65,3 +65,15 @@
 .aiActions button.aiAlt { color: var(--wa-ink-2); background: none; border-color: var(--wa-line); }
 .aiWorking { color: var(--wa-accent); }
 .aiError { color: var(--wa-down); }
+/* AI 預填 of the forecast inputs. */
+.aiForecast { display: grid; gap: 8px; margin: -4px 0 14px; }
+.aiForecastNote { display: grid; gap: 4px; margin: 0; padding: 10px 12px; color: var(--wa-ink-2); background: rgb(var(--wa-accent-rgb) / .07); border: 1px dashed rgb(var(--wa-accent-rgb) / .4); border-radius: 10px; font-size: 12px; line-height: 1.55; }
+.aiForecastNote small { color: var(--wa-muted); font-size: 11px; }
+.aiFieldNote { display: block; margin-top: 6px; color: var(--wa-muted); font-size: 11px; font-weight: 500; line-height: 1.45; }
+.aiFieldNote b { margin-right: 6px; padding: 1px 6px; color: var(--wa-accent); background: rgb(var(--wa-accent-rgb) / .12); border-radius: 999px; font-size: 10px; font-weight: 700; }
+.aiFieldNote button { margin-left: 6px; padding: 0 8px; color: var(--wa-accent); background: none; border: 1px solid rgb(var(--wa-accent-rgb) / .5); border-radius: 999px; font-size: 10.5px; cursor: pointer; }
+.sensitivity span { align-content: center; gap: 2px; }
+.cellGap { display: block; color: var(--wa-up); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.belowCell .cellGap { color: var(--wa-down); }
+.fieldGrid { align-items: start; }
+.fieldGrid > label { align-content: start; }

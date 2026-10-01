@@ -1,12 +1,11 @@
 // 兩位角色光環的向量幾何（單位半徑、y 向下）。
 // 同一份幾何供：側欄旋轉圖示（SVG）、開場粒子目標點、開場描線（canvas）。
-// 桔梗：深紺厚環＋左上青色光弧＋杏眼與瞳孔；時雨：淡紫→冰藍的六角蜂巢環。
+// 桔梗：兩段藍色 C 形外環（右上、左下斷開）＋兩臂向內捲的深色螺旋＋中央杏眼；時雨：相連的六角蜂巢格組成的齒輪狀環（粗的青藍發光線）。
 export type HaloTheme = 'kikyo' | 'shigure';
 export type Pt = [number, number];
 export type StrokeKind = 'glint' | 'ring' | 'inner' | 'eye' | 'pupil' | 'cell' | 'cellSmall' | 'core';
 export interface HaloStroke { kind: StrokeKind; pts: Pt[]; closed: boolean; width: number; spin: boolean }
 
-const TAU = Math.PI * 2;
 const rad = (d: number) => (d * Math.PI) / 180;
 
 function arc(r: number, a0: number, a1: number, n: number, cx = 0, cy = 0): Pt[] {
@@ -30,15 +29,6 @@ function cubic(p0: Pt, p1: Pt, p2: Pt, p3: Pt, n: number): Pt[] {
   return out;
 }
 
-function hexagon(cx: number, cy: number, r: number, rot: number): Pt[] {
-  const out: Pt[] = [];
-  for (let i = 0; i <= 6; i++) {
-    const a = rot + (i * TAU) / 6;
-    out.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
-  }
-  return out;
-}
-
 const cache = new Map<HaloTheme, HaloStroke[]>();
 
 export function haloStrokes(theme: HaloTheme): HaloStroke[] {
@@ -46,30 +36,53 @@ export function haloStrokes(theme: HaloTheme): HaloStroke[] {
   if (hit) return hit;
   let out: HaloStroke[];
   if (theme === 'kikyo') {
-    const w = 0.56, h = 0.36;
+    // The eye: a narrow almond with a short slit.
+    const w = 0.34, h = 0.17;
     const eye = [
-      ...cubic([-w, 0], [-w * 0.48, -h], [w * 0.48, -h], [w, 0], 28),
-      ...cubic([w, 0], [w * 0.48, h], [-w * 0.48, h], [-w, 0], 28).slice(1),
+      ...cubic([-w, 0], [-w * 0.45, -h], [w * 0.45, -h], [w, 0], 24),
+      ...cubic([w, 0], [w * 0.45, h], [-w * 0.45, h], [-w, 0], 24).slice(1),
     ];
+    // Two arms that start on the outside and curl inward toward the eye's tips.
+    const spiral = (start: number): Pt[] => {
+      const out: Pt[] = [];
+      for (let i = 0; i <= 64; i++) {
+        const t = i / 64;
+        const r = 0.7 - 0.36 * t;
+        const a = start + rad(200) * t;
+        out.push([Math.cos(a) * r, Math.sin(a) * r]);
+      }
+      return out;
+    };
     out = [
-      { kind: 'glint', pts: arc(0.985, rad(172), rad(318), 60), closed: false, width: 0.075, spin: true },
-      { kind: 'ring', pts: arc(0.84, 0, TAU, 128), closed: true, width: 0.15, spin: true },
-      { kind: 'inner', pts: arc(0.69, rad(20), rad(330), 96), closed: false, width: 0.026, spin: true },
-      { kind: 'eye', pts: eye, closed: true, width: 0.075, spin: false },
-      { kind: 'pupil', pts: arc(0.17, 0, TAU, 40), closed: true, width: 0.07, spin: false },
+      // Outer ring in two blue arcs; the gaps sit at the upper right and lower left.
+      { kind: 'glint', pts: arc(0.9, rad(-22), rad(132), 72), closed: false, width: 0.15, spin: true },
+      { kind: 'glint', pts: arc(0.9, rad(158), rad(312), 72), closed: false, width: 0.15, spin: true },
+      { kind: 'ring', pts: spiral(rad(-30)), closed: false, width: 0.1, spin: true },
+      { kind: 'ring', pts: spiral(rad(150)), closed: false, width: 0.1, spin: true },
+      { kind: 'eye', pts: eye, closed: true, width: 0.07, spin: false },
+      { kind: 'pupil', pts: [[-w * 0.5, 0], [w * 0.5, 0]], closed: false, width: 0.035, spin: false },
     ];
   } else {
-    const cells: HaloStroke[] = [];
-    for (let k = 0; k < 12; k++) {
-      const a = rad(k * 30 - 90);
-      cells.push({ kind: 'cell', pts: hexagon(Math.cos(a) * 0.76, Math.sin(a) * 0.76, 0.205, a), closed: true, width: 0.034, spin: true });
+    // A ring of joined honeycomb cells (pointy-top hexagons sharing edges), so its outline reads as a
+    // gear; each shared edge is drawn once.
+    const size = 0.165;
+    const edges = new Map<string, Pt[]>();
+    const key = (p: Pt) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`;
+    for (let q = -6; q <= 6; q++) {
+      for (let r = -6; r <= 6; r++) {
+        const cx = Math.sqrt(3) * size * (q + r / 2);
+        const cy = 1.5 * size * r;
+        const d = Math.hypot(cx, cy);
+        if (d < 0.36 || d > 0.8) continue;
+        const corners = Array.from({ length: 6 }, (_, i) => { const a = rad(60 * i - 30); return [cx + Math.cos(a) * size, cy + Math.sin(a) * size] as Pt; });
+        corners.forEach((a, i) => {
+          const b = corners[(i + 1) % 6];
+          const id = [key(a), key(b)].sort().join('|');
+          if (!edges.has(id)) edges.set(id, [a, b]);
+        });
+      }
     }
-    for (let k = 0; k < 6; k++) {
-      const a = rad(k * 60 - 60);
-      cells.push({ kind: 'cellSmall', pts: hexagon(Math.cos(a) * 0.43, Math.sin(a) * 0.43, 0.125, a + rad(30)), closed: true, width: 0.028, spin: true });
-    }
-    cells.push({ kind: 'core', pts: hexagon(0, 0, 0.13, rad(30)), closed: true, width: 0.03, spin: true });
-    out = cells;
+    out = [...edges.values()].map((pts) => ({ kind: 'cell' as const, pts, closed: false, width: 0.05, spin: true }));
   }
   cache.set(theme, out);
   return out;

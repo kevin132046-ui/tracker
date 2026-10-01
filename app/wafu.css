@@ -108,11 +108,10 @@
 :root[data-wafu] .halo-ico { overflow: visible; }
 :root[data-wafu] .halo-ico .halo-rot { transform-box: view-box; animation: wafuHaloTurn 16s linear infinite; }
 @keyframes wafuHaloTurn { to { transform: rotate(360deg); } }
-:root[data-wafu] .halo-kikyo.tone-dark .h-ring { stroke: #7fa6e6; fill: none; opacity: .85; }
-:root[data-wafu] .halo-kikyo.tone-dark .h-inner { stroke: #bfe3ff; fill: none; opacity: .55; }
-:root[data-wafu] .halo-kikyo.tone-dark .h-glint { stroke: #8fe3ff; fill: none; }
-:root[data-wafu] .halo-kikyo.tone-dark .h-eye { stroke: #dbe8ff; fill: rgb(143 227 255 / .08); }
-:root[data-wafu] .halo-kikyo.tone-dark .h-pupil { stroke: #9fc4ff; color: #9fc4ff; }
+:root[data-wafu] .halo-kikyo.tone-dark .h-glint { stroke: #4f86f0; fill: none; }
+:root[data-wafu] .halo-kikyo.tone-dark .h-ring { stroke: #c9d1df; fill: none; }
+:root[data-wafu] .halo-kikyo.tone-dark .h-eye { stroke: #c9d1df; fill: #26314d; }
+:root[data-wafu] .halo-kikyo.tone-dark .h-pupil { stroke: #8fb4ff; fill: none; }
 @media (prefers-reduced-motion: reduce) { :root[data-wafu] .halo-ico .halo-rot, :root[data-wafu] .wafu-nav-halo { animation: none; } }
 
 /* ---------- Hero: the title set vertically, like a hanging scroll ---------- */
@@ -277,8 +276,12 @@
 /* Halo depth (HaloIcon): darker edge layers under the face, a thin highlight on top, a soft shadow. */
 .halo-ico { shape-rendering: geometricPrecision; }
 .halo-ico .h-depth path { stroke: var(--halo-edge, #2b3a6e) !important; fill: none !important; }
-.halo-shigure .h-depth path { --halo-edge: #4c4f8f; }
-.halo-kikyo.tone-paper .h-depth path { --halo-edge: #0d1530; }
+.halo-kikyo .h-depth .h-eye, .halo-kikyo .h-shine .h-eye, .halo-kikyo .h-shine .h-pupil { display: none; }
+.halo-shigure .h-depth path { --halo-edge: #146a8f; }
+.halo-shigure { filter: drop-shadow(0 0 3px rgb(79 200 245 / .55)); }
+.halo-kikyo .h-depth .h-glint { --halo-edge: #1d3c86; }
+.halo-kikyo .h-depth .h-ring { --halo-edge: #5a6274; }
+.halo-kikyo.tone-paper .h-depth .h-ring { --halo-edge: #05070c; }
 .halo-ico .h-shine path { stroke: #ffffff !important; fill: none !important; opacity: .55; }
 .halo-kikyo.tone-paper .h-shine path { opacity: .35; }
 .halo-ico .h-shadow { color: #000; }

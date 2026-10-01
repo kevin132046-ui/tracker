@@ -7,6 +7,7 @@ import './wafu-media.css';
 import './wafu-assistant.css';
 import './wafu-mobile.css';
 import './wafu-sections.css';
+import './wafu-tone.css';
 import { wafuBootScript, wafuFontsHref } from '@/lib/wafu/theme';
 import StaticOpening from '@/components/wafu/opening/StaticOpening';
 

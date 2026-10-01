@@ -1,7 +1,7 @@
 /*
  * Side navigation in the Swiss manner: a strict column of numbered rows on hairline rules, flat
- * geometric marks, one strong colour per destination, grotesque type, square corners. The current
- * page is a solid block of its colour. No halo.
+ * geometric marks, one strong colour per destination, grotesque type; corners rounded like the other
+ * panels. The current page is a solid block of its colour. No halo.
  */
 :root[data-wafu] {
   --sw-red: #e8412c; --sw-blue: #3d6ff0; --sw-yellow: #f2b705; --sw-green: #18a874;
@@ -10,14 +10,15 @@
 }
 :root[data-wafu][data-tone='washi'] { --sw-blue: #2a55d6; --sw-yellow: #d99a00; --sw-green: #11865b; --sw-ink: #1d1d1d; }
 
-:root[data-wafu] .side-nav { counter-reset: swnav; gap: 0; padding: 0; overflow: hidden; border: 1px solid var(--wa-line-2); border-radius: 0; background: rgb(var(--wa-bg-rgb) / .78); box-shadow: none; }
+:root[data-wafu] .side-nav { counter-reset: swnav; gap: 0; padding: 5px; overflow: hidden; border: 1px solid var(--wa-line-2); border-radius: var(--wa-r-lg, 16px); background: rgb(var(--wa-bg-rgb) / .78); box-shadow: none; }
 :root[data-wafu] .side-nav > a, :root[data-wafu] .side-nav > .settings-nav-button, :root[data-wafu] .side-nav .background-trigger {
   --sw: var(--sw-ink); --sw-text: var(--sw-on);
-  position: relative; counter-increment: swnav; border-radius: 0; color: var(--wa-ink-2); background: transparent;
-  border-bottom: 1px solid var(--wa-line); transition: background .15s ease, color .15s ease;
+  position: relative; counter-increment: swnav; border-radius: var(--wa-r, 10px); color: var(--wa-ink-2); background: transparent;
+  border: 0; transition: background .15s ease, color .15s ease;
 }
-:root[data-wafu] .side-nav .background-control { border-bottom: 0; }
-:root[data-wafu] .side-nav .background-trigger { border-bottom: 0; }
+/* Hairline rules between rows, inset from the rounded edges. */
+:root[data-wafu] .side-nav > :is(a, .settings-nav-button)::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: 0; height: 1px; background: var(--wa-line); }
+:root[data-wafu] .side-nav > :is(a, .settings-nav-button):is(.active, :hover)::after, :root[data-wafu] .side-nav > :has(+ :is(a.active, .settings-nav-button.active, a:hover, .settings-nav-button:hover))::after { opacity: 0; }
 /* One colour per destination. */
 :root[data-wafu] .side-nav :is(a, button):has(.ni-settings) { --sw: var(--sw-red); }
 :root[data-wafu] .side-nav :is(a, button):has(.ni-overview) { --sw: var(--sw-blue); }
@@ -46,7 +47,7 @@
 
 /* Rows become columns on tablets and phones. */
 @media (max-width: 1180px) {
-  :root[data-wafu] .side-nav > a, :root[data-wafu] .side-nav > .settings-nav-button { border-bottom: 0; border-right: 1px solid var(--wa-line); }
+  :root[data-wafu] .side-nav > :is(a, .settings-nav-button)::after { left: auto; top: 10px; bottom: 10px; right: 0; width: 1px; height: auto; }
   :root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active) { box-shadow: none; }
 }
 

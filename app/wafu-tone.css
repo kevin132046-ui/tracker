@@ -1,0 +1,78 @@
+/*
+ * 色調 (lib/wafu/tone.ts): optional warm palettes (燈籠 / 和紙) over the 和風 themes, chosen in 設定 → 外觀.
+ * Only the theme tokens and a few surface details change; layout and behaviour stay as they are.
+ * Each tone keeps the theme's own accent family: 桔梗 bellflower violet-blue, 時雨 teal.
+ */
+
+/* ---------- 燈籠 (warm night): charcoal, ivory ink, amber light ---------- */
+:root[data-wafu][data-tone='lantern'] {
+  --wa-bg: #17130f; --wa-bg-rgb: 23 19 15;
+  --wa-panel: rgb(36 29 22 / .9); --wa-panel-solid: #241d16; --wa-panel-hi: rgb(48 39 30 / .96);
+  --wa-raise: rgb(255 236 210 / .04); --wa-raise-rgb: 255 236 210;
+  --wa-line: rgb(230 200 160 / .13); --wa-line-2: rgb(230 200 160 / .24); --wa-line-2-rgb: 230 200 160;
+  --wa-ink: #f3e9d8; --wa-ink-rgb: 243 233 216; --wa-ink-2: #d9c9ae; --wa-ink-2-rgb: 217 201 174;
+  --wa-muted: #a8977b; --wa-muted-rgb: 168 151 123;
+  --wa-gold: #e6b778; --wa-gold-rgb: 230 183 120; --wa-gold-soft: rgb(230 183 120 / .14);
+  --wa-up: #a3d394; --wa-up-rgb: 163 211 148; --wa-up-soft: rgb(163 211 148 / .13);
+  --wa-down: #ec937c; --wa-down-rgb: 236 147 124; --wa-down-soft: rgb(236 147 124 / .13);
+  --wa-seal: #e07a5f;
+  --wa-r: 10px; --wa-r-lg: 16px;
+  --wa-shell-bg:
+    radial-gradient(80% 55% at 75% -10%, rgb(230 183 120 / .16), transparent 62%),
+    radial-gradient(60% 45% at 5% 105%, rgb(200 120 80 / .1), transparent 70%),
+    linear-gradient(180deg, #1b1611 0%, #16120e 60%, #120f0b 100%);
+}
+:root[data-wafu='kikyo'][data-tone='lantern'] {
+  --wa-accent: #e6b778; --wa-accent-rgb: 230 183 120; --wa-accent-strong: #d9a25c; --wa-accent-soft: rgb(230 183 120 / .15); --wa-on-accent: #1d1409;
+  --wa-accent-2: #c9a8e6; --wa-accent-2-rgb: 201 168 230; --wa-accent-2-soft: rgb(201 168 230 / .15);
+}
+:root[data-wafu='shigure'][data-tone='lantern'] {
+  --wa-accent: #e8b878; --wa-accent-rgb: 232 184 120; --wa-accent-strong: #dba45e; --wa-accent-soft: rgb(232 184 120 / .15); --wa-on-accent: #1d1409;
+  --wa-accent-2: #8fd0c4; --wa-accent-2-rgb: 143 208 196; --wa-accent-2-soft: rgb(143 208 196 / .15);
+}
+:root[data-tone='lantern'] .panel, :root[data-tone='lantern'] .metric-card { box-shadow: 0 0 0 1px var(--wa-line), 0 20px 44px -30px rgb(230 183 120 / .45); }
+
+/* ---------- 和紙 (warm daylight): paper, sumi ink, thin double rules ---------- */
+:root[data-wafu][data-tone='washi'] {
+  color-scheme: light;
+  --wa-bg: #f2eadc; --wa-bg-rgb: 242 234 220;
+  --wa-panel: rgb(251 246 236 / .93); --wa-panel-solid: #fbf6ec; --wa-panel-hi: rgb(255 251 244 / .98);
+  --wa-raise: rgb(90 60 30 / .045); --wa-raise-rgb: 90 60 30;
+  --wa-line: rgb(110 80 40 / .18); --wa-line-2: rgb(110 80 40 / .3); --wa-line-2-rgb: 110 80 40;
+  --wa-ink: #2b241c; --wa-ink-rgb: 43 36 28; --wa-ink-2: #4a4034; --wa-ink-2-rgb: 74 64 52;
+  --wa-muted: #786a56; --wa-muted-rgb: 120 106 86;
+  --wa-gold: #9a7128; --wa-gold-rgb: 154 113 40; --wa-gold-soft: rgb(154 113 40 / .12);
+  --wa-up: #3d7a4c; --wa-up-rgb: 61 122 76; --wa-up-soft: rgb(61 122 76 / .12);
+  --wa-down: #b14a35; --wa-down-rgb: 177 74 53; --wa-down-soft: rgb(177 74 53 / .11);
+  --wa-seal: #b5533c;
+  --wa-r: 8px; --wa-r-lg: 12px;
+  --wa-shell-bg:
+    radial-gradient(rgb(120 90 50 / .06) 1px, transparent 1.3px) 0 0 / 5px 5px,
+    radial-gradient(80% 60% at 80% -10%, rgb(255 250 240 / .9), transparent 60%),
+    linear-gradient(180deg, #f5eee2 0%, #f0e7d7 100%);
+}
+:root[data-wafu='kikyo'][data-tone='washi'] {
+  --wa-accent: #4f55a3; --wa-accent-rgb: 79 85 163; --wa-accent-strong: #3d4390; --wa-accent-soft: rgb(79 85 163 / .1); --wa-on-accent: #fbf6ec;
+  --wa-accent-2: #8a5aa8; --wa-accent-2-rgb: 138 90 168; --wa-accent-2-soft: rgb(138 90 168 / .1);
+}
+:root[data-wafu='shigure'][data-tone='washi'] {
+  --wa-accent: #2a7a7b; --wa-accent-rgb: 42 122 123; --wa-accent-strong: #1f6566; --wa-accent-soft: rgb(42 122 123 / .1); --wa-on-accent: #fbf6ec;
+  --wa-accent-2: #7a5aa8; --wa-accent-2-rgb: 122 90 168; --wa-accent-2-soft: rgb(122 90 168 / .1);
+}
+/* A ledger's thin double rule on panels and cards. */
+:root[data-tone='washi'] .panel, :root[data-tone='washi'] .metric-card { box-shadow: 0 1px 0 #fff inset, 0 12px 26px -20px rgb(70 50 20 / .4); outline: 1px solid var(--wa-line); outline-offset: -6px; }
+:root[data-tone='washi'] .topbar { box-shadow: 0 1px 0 rgb(255 255 255 / .7) inset; }
+/* Dark-tinted wells read as smudges on paper: lighten them. */
+:root[data-tone='washi'] .macro-market-card, :root[data-tone='washi'] .wafu-gains-wrap, :root[data-tone='washi'] .wafu-perf-tip { background: rgb(255 252 246 / .7); }
+:root[data-tone='washi'] .wafu-perf-tip { background: var(--wa-panel-solid); box-shadow: 0 10px 24px -14px rgb(70 50 20 / .45); }
+:root[data-tone='washi'] img.hanko, :root[data-tone='washi'] .visual-asset img { filter: none; }
+
+/* The notice pill's dark well becomes a paper well in 和紙. */
+:root[data-tone='washi'] .topbar-notice .wafu-notify-toggle:has(.wafu-notify-roll) { background: rgb(255 252 246 / .75); }
+/* The opening is drawn for a dark ground: in 和紙 it keeps the theme's own night colour. */
+:root[data-wafu='kikyo'][data-tone='washi'] #wafu-opening { --wa-bg: #0c0d11; }
+:root[data-wafu='shigure'][data-tone='washi'] #wafu-opening { --wa-bg: #07141a; }
+:root[data-wafu='kikyo'][data-tone='washi'][data-wafu-intro] body::after { background: #0c0d11; }
+:root[data-wafu='shigure'][data-tone='washi'][data-wafu-intro] body::after { background: #07141a; }
+/* 和紙's deep ink slices need light figures on the donut. */
+:root[data-tone='washi'] .donut-segment-label { color: #fbf6ec; fill: #fbf6ec; text-shadow: 0 1px 2px rgb(40 30 20 / .45); }

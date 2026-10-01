@@ -177,10 +177,10 @@ export async function prepareIcon(file: Blob) {
     for (let x = 0; x < width; x++) { push(x); push((height - 1) * width + x); }
     for (let y = 0; y < height; y++) { push(y * width); push(y * width + width - 1); }
     fill();
-    // Pockets of the exact backdrop colour closed in by the figure (inside a halo ring) go too,
-    // when they are large enough not to be shading.
+    // Pockets of the exact backdrop colour closed in by the figure (inside a halo ring) go too, when
+    // large enough (over 1.2% of the picture) not to be eyes, outlines or shading.
     limit = 6;
-    const pocket = Math.max(400, width * height * 0.003);
+    const pocket = Math.max(900, width * height * 0.012);
     for (let start = 0; start < width * height; start++) {
       if (seen[start] || near(start) >= limit) continue;
       stack.push(start); seen[start] = 1;
@@ -199,9 +199,9 @@ export async function prepareIcon(file: Blob) {
     const cleared = (p: number) => seen[p] === 1;
     for (let p = 0; p < width * height; p++) {
       if (cleared(p)) data[p * 4 + 3] = 0;
-      // A soft edge: pixels next to the cleared area fade with their distance from the background.
+      // A soft edge: anti-aliased pixels next to the cleared area fade; outlines stay solid.
       else if ((p % width > 0 && cleared(p - 1)) || (p % width < width - 1 && cleared(p + 1)) || (p >= width && cleared(p - width)) || (p < width * (height - 1) && cleared(p + width))) {
-        data[p * 4 + 3] = Math.round(Math.min(1, near(p) / 90) * 255);
+        data[p * 4 + 3] = Math.round(Math.min(1, Math.max(0, (near(p) - 18) / 40)) * 255);
       }
     }
   }

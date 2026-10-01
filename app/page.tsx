@@ -135,6 +135,8 @@ type TechnicalPoint = {
   high: number;
   low: number;
   close: number;
+  /** Shares traded in the period (null when the source has none). */
+  volume?: number | null;
   rsi: number | null;
   macd: number | null;
   signal: number | null;
@@ -812,9 +814,18 @@ function aggregateCandles(points: TechnicalPoint[], maximum = 180) {
       high: Math.max(...bucket.map((point) => point.high)),
       low: Math.min(...bucket.map((point) => point.low)),
       close: last.close,
+      volume: bucket.some((point) => typeof point.volume === 'number') ? bucket.reduce((sum, point) => sum + (point.volume ?? 0), 0) : null,
     });
   }
   return result;
+}
+
+/** Share volume as 1.2萬 / 3.4億 (zh). */
+function formatVolume(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  if (value >= 1e8) return `${(value / 1e8).toFixed(2)} 億股`;
+  if (value >= 1e4) return `${(value / 1e4).toFixed(value >= 1e6 ? 0 : 1)} 萬股`;
+  return `${Math.round(value)} 股`;
 }
 
 function signedPrice(ticker: string, value: number) {
@@ -909,6 +920,9 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, ra
     const nextIndex = Math.round(ratio * (points.length - 1));
     setPriceHoverIndex((current) => current === nextIndex ? current : nextIndex);
   };
+  // 成交量: bars under the price chart, one per candle (summed when candles are grouped).
+  const volumeMax = Math.max(0, ...candles.map((point) => point.volume ?? 0));
+  const candleAt = (timestamp: number) => candles.find((point) => point.timestamp >= timestamp)?.timestamp ?? null;
   const toggleOverlay = (key: keyof typeof overlays) => setOverlays((current) => ({ ...current, [key]: !current[key] }));
   const pointDateLabel = (point: TechnicalPoint, short = false) => new Intl.DateTimeFormat('zh-TW', activeData?.interval === '1d'
     ? { month: 'numeric', day: 'numeric' }
@@ -960,6 +974,17 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, ra
           const rising = point.close >= point.open;
           return <g key={`${point.timestamp}-${index}`} className={rising ? 'technical-candle rising' : 'technical-candle falling'}><line x1={x} x2={x} y1={highY} y2={lowY}/>{Math.abs(openY - closeY) < .35 ? <line className="technical-candle-doji" x1={x - width / 2} x2={x + width / 2} y1={closeY} y2={closeY}/> : <rect x={x - width / 2} y={Math.min(openY, closeY)} width={width} height={Math.max(.35, Math.abs(openY - closeY))}/>}</g>;
         })}</g>}{overlays.ma20 && <polyline points={technicalPoints(ma20, priceBounds.min, priceBounds.max)} className="technical-ma-line ma20"/>}{overlays.ma50 && <polyline points={technicalPoints(ma50, priceBounds.min, priceBounds.max)} className="technical-ma-line ma50"/>}{overlays.ma200 && <polyline points={technicalPoints(ma200, priceBounds.min, priceBounds.max)} className="technical-ma-line ma200"/>}{activePricePoint && <line x1={activePriceX} x2={activePriceX} y1="7" y2="93" className="technical-price-guide"/>}</svg>{activePricePoint && <>{priceChartMode === 'line' && <span className="technical-price-dot" style={{ left: `${activePriceX}%`, top: `${activePriceY}%` }} aria-hidden="true"/>}<div className={`technical-price-tooltip ${priceChartMode === 'candles' ? 'is-ohlc' : ''} ${activePriceX > 78 ? 'align-right' : activePriceX < 22 ? 'align-left' : ''}`} style={{ left: `${activePriceX}%`, top: `${Math.max(24, Math.min(84, activePriceY))}%` }} role="status"><span>{pointDateLabel(activePricePoint)}</span>{priceChartMode === 'candles' ? <div className="technical-tooltip-ohlc"><span>開 <b>{priceMoney(activePricePoint.open)}</b></span><span>高 <b>{priceMoney(activePricePoint.high)}</b></span><span>低 <b>{priceMoney(activePricePoint.low)}</b></span><span>收 <b>{priceMoney(activePricePoint.close)}</b></span></div> : <strong>{priceMoney(activePricePoint.close)}</strong>}<div className="technical-tooltip-overlays">{overlays.boll && activePricePoint.bollUpper !== null && <span>Boll {priceMoney(activePricePoint.bollUpper)} / {priceMoney(activePricePoint.bollLower ?? 0)}</span>}{overlays.ma20 && activePricePoint.ma20 !== null && <span>MA20 {priceMoney(activePricePoint.ma20)}</span>}{overlays.ma50 && activePricePoint.ma50 !== null && <span>MA50 {priceMoney(activePricePoint.ma50)}</span>}{overlays.ma200 && activePricePoint.ma200 !== null && <span>MA200 {priceMoney(activePricePoint.ma200)}</span>}</div></div></>}</div>
+        {volumeMax > 0 && <div className="technical-volume" aria-label={`${symbol} 成交量`}>
+          <span className="technical-volume-label">成交量 <b>{formatVolume(activePricePoint?.volume ?? points.at(-1)?.volume ?? null)}</b></span>
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`${symbol} 成交量長條圖`}>{candles.map((point, index) => {
+            if (typeof point.volume !== 'number' || point.volume <= 0) return null;
+            const x = candles.length === 1 ? 50 : index / (candles.length - 1) * 100;
+            const width = Math.max(.28, Math.min(1.35, 62 / candles.length));
+            const height = Math.max(1.5, point.volume / volumeMax * 96);
+            const active = activePricePoint && point.timestamp === candleAt(activePricePoint.timestamp);
+            return <rect key={`v-${point.timestamp}-${index}`} className={`${point.close >= point.open ? 'rising' : 'falling'}${active ? ' active' : ''}`} x={x - width / 2} y={100 - height} width={width} height={height} />;
+          })}</svg>
+        </div>}
         <div className="technical-dates">{dateIndexes.map((index) => <span key={`${points[index].timestamp}-${index}`}>{pointDateLabel(points[index], true)}</span>)}</div>
       </article>
       <article className="technical-card indicator-card">

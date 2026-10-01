@@ -77,3 +77,14 @@
 .belowCell .cellGap { color: var(--wa-down); }
 .fieldGrid { align-items: start; }
 .fieldGrid > label { align-content: start; }
+/* The field badge stays one short line; the reasons live in the block under the table. */
+.aiFieldNote { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.aiDiagnosis { margin-top: 14px; padding: 12px 14px; color: var(--wa-ink-2); background: rgb(var(--wa-accent-rgb) / .06); border: 1px dashed rgb(var(--wa-accent-rgb) / .4); border-radius: 10px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.aiDiagnosis h4 { margin: 0 0 6px; color: var(--wa-accent); font-size: 12.5px; letter-spacing: .08em; }
+.aiDiagnosis > p { margin: 0 0 8px; color: var(--wa-ink); }
+.aiDiagnosis dl { display: grid; gap: 8px; margin: 0; }
+.aiDiagnosis dl div { display: grid; gap: 2px; padding-top: 8px; border-top: 1px dotted var(--wa-line-2); }
+.aiDiagnosis dt { display: flex; justify-content: space-between; gap: 8px; color: var(--wa-ink); font-weight: 700; }
+.aiDiagnosis dt b { color: var(--wa-accent); font-variant-numeric: tabular-nums; }
+.aiDiagnosis dd { margin: 0; }
+.aiForecastNote { overflow-wrap: anywhere; }

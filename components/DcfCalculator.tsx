@@ -8,7 +8,7 @@ import type { AiCompanyInfo } from '@/lib/company-ai';
 import { askCompanyAi, cachedCompanyAi, companyAiProviderName } from '@/lib/company-ai';
 import type { AiProvider } from '@/lib/earnings';
 import type { DcfAiSuggestion, DcfAssumptionKey } from '@/lib/dcf-ai';
-import { askDcfAssumptions, dcfAssumptionKeys, savedDcfSuggestion } from '@/lib/dcf-ai';
+import { askDcfAssumptions, dcfAssumptionKeys, plainAiText, savedDcfSuggestion } from '@/lib/dcf-ai';
 
 type Currency = 'USD' | 'JPY';
 
@@ -239,15 +239,18 @@ export default function DcfCalculator({ initialTicker = 'MSFT', onClose, ai = nu
     setDcfAi(null);
     setAssumptions((current) => normalizeAssumptions({ ...current, growth: defaultAssumptions.growth, years: defaultAssumptions.years, marginOfSafety: defaultAssumptions.marginOfSafety, ...currencyDefaults[japan ? 'JPY' : 'USD'] }));
   };
+  const liveSuggestion = suggestion && suggestion.symbol === assumptions.ticker.trim().toUpperCase() ? suggestion : null;
+  // Under each input only a short badge; the reasons are listed under the table (AI 判斷依據).
   const aiNote = (key: DcfAssumptionKey, unitLabel: string) => {
-    if (!suggestion || suggestion.symbol !== assumptions.ticker.trim().toUpperCase()) return undefined;
-    const value = suggestion.values[key];
+    if (!liveSuggestion) return undefined;
+    const value = liveSuggestion.values[key];
     const kept = touched.has(key) && assumptions[key] !== value;
     return <small className={styles.aiFieldNote}>
-      <b>{kept ? `AI 建議 ${value}${unitLabel}` : 'AI 預填'}</b>{suggestion.reasons[key]}
+      <b>{kept ? `AI 建議 ${value}${unitLabel}` : 'AI 預填'}</b>
       {kept && <button type="button" onClick={() => { setTouched((current) => { const next = new Set(current); next.delete(key); return next; }); set(key, value); }}>套用</button>}
     </small>;
   };
+  const forecastLabels: Record<DcfAssumptionKey, [string, string]> = { growth: ['FCF 年成長率', '%'], years: ['預測年數', ' 年'], wacc: ['WACC', '%'], terminalGrowth: ['永續成長率', '%'], marginOfSafety: ['安全邊際', '%'] };
   const otherProvider: AiProvider = ai?.defaultProvider === 'anthropic' ? 'openai' : 'anthropic';
   const savedForecast = ai ? savedDcfSuggestion(assumptions.ticker.trim()) : null;
   const chartValues = [assumptions.freeCashFlow, ...(result?.projections.map((item) => item.fcf) ?? [])].filter((value) => Number.isFinite(value) && value > 0);
@@ -440,10 +443,9 @@ export default function DcfCalculator({ initialTicker = 'MSFT', onClose, ai = nu
           </div>
           {dcfAi?.loading && <p className={styles.aiWorking} role="status">正在用 {companyAiProviderName(dcfAi.provider)} 上網判斷 {assumptions.ticker} 的假設…（約 20–60 秒）</p>}
           {dcfAi?.error && <p className={styles.aiError} role="alert">{dcfAi.error}</p>}
-          {suggestion && suggestion.symbol === assumptions.ticker.trim().toUpperCase() && <p className={styles.aiForecastNote}>
-            {suggestion.summary && <span>{suggestion.summary}</span>}
-            <small>{companyAiProviderName(suggestion.provider)}（{suggestion.model}）· {suggestion.asOf} · 僅供參考，請核對{touched.size > 0 ? ' · 你改過的欄位已保留' : ''}</small>
-            {suggestion.sources.length > 0 && <span className={styles.aiSources}>{suggestion.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title}>{source.title}</a>)}</span>}
+          {liveSuggestion && <p className={styles.aiForecastNote}>
+            <small>{companyAiProviderName(liveSuggestion.provider)}（{liveSuggestion.model}）· {liveSuggestion.asOf} · 僅供參考，請核對{touched.size > 0 ? ' · 你改過的欄位已保留' : ''}</small>
+            {liveSuggestion.sources.length > 0 && <span className={styles.aiSources}>{liveSuggestion.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title}>{source.title}</a>)}</span>}
           </p>}
         </div>}
         <div className={styles.fieldGrid}>
@@ -454,6 +456,11 @@ export default function DcfCalculator({ initialTicker = 'MSFT', onClose, ai = nu
           <NumberField label="安全邊際" value={assumptions.marginOfSafety} suffix="%" min={0} max={90} note={aiNote('marginOfSafety', '%')} onChange={(value) => setForecast('marginOfSafety', value)} />
         </div>
         <p className={styles.rangeHint}>輸入框會整欄取代原值；永續成長率上限為 3.5%，並至少低於 WACC 1 個百分點。</p>
+        {liveSuggestion && <section className={styles.aiDiagnosis} aria-label="AI 判斷依據">
+          <h4>AI 判斷依據</h4>
+          {liveSuggestion.summary && <p>{plainAiText(liveSuggestion.summary)}</p>}
+          <dl>{dcfAssumptionKeys.map((key) => <div key={key}><dt>{forecastLabels[key][0]}<b>{liveSuggestion.values[key]}{forecastLabels[key][1]}</b></dt><dd>{plainAiText(liveSuggestion.reasons[key])}</dd></div>)}</dl>
+        </section>}
         {!result && <p className={styles.error}>{modelErrors.length ? modelErrors.join('；') : '目前假設無法完成估值。'}</p>}
         {result && result.terminalShare > .75 && <p className={styles.warning}>終值占企業價值 {(result.terminalShare * 100).toFixed(1)}%，估值對 WACC 與永續成長率較敏感。</p>}
       </aside>

@@ -1,5 +1,5 @@
 import type { DcfAiSuggestion, DcfAssumptionKey } from '@/lib/dcf-ai';
-import { clampDcfAssumptions, dcfAssumptionKeys } from '@/lib/dcf-ai';
+import { clampDcfAssumptions, dcfAssumptionKeys, plainAiText } from '@/lib/dcf-ai';
 import type { AiProvider } from '@/lib/earnings';
 import { exchangeTodayKey } from '@/lib/earnings';
 import { askWithSearch } from '@/lib/server/company-ai';
@@ -24,11 +24,11 @@ function prompt(symbol: string, today: string) {
     '{"growth": 0, "years": 0, "wacc": 0, "terminalGrowth": 0, "marginOfSafety": 0,',
     ' "reasons": {"growth": "", "years": "", "wacc": "", "terminalGrowth": "", "marginOfSafety": ""},',
     ' "summary": ""}',
-    'Each reason is one short sentence in Traditional Chinese naming the evidence (for example 近 3 年 FCF 年均成長 11%，分析師預估放緩). summary is one sentence in Traditional Chinese.',
+    'No links, URLs or citations inside the JSON text. Each reason is one short sentence in Traditional Chinese naming the evidence (for example 近 3 年 FCF 年均成長 11%，分析師預估放緩). summary is one sentence in Traditional Chinese.',
   ].join('\n');
 }
 
-const text = (value: unknown, limit: number) => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, limit) : '';
+const text = (value: unknown, limit: number) => typeof value === 'string' ? plainAiText(value.replace(/\s+/g, ' ')).slice(0, limit) : '';
 const num = (value: unknown) => {
   const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.replace(/[%,\s]/g, '')) : NaN;
   if (!Number.isFinite(n)) return undefined;

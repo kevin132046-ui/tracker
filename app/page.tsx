@@ -1065,6 +1065,8 @@ export default function Home() {
   // The notice bar in the middle of the top bar (wide screens); can be turned off in the settings.
   const [notifyBar, setNotifyBar] = useState(true);
   const [gainsTab, setGainsTab] = useState(true);
+  // Which 益損 tab to open on, and a counter so the same request reopens it.
+  const [gainsStart, setGainsStart] = useState<{ tab: 'this' | 'last' | 'open'; n: number }>({ tab: 'this', n: 0 });
   // 色調: read at once (the boot script already painted it), so the first effect does not undo it.
   const [toneSetting, setToneSetting] = useState<ToneSetting>(() => typeof window === 'undefined' ? 'off' : loadToneSetting());
   const [noticeNow, setNoticeNow] = useState<number | null>(null);
@@ -1541,7 +1543,34 @@ export default function Home() {
     const timer = window.setInterval(apply, 5 * 60_000);
     return () => window.clearInterval(timer);
   }, [toneSetting]);
+  const [textScale, setTextScale] = useState<'normal' | 'large' | 'xlarge'>(() => {
+    if (typeof window === 'undefined') return 'large';
+    try { const saved = window.localStorage.getItem('optionflow-text-scale'); return saved === 'normal' || saved === 'xlarge' ? saved : 'large'; } catch { return 'large'; }
+  });
+  const updateTextScale = useCallback((scale: 'normal' | 'large' | 'xlarge') => {
+    setTextScale(scale);
+    document.documentElement.dataset.textScale = scale;
+    try { window.localStorage.setItem('optionflow-text-scale', scale); } catch { /* storage unavailable */ }
+  }, []);
   const updateTone = useCallback((setting: ToneSetting) => { setToneSetting(setting); saveToneSetting(setting); }, []);
+  // The summary cards jump to the part of the page they summarise.
+  const scrollToId = (id: string) => window.requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  const showOpenPositions = () => {
+    setDrilledTicker(null);
+    setAllocationGroupSelection(null);
+    setQuery('');
+    setFilter('open');
+    setPositionView('visual');
+    scrollToId('positions');
+  };
+  const showUnrealized = () => {
+    setDrilledTicker(null);
+    setQuery('');
+    if (gainsTab) { setGainsStart((current) => ({ tab: 'open', n: current.n + 1 })); setPositionView('gains'); }
+    else { setFilter('open'); setPositionView('visual'); }
+    scrollToId('positions');
+  };
+  const showAllocation = () => scrollToId('allocation');
   const toggleGainsTab = useCallback(() => {
     setGainsTab((current) => {
       try { window.localStorage.setItem(gainsTabKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
@@ -2751,6 +2780,12 @@ export default function Home() {
   // The quick sheet's 個股研究 opens the ticker in view, else the largest position.
   const researchTicker = drilledTicker ?? allocation.flatMap((item) => item.members).find((member) => member !== 'USD' && member !== 'JPY') ?? null;
   const allocationFallbackLabel = allocationGroupSelection?.label ?? allocation.find((item) => drilledTicker && item.members.includes(drilledTicker))?.label ?? null;
+  // Each holding's colour in the donut, so the list's 組合占比 bars match it.
+  const allocationColorOf = useMemo(() => {
+    const colors = new Map<string, string>();
+    for (const item of allocation) for (const member of item.members ?? [item.label]) colors.set(member.toUpperCase(), item.color);
+    return colors;
+  }, [allocation]);
   const activeAllocationLabel = allocationHoveredLabel ?? allocationPinnedLabel ?? allocationFallbackLabel;
   const activeAllocationItem = allocation.find((item) => item.label === activeAllocationLabel) ?? null;
 
@@ -3278,10 +3313,11 @@ export default function Home() {
         </section>
 
         <section className="metric-grid" aria-label="投資組合摘要">
-          <article className="metric-card featured"><p>追蹤市值</p><strong>{loading ? '—' : money.format(trackedValue)}</strong><span>{openTrades.length} 筆未平倉持倉</span></article>
-          <article className="metric-card"><p>未實現損益</p><strong className={openPnl >= 0 ? 'positive' : 'negative'}>{loading ? '—' : money.format(openPnl)}</strong><span className={`metric-return ${openReturnOnCapital === null ? '' : openReturnOnCapital >= 0 ? 'positive' : 'negative'}`}>{loading ? '計算中…' : openReturnOnCapital === null ? 'ROIC —' : `ROIC ${openReturnOnCapital >= 0 ? '+' : ''}${percent.format(openReturnOnCapital)}`}</span></article>
-          <article className="metric-card"><p>擔保／投入資本</p><strong>{loading ? '—' : money.format(capitalAtRisk)}</strong><span>股票採買入成本；賣方選擇權採擔保金或履約價名目</span></article>
-          <article className={`metric-card metric-card-interactive ${rocBreakdownOpen ? 'is-open' : ''}`}>
+          <article className="metric-card featured metric-card-link"><button type="button" className="metric-card-hit" aria-label="追蹤市值：查看未平倉持倉" onClick={showOpenPositions} /><p>追蹤市值</p><strong>{loading ? '—' : money.format(trackedValue)}</strong><span>{openTrades.length} 筆未平倉持倉</span></article>
+          <article className="metric-card metric-card-link"><button type="button" className="metric-card-hit" aria-label="未實現損益：查看未實現益損" onClick={showUnrealized} /><p>未實現損益</p><strong className={openPnl >= 0 ? 'positive' : 'negative'}>{loading ? '—' : money.format(openPnl)}</strong><span className={`metric-return ${openReturnOnCapital === null ? '' : openReturnOnCapital >= 0 ? 'positive' : 'negative'}`}>{loading ? '計算中…' : openReturnOnCapital === null ? 'ROIC —' : `ROIC ${openReturnOnCapital >= 0 ? '+' : ''}${percent.format(openReturnOnCapital)}`}</span></article>
+          <article className="metric-card metric-card-link"><button type="button" className="metric-card-hit" aria-label="擔保／投入資本：查看持倉配置" onClick={showAllocation} /><p>擔保／投入資本</p><strong>{loading ? '—' : money.format(capitalAtRisk)}</strong><span>股票採買入成本；賣方選擇權採擔保金或履約價名目</span></article>
+          <article className={`metric-card metric-card-interactive metric-card-link ${rocBreakdownOpen ? 'is-open' : ''}`}>
+            <button type="button" className="metric-card-hit" tabIndex={-1} aria-hidden="true" onClick={() => setRocBreakdownOpen(true)} />
             <p>本年度加權年化 ROC</p>
             <strong className={annualRocSummary.value === null ? '' : annualRocSummary.value >= 0 ? 'positive' : 'negative'}>{loading || annualRocSummary.value === null ? '—' : precisePercent.format(annualRocSummary.value)}</strong>
             <span>{currentRocYear} · {annualRocSummary.count} 筆有效平倉交易</span>
@@ -3338,7 +3374,7 @@ export default function Home() {
         </article>
 
         <section className="content-grid wafu-pair-grid">
-          <article className="panel allocation-panel">
+          <article className="panel allocation-panel" id="allocation">
             <div className="panel-heading"><div><p className="eyebrow">Holdings</p><h2>持倉配置</h2></div><div className="allocation-heading-actions"><div className="allocation-chart-switch" role="group" aria-label="持倉配置圖表類型"><button type="button" className={allocationChartMode === 'donut' ? 'active' : ''} aria-pressed={allocationChartMode === 'donut'} onClick={() => setAllocationChartMode('donut')}>圓餅圖</button><button type="button" className={allocationChartMode === 'bars' ? 'active' : ''} aria-pressed={allocationChartMode === 'bars'} onClick={() => setAllocationChartMode('bars')}>長條圖</button></div><span className="count-badge">{allocationSnapshot.tradeCount} positions</span></div></div>
             <div className="allocation-history-controls" aria-label="持倉配置歷史日期">
               <div>{allocationPresets.map((preset) => <button key={preset.label} className={allocationDate === preset.date ? 'active' : ''} onClick={() => selectAllocationDate(preset.date)}>{preset.label}</button>)}</div>
@@ -3426,7 +3462,7 @@ export default function Home() {
           {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}
           {positionView !== 'gains' && <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['cash', '現金'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? portfolioTrades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : portfolioTrades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : mode === 'cash' ? isCashTrade(trade) : trade.type !== 'SDI' && !isCashTrade(trade)).length}</span></button>)}{positionView === 'details' && <TradeColumnPicker columns={tradeColumnSet} onChange={updateTradeColumns} />}{positionView === 'visual' && <VisualFieldPicker fields={visualFieldSet} onChange={updateVisualFields} />}</div>}
           {optionRisk && positionView !== 'gains' && <OptionRiskStrip risk={optionRisk} premium={yearPremium} />}
-          {positionView === 'gains' ? <Suspense fallback={<div className="visual-empty">正在整理益損…</div>}><GainsLedger trades={portfolioTrades} usdJpyRate={usdJpyRate} today={todayKey} query={query} /></Suspense> : positionView === 'visual' ? <div className="visual-positions">
+          {positionView === 'gains' ? <Suspense fallback={<div className="visual-empty">正在整理益損…</div>}><GainsLedger key={gainsStart.n} initialTab={gainsStart.tab} trades={portfolioTrades} usdJpyRate={usdJpyRate} today={todayKey} query={query} /></Suspense> : positionView === 'visual' ? <div className="visual-positions">
             <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>成本均價／現價</span><span>標的價格波動／今日漲跌</span><span>損益／報酬率</span><span>組合占比</span></div>
             {!loading && !visualPositions.length && <div className="visual-empty">沒有符合目前篩選條件的持倉。</div>}
             {loading && <div className="visual-empty">正在整理圖形化持倉…</div>}
@@ -3466,7 +3502,7 @@ export default function Home() {
                 {cashPosition ? <div className="visual-price-flow cash-price-flow"><div><span>原幣現金</span><strong>{nativeMoney(position.ticker, position.cashQuantity)}</strong></div><div><span>組合換算</span><strong>{money.format(position.marketValue)}</strong></div></div> : <div className="visual-price-flow"><div><span>{position.items.every((item) => item.trade.type === 'SDI' || item.trade.event === 'STOCK') ? '股票均價' : '成交均價'}</span><strong>{nativeMoney(position.ticker, position.entryPrice)}</strong></div><div><span>{currentPriceLabel}</span><strong>{nativeMoney(position.ticker, regularDisplayPrice)}</strong>{extendedDisplayPrice !== null && <small className={`after-hours-price ${extendedDisplayPrice >= regularDisplayPrice ? 'is-up' : 'is-down'}`}><em>{extendedSession === 'pre' ? '盤前' : '盤後'}</em>{nativeMoney(position.ticker, extendedDisplayPrice)}</small>}</div></div>}
                 {cashPosition ? <div className="visual-market-move neutral cash-market-move"><span className="cash-balance-icon">◎</span><div><span>資料來源</span><strong>不需報價</strong><small>{position.items.some((item) => item.trade.derived) ? '含稅後股息自動現金' : '手動現金餘額'}</small></div></div> : <div className={`visual-market-move ${marketChangePercent === null ? 'neutral' : marketChangePercent >= 0 ? 'positive' : 'negative'}`}><PriceSparkline ticker={position.ticker} values={snapshot?.sparkline ?? []} changePercent={marketChangePercent} /><div><span>{marketMoveLabel}</span><strong>{marketChangePercent === null ? '等待報價' : `${marketChangePercent >= 0 ? '+' : ''}${precisePercent.format(marketChangePercent)}`}</strong><small>{marketChange === null ? '—' : `${nativeMoney(position.ticker, marketDisplayPrice)} · ${marketChange >= 0 ? '+' : ''}${nativeMoney(position.ticker, marketChange)}`}</small></div></div>}
                 <div className={`visual-gain ${cashPosition ? 'neutral' : position.pnl >= 0 ? 'positive' : 'negative'}`}><strong>{cashPosition ? money.format(0) : `${position.pnl >= 0 ? '+' : ''}${money.format(position.pnl)}`}</strong><span>{cashPosition ? '現金部位' : `${position.roc >= 0 ? '▲' : '▼'} ${percent.format(Math.abs(position.roc))}`}</span></div>
-                <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%` }} /></b></div>
+                <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%`, background: allocationColorOf.get(position.ticker.toUpperCase()) }} /></b></div>
                 {!cashPosition && visualFieldSet.length > 0 && <VisualFieldStrip fields={visualFieldSet} values={visualFieldValues(position, openPositionItems, snapshot, regularDisplayPrice)} />}
               </article>;
             })}
@@ -3510,6 +3546,16 @@ export default function Home() {
           <div className="settings-body" id="settings-tabpanel" role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} key={settingsTab}>
             {settingsTab === 'look' && <>
             <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
+            <section className="settings-feature-card is-enabled">
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">字</span><div><p>Text size</p><h3>文字大小</h3></div><span className="settings-feature-status">{textScale === 'normal' ? '標準' : textScale === 'large' ? '大' : '特大'}</span></div>
+              <p>放大頁面內容的文字與數字，版面比例一起等比放大。</p>
+              <div className="wafu-intro-row">
+                <span id="text-scale-label">大小</span>
+                <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="text-scale-label">
+                  {([['normal', '標準'], ['large', '大（預設）'], ['xlarge', '特大']] as const).map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={textScale === value} className={textScale === value ? 'active' : ''} onClick={() => updateTextScale(value)}>{label}</button>)}
+                </div>
+              </div>
+            </section>
             <section className={`settings-feature-card ${toneSetting !== 'off' ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">燈</span><div><p>Warm tone</p><h3>色調</h3></div><span className="settings-feature-status">{toneChoices.find(([value]) => value === toneSetting)?.[1] ?? '現行'}</span></div>
               <p>在桔梗與時雨之上換成柔和暖色：燈籠是暖色夜晚，和紙是白天的紙本帳簿。暖色自動會在 06:00–18:00 用和紙、其餘時間用燈籠。只換顏色與質感，版面與功能不變。</p>

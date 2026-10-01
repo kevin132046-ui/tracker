@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState } from 'react';
 import type { GainCategory, GainReport, GainTotals, GainTrade } from '@/lib/gains';
 import { gainCsv, gainReport, realizedLots, unrealizedLots } from '@/lib/gains';
 
-type Tab = 'this' | 'last' | 'open';
+export type Tab = 'this' | 'last' | 'open';
 
 const amount = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dollars = (value: number) => `${value < 0 ? '−' : ''}$${amount.format(Math.abs(value))}`;
@@ -28,14 +28,16 @@ function Figures({ row }: { row: Pick<GainTotals, 'proceeds' | 'cost' | 'wash' |
  * and the unrealized ones, split short-term / long-term, each expandable by ticker and then by trade,
  * with print and CSV. Worked out from the site's trades by lib/gains; wash sales are not estimated.
  */
-export default function GainsLedger({ trades, usdJpyRate, today, query }: {
+export default function GainsLedger({ trades, usdJpyRate, today, query, initialTab = 'this' }: {
   trades: GainTrade[];
+  /** The tab to open on (the 未實現損益 card opens 未實現). */
+  initialTab?: Tab;
   usdJpyRate: number;
   today: string;
   /** The positions search: narrows the rows to matching tickers. */
   query: string;
 }) {
-  const [tab, setTab] = useState<Tab>('this');
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const year = Number(today.slice(0, 4));
   const filter = query.trim().toUpperCase();

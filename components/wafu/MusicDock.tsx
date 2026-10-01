@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWafuAssets } from '@/lib/wafu/assets';
 import { getMediaPrefs, useMediaPrefs } from '@/lib/wafu/media';
-import { next, play, setTracks, setVolume, stop, toggle, useMusic } from '@/lib/wafu/music';
+import { musicRates, next, play, previous, select, setRate, setTracks, setVolume, stop, toggle, useMusic } from '@/lib/wafu/music';
 import { unlockAudio } from '@/lib/wafu/sfx';
 import type { WafuTheme } from '@/lib/wafu/theme';
 
@@ -18,6 +18,7 @@ export default function MusicDock({ theme }: { theme: WafuTheme }) {
   const prefs = useMediaPrefs();
   const music = useMusic();
   const [open, setOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setTracks(assets, theme); }, [assets, theme]);
@@ -57,10 +58,17 @@ export default function MusicDock({ theme }: { theme: WafuTheme }) {
     {open && <div className="wafu-music-panel" role="dialog" aria-label="背景音樂">
       <div className="wafu-music-now">
         <span className="wafu-eq" aria-hidden="true"><i /><i /><i /><i /></span>
-        <div><b>{current?.title ?? '背景音樂'}</b><small>{status}</small></div>
+        {music.tracks.length > 1
+          ? <button type="button" className="wafu-music-title" aria-expanded={listOpen} title="選擇歌曲" onClick={() => setListOpen((value) => !value)}><b>{current?.title ?? '背景音樂'}</b><small>{status} · 點此選歌</small></button>
+          : <div><b>{current?.title ?? '背景音樂'}</b><small>{status}</small></div>}
+        {music.tracks.length > 1 && <button type="button" className="wafu-music-next" aria-label="上一首" onClick={() => { unlockAudio(); previous(); }}>⏮</button>}
         <button type="button" className="wafu-music-play" disabled={!hasTracks} aria-label={music.playing ? '暫停' : '播放'} onClick={() => { unlockAudio(); toggle(); }}>{music.playing ? '❚❚' : '▶'}</button>
         {music.tracks.length > 1 && <button type="button" className="wafu-music-next" aria-label="下一首" onClick={() => { unlockAudio(); next(); }}>⏭</button>}
       </div>
+      {listOpen && music.tracks.length > 1 && <ol className="wafu-music-list" aria-label="歌曲清單">
+        {music.tracks.map((track, i) => <li key={track.src}><button type="button" className={i === music.index ? 'on' : ''} aria-current={i === music.index ? 'true' : undefined} onClick={() => { unlockAudio(); select(i); }}><span>{i + 1}</span>{track.title}</button></li>)}
+      </ol>}
+      <div className="wafu-music-rate" role="group" aria-label="播放速度"><span>速度</span>{musicRates.map((value) => <button key={value} type="button" className={music.rate === value ? 'on' : ''} aria-pressed={music.rate === value} onClick={() => setRate(value)}>{value}×</button>)}</div>
       <label className="wafu-music-volume"><span>音量</span><input type="range" min={0} max={1} step={0.01} value={prefs.volume} onChange={(event) => setVolume(Number(event.target.value))} aria-label="音量" /></label>
     </div>}
   </div>;

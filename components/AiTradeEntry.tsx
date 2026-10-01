@@ -1,9 +1,9 @@
 'use client';
 
 import type { ClipboardEvent } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ClaudeModel } from '@/lib/ai-models';
-import { claudeModelLabel, claudeModels, requestModel, resolveClaudeModel } from '@/lib/ai-models';
+import { claudeChoices, claudeModelLabel, loadModelDetection, requestModel, resolveClaudeModel, watchModelDetection } from '@/lib/ai-models';
 import type { AiTradeParse } from '@/lib/ai-trade-entry';
 import { entryImageTypes, maxEntryImageBytes, maxEntryLength, openTradeHints } from '@/lib/ai-trade-entry';
 import type { AiProvider } from '@/lib/earnings';
@@ -76,7 +76,7 @@ export default function AiTradeEntry({ ai, existingTrades, disabled, onResult }:
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      fetch(`/api/ai?model=${encodeURIComponent(openAiModel.trim())}&tier=${ai.usageTier}`, { cache: 'no-store', signal: controller.signal })
+      fetch(`/api/ai?model=${encodeURIComponent(openAiModel.trim())}&tier=${ai.usageTier}`, { cache: 'no-store', headers: aiKeyHeaders(ai.keys), signal: controller.signal })
         .then(async (response) => {
           const payload = await response.json() as { providers?: Record<AiProvider, boolean>; openAiModel?: string | null; quota?: QuotaReport; error?: string };
           if (!response.ok || !payload.providers) throw new Error(payload.error ?? 'AI 暫時無法使用。');
@@ -87,13 +87,19 @@ export default function AiTradeEntry({ ai, existingTrades, disabled, onResult }:
         });
     }, 300);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [ai.usageTier, openAiModel, checks]);
+  }, [ai.keys, ai.usageTier, openAiModel, checks]);
 
   useEffect(() => () => request.current?.abort(), []);
 
   const ready = status.state === 'ok' && (Boolean(ai.keys[provider].trim()) || status.providers[provider]);
   const quota = status.state === 'ok' ? status.quota : null;
-  const freeModels = quota?.list.groups ?? [];
+  // Models detected with the keys in「AI 設定」(when checked there); otherwise the built-in lists.
+  const detection = useSyncExternalStore(watchModelDetection, loadModelDetection, () => null);
+  const claudeList = claudeChoices(detection);
+  const detectedOpenAi = detection?.openai.state === 'ok' ? detection.openai.models.map((model) => model.id) : null;
+  const freeGroups = quota?.list.groups ?? [];
+  const freeModels = freeGroups.map((group) => ({ ...group, models: detectedOpenAi ? group.models.filter((model) => detectedOpenAi.includes(model)) : group.models })).filter((group) => group.models.length);
+  const otherModels = (detectedOpenAi ?? []).filter((model) => !freeGroups.some((group) => group.models.includes(model)));
   const chatGptModel = openAiModel.trim() || (status.state === 'ok' ? status.openAiModel ?? '' : '');
   const blockedReason = status.state === 'loading' ? '確認 AI 設定中…'
     : status.state === 'error' ? status.message
@@ -166,12 +172,15 @@ export default function AiTradeEntry({ ai, existingTrades, disabled, onResult }:
       <label><span>模型</span>
         {provider === 'anthropic'
           ? <select value={claudeModel} disabled={busy || disabled} onChange={(event) => setClaudeModel(resolveClaudeModel(event.target.value))}>
-            {claudeModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+            {!claudeList.some((model) => model.id === claudeModel) && <option value={claudeModel}>{claudeModel}</option>}
+            {claudeList.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
           </select>
-          : freeModels.length
+          : freeModels.length || otherModels.length
             ? <select value={openAiModel.trim()} disabled={busy || disabled} onChange={(event) => setOpenAiModel(event.target.value)}>
               <option value="">{status.state === 'ok' && status.openAiModel ? `伺服器預設（${status.openAiModel}）` : '請選擇模型'}</option>
-              {freeModels.map((group) => <optgroup key={group.id} label={group.label}>{group.models.map((model) => <option key={model} value={model}>{model}</option>)}</optgroup>)}
+              {openAiModel.trim() && !freeModels.some((group) => group.models.includes(openAiModel.trim())) && !otherModels.includes(openAiModel.trim()) && <option value={openAiModel.trim()}>{openAiModel.trim()}</option>}
+              {freeModels.map((group) => <optgroup key={group.id} label={`免費額度內 · ${group.label}`}>{group.models.map((model) => <option key={model} value={model}>{model}</option>)}</optgroup>)}
+              {otherModels.length > 0 && <optgroup label={quota?.enforced === false ? '其他可用（會計費）' : '其他可用（不在免費額度，會被擋下）'}>{otherModels.map((model) => <option key={model} value={model} disabled={quota?.enforced !== false}>{model}</option>)}</optgroup>}
             </select>
             : <input type="text" value={openAiModel} maxLength={64} spellCheck={false} autoComplete="off" disabled={busy || disabled} placeholder="輸入 OpenAI 模型名稱" onChange={(event) => setOpenAiModel(event.target.value)} />}
       </label>

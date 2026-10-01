@@ -2,10 +2,12 @@
 
 import { useSyncExternalStore } from 'react';
 import type { WafuAssets } from '@/lib/wafu/asset-slots';
+import { themeAssets } from '@/lib/wafu/asset-slots';
 import { getMediaPrefs, setMediaPrefs } from '@/lib/wafu/media';
 
 /** The music player behind the top-bar button: the uploaded track of each theme, one <audio>. */
 export type Track = { id: 'kikyo' | 'shigure'; title: string; src: string };
+const themeName = { kikyo: '桔梗', shigure: '時雨' } as const;
 
 let audio: HTMLAudioElement | null = null;
 let tracks: Track[] = [];
@@ -30,10 +32,10 @@ function element() {
 
 /** Tracks from the uploaded files; the current theme's track comes first. */
 export function setTracks(assets: WafuAssets, theme: 'kikyo' | 'shigure') {
-  const next: Track[] = (['kikyo', 'shigure'] as const).flatMap((id) => {
-    const asset = assets[`bgm-${id}`];
-    return asset ? [{ id, title: asset.name || (id === 'kikyo' ? '桔梗 · 背景音樂' : '時雨 · 背景音樂'), src: asset.url }] : [];
-  }).sort((a, b) => Number(b.id === theme) - Number(a.id === theme));
+  // Every uploaded track of both themes, the current theme's playlist first.
+  const next: Track[] = (['kikyo', 'shigure'] as const).flatMap((id) => themeAssets(assets, 'bgm', id).map((asset, i) => ({
+    id, title: asset.name || `${themeName[id]} · 背景音樂 ${i + 1}`, src: asset.url,
+  }))).sort((a, b) => Number(b.id === theme) - Number(a.id === theme));
   const current = tracks[index];
   const same = next.length === tracks.length && next.every((track, i) => track.src === tracks[i].src);
   if (same) return;

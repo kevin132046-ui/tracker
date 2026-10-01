@@ -42,3 +42,7 @@ next-env.d.ts
 optionflow-trades-*.csv
 optionflow-import-*.csv
 /private/
+*.tsbuildinfo
+# Cloudflare local secrets and 益損 exports never belong in the repo
+.dev.vars*
+optionflow-gains-*.csv

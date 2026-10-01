@@ -4,6 +4,9 @@ import type { FormEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 const defaultTitle = '桐生桔梗';
+// While the title is one of the characters' own names it follows the theme; a custom title stays.
+const characterNames: Record<'kikyo' | 'shigure', string> = { kikyo: '桐生桔梗', shigure: '間宵時雨' };
+const isCharacterName = (text: string) => text === characterNames.kikyo || text === characterNames.shigure;
 const cacheKey = 'optionflow-hero-title-v1';
 
 type HeroTitleState = {
@@ -44,7 +47,7 @@ function writeCache(state: HeroTitleState) {
 /** One box per character, so the vertical title stacks evenly whatever font the device falls back to. */
 const verticalChars = (text: string) => [...text].map((char, index) => <i key={index} className="wafu-title-ch">{char}</i>);
 
-export default function EditableHeroTitle({ onNotify }: { onNotify: (message: string) => void }) {
+export default function EditableHeroTitle({ onNotify, theme = 'kikyo' }: { onNotify: (message: string) => void; theme?: 'kikyo' | 'shigure' }) {
   const [title, setTitle] = useState(defaultTitle);
   const [draft, setDraft] = useState(defaultTitle);
   const [revision, setRevision] = useState(0);
@@ -119,7 +122,7 @@ export default function EditableHeroTitle({ onNotify }: { onNotify: (message: st
     }
   };
 
-  const parts = splitTitle(title);
+  const parts = splitTitle(isCharacterName(title) ? characterNames[theme] : title);
   if (editing) {
     return <form className="hero-title-editor" onSubmit={saveTitle}>
       <label className="visually-hidden" htmlFor="hero-title-input">網頁標題</label>

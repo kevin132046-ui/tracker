@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './CompanyFundamentals.module.css';
+import type { AiEntryContext } from '@/components/AiTradeEntry';
+import type { AiCompanyInfo } from '@/lib/company-ai';
+import { askCompanyAi, cachedCompanyAi, companyAiProviderName } from '@/lib/company-ai';
+import type { AiProvider } from '@/lib/earnings';
 
 type Metrics = Record<string, number | string | null>;
 type HistoryPoint = { date: string; value: number };
@@ -32,25 +36,27 @@ type CompanyPayload = {
   updatedAt: string;
   metrics: Metrics;
   history?: Partial<Record<HistoryPeriod, HistorySeries>>;
+  /** Present when the figures came from an AI web search instead of the market-data source. */
+  ai?: AiCompanyInfo;
   error?: string;
 };
 type MetricConfig = { label: string; caption: string; format: 'amount' | 'percent'; color: string; defaultChart: ChartKind };
 
 const historyMetricConfig: Record<HistoryMetricKey, MetricConfig> = {
-  freeCashFlow: { label: '自由現金流', caption: '營運現金流扣除資本支出', format: 'amount', color: '#2f73ed', defaultChart: 'bar' },
-  adjustedFreeCashFlow: { label: 'SBC 調整後自由現金流', caption: '自由現金流扣除股票薪酬', format: 'amount', color: '#1d9c82', defaultChart: 'bar' },
-  operatingCashFlow: { label: '營運現金流', caption: '本業產生的現金', format: 'amount', color: '#16a3b8', defaultChart: 'bar' },
-  capitalExpenditure: { label: '資本支出', caption: '設備與長期資產投資', format: 'amount', color: '#cf7b18', defaultChart: 'bar' },
-  stockBasedCompensation: { label: '股票薪酬', caption: 'SBC 認列金額', format: 'amount', color: '#6d63df', defaultChart: 'bar' },
-  stockBasedCompensationImpact: { label: 'SBC 對 FCF 影響', caption: '股票薪酬占自由現金流比重', format: 'percent', color: '#d4536b', defaultChart: 'line' },
-  revenue: { label: '營收', caption: '公司銷售收入', format: 'amount', color: '#2f73ed', defaultChart: 'bar' },
-  netIncome: { label: '淨利', caption: '稅後損益', format: 'amount', color: '#1d9c82', defaultChart: 'bar' },
-  operatingIncome: { label: '營業利益', caption: '本業營運損益', format: 'amount', color: '#16a3b8', defaultChart: 'bar' },
-  profitMargin: { label: '淨利率', caption: '淨利占營收比重', format: 'percent', color: '#6d63df', defaultChart: 'line' },
-  operatingMargin: { label: '營業利益率', caption: '營業利益占營收比重', format: 'percent', color: '#2f73ed', defaultChart: 'line' },
-  cash: { label: '現金與短期投資', caption: '期末流動性部位', format: 'amount', color: '#1d9c82', defaultChart: 'bar' },
-  debt: { label: '總負債', caption: '期末有息負債', format: 'amount', color: '#cf7b18', defaultChart: 'bar' },
-  netCash: { label: '淨現金／（淨負債）', caption: '現金與短期投資扣除總負債', format: 'amount', color: '#2f73ed', defaultChart: 'bar' },
+  freeCashFlow: { label: '自由現金流', caption: '營運現金流扣除資本支出', format: 'amount', color: 'var(--wa-accent)', defaultChart: 'bar' },
+  adjustedFreeCashFlow: { label: 'SBC 調整後自由現金流', caption: '自由現金流扣除股票薪酬', format: 'amount', color: 'var(--wa-up)', defaultChart: 'bar' },
+  operatingCashFlow: { label: '營運現金流', caption: '本業產生的現金', format: 'amount', color: '#6fc3d0', defaultChart: 'bar' },
+  capitalExpenditure: { label: '資本支出', caption: '設備與長期資產投資', format: 'amount', color: 'var(--wa-gold)', defaultChart: 'bar' },
+  stockBasedCompensation: { label: '股票薪酬', caption: 'SBC 認列金額', format: 'amount', color: 'var(--wa-accent-2)', defaultChart: 'bar' },
+  stockBasedCompensationImpact: { label: 'SBC 對 FCF 影響', caption: '股票薪酬占自由現金流比重', format: 'percent', color: 'var(--wa-down)', defaultChart: 'line' },
+  revenue: { label: '營收', caption: '公司銷售收入', format: 'amount', color: 'var(--wa-accent)', defaultChart: 'bar' },
+  netIncome: { label: '淨利', caption: '稅後損益', format: 'amount', color: 'var(--wa-up)', defaultChart: 'bar' },
+  operatingIncome: { label: '營業利益', caption: '本業營運損益', format: 'amount', color: '#6fc3d0', defaultChart: 'bar' },
+  profitMargin: { label: '淨利率', caption: '淨利占營收比重', format: 'percent', color: 'var(--wa-accent-2)', defaultChart: 'line' },
+  operatingMargin: { label: '營業利益率', caption: '營業利益占營收比重', format: 'percent', color: 'var(--wa-accent)', defaultChart: 'line' },
+  cash: { label: '現金與短期投資', caption: '期末流動性部位', format: 'amount', color: 'var(--wa-up)', defaultChart: 'bar' },
+  debt: { label: '總負債', caption: '期末有息負債', format: 'amount', color: 'var(--wa-gold)', defaultChart: 'bar' },
+  netCash: { label: '淨現金／（淨負債）', caption: '現金與短期投資扣除總負債', format: 'amount', color: 'var(--wa-accent)', defaultChart: 'bar' },
 };
 
 const percent = (value: unknown) => typeof value === 'number' ? `${value >= 0 ? '' : '−'}${Math.abs(value * 100).toFixed(2)}%` : '—';
@@ -233,7 +239,14 @@ function HistoryChart({
   </div>;
 }
 
-export default function CompanyFundamentals({ symbol, valuationOpen, onOpenDcf, onReturn }: { symbol: string; valuationOpen: boolean; onOpenDcf: () => void; onReturn: () => void }) {
+export default function CompanyFundamentals({ symbol, valuationOpen, onOpenDcf, onReturn, ai = null }: {
+  symbol: string;
+  valuationOpen: boolean;
+  onOpenDcf: () => void;
+  onReturn: () => void;
+  /** AI settings; when set and the market data fails, ChatGPT or Claude can look the figures up. */
+  ai?: AiEntryContext | null;
+}) {
   const [data, setData] = useState<CompanyPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -243,6 +256,7 @@ export default function CompanyFundamentals({ symbol, valuationOpen, onOpenDcf, 
   const [period, setPeriod] = useState<HistoryPeriod>('quarterly');
   const [chartKind, setChartKind] = useState<ChartKind>('bar');
   const [overlayMetric, setOverlayMetric] = useState<HistoryMetricKey | null>(null);
+  const [aiAsk, setAiAsk] = useState<{ provider: AiProvider; loading: boolean; error: string } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -253,13 +267,32 @@ export default function CompanyFundamentals({ symbol, valuationOpen, onOpenDcf, 
         setData(payload);
       })
       .catch((reason) => {
-        if (!(reason instanceof DOMException && reason.name === 'AbortError')) setError(reason instanceof Error ? reason.message : '公司資料暫時無法取得');
+        if (reason instanceof DOMException && reason.name === 'AbortError') return;
+        // An AI lookup made earlier in this visit (here or in the DCF tab) stands in for the failed source.
+        const earlier = cachedCompanyAi(symbol);
+        if (earlier) { setData(earlier); setPeriod('annual'); return; }
+        setError(reason instanceof Error ? reason.message : '公司資料暫時無法取得');
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [retry, symbol]);
 
-  const retryLoad = () => { setLoading(true); setError(''); setRetry((value) => value + 1); };
+  const retryLoad = () => { setLoading(true); setError(''); setAiAsk(null); setRetry((value) => value + 1); };
+  const askAi = async (provider: AiProvider) => {
+    if (!ai || aiAsk?.loading) return;
+    setAiAsk({ provider, loading: true, error: '' });
+    try {
+      const company = await askCompanyAi(symbol, ai, provider);
+      setData(company);
+      setError('');
+      // AI answers carry yearly history only.
+      setPeriod('annual');
+      setAiAsk(null);
+    } catch (reason) {
+      setAiAsk({ provider, loading: false, error: reason instanceof Error ? reason.message : '查詢失敗，請稍後再試。' });
+    }
+  };
+  const aiInfo = data?.ai ?? null;
   const selectMetric = useCallback((metric: HistoryMetricKey) => {
     setSelectedMetric(metric);
     setHoveredMetric(null);
@@ -288,7 +321,24 @@ export default function CompanyFundamentals({ symbol, valuationOpen, onOpenDcf, 
   return <section className={styles.section} aria-labelledby="company-fundamentals-title">
     <header className={styles.header}><div><p>Company fundamentals</p><h3 id="company-fundamentals-title">公司資訊與財務品質</h3><span>{data ? `${data.name} · ${data.exchange || data.currency}` : `載入 ${symbol} 的估值、現金流與資產負債資料`}</span></div><div className={styles.headerActions}><button type="button" className={valuationOpen ? styles.activeAction : ''} aria-pressed={valuationOpen} onClick={onOpenDcf}>{valuationOpen ? `關閉 ${symbol} DCF 估值` : `開啟 ${symbol} DCF 估值`}</button><button type="button" className={styles.returnButton} onClick={onReturn}>返回持倉總覽</button></div></header>
     {loading && <div className={styles.loading} role="status"><i />正在整理最新可用公司資料…</div>}
-    {!loading && error && <div className={styles.error}><span>{error}</span><button type="button" onClick={retryLoad}>重新載入</button></div>}
+    {aiAsk?.loading && <div className={styles.loading} role="status"><i />正在用 {companyAiProviderName(aiAsk.provider)} 上網查詢 {symbol} 的最新財報與股價…（約 20–60 秒）</div>}
+    {!loading && error && !aiAsk?.loading && <div className={styles.error}>
+      <span>{error}</span>
+      <div className={styles.errorActions}>
+        <button type="button" onClick={retryLoad}>重新載入</button>
+        {ai && <button type="button" className={styles.aiButton} onClick={() => void askAi('openai')}>✦ 用 ChatGPT 查詢</button>}
+        {ai && <button type="button" className={styles.aiAlt} onClick={() => void askAi('anthropic')}>改用 Claude</button>}
+      </div>
+      <small>{ai ? 'AI 會上網搜尋這家公司最新的財報與股價（約 20–60 秒），結果標示「AI 查詢・請核對」。' : '在「設定 → AI 設定」開啟 AI 後，可改用 ChatGPT 上網查詢。'}</small>
+      {aiAsk?.error && <small className={styles.aiError} role="alert">{aiAsk.error}</small>}
+    </div>}
+    {!loading && aiInfo && <div className={styles.aiBanner} role="note">
+      <b>AI 查詢・請核對</b>
+      <span>{companyAiProviderName(aiInfo.provider)} {aiInfo.model}{aiInfo.asOf ? ` · 財報截至 ${aiInfo.asOf}` : ''}{aiInfo.priceDate ? ` · 股價 ${aiInfo.priceDate}` : ''}</span>
+      {aiInfo.note && <span>{aiInfo.note}</span>}
+      {aiInfo.sources.length > 0 && <span className={styles.aiSources}>來源：{aiInfo.sources.map((source, index) => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">{source.title || `來源 ${index + 1}`}</a>)}</span>}
+      <button type="button" onClick={retryLoad}>重試一般資料來源</button>
+    </div>}
     {!loading && data && <>
       <div className={styles.grid}>
         <article><h4>Valuation <span>估值</span></h4><div className={styles.metrics}><MetricRow label="市值" value={amount(metrics.marketCap, currency)} /><MetricRow label="P/E（TTM）" value={multiple(metrics.trailingPe)} /><MetricRow label="P/E（Forward）" value={multiple(metrics.forwardPe)} /><MetricRow label="Price / Sales" value={multiple(metrics.priceToSales)} /><MetricRow label="EV / EBITDA" value={multiple(metrics.evToEbitda)} /><MetricRow label="Price / Book" value={multiple(metrics.priceToBook)} /></div></article>
@@ -311,6 +361,6 @@ export default function CompanyFundamentals({ symbol, valuationOpen, onOpenDcf, 
         </section>
       </div>
     </>}
-    <footer>財務資料來自交易所行情與公開財務時間序列；缺值以「—」顯示，不以 0 代替。更新時間 {data ? new Intl.DateTimeFormat('zh-TW', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.updatedAt)) : '—'}。</footer>
+    <footer>{aiInfo ? '這份資料由 AI 上網查詢整理，可能有誤或過時，請以公司財報為準；' : '財務資料來自交易所行情與公開財務時間序列；'}缺值以「—」顯示，不以 0 代替。更新時間 {data ? new Intl.DateTimeFormat('zh-TW', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.updatedAt)) : '—'}。</footer>
   </section>;
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { searchJpStocks } from '@/lib/jp-stocks';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,12 +56,17 @@ function normalizedQuery(query: string, market: MarketFilter) {
   return market === 'JP' && /^\d{4}$/.test(term) ? `${term}.T` : term;
 }
 
+const hasCjk = (value: string) => /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/.test(value);
+
 function localMatches(query: string, market: MarketFilter) {
   const term = normalizedQuery(query, market);
-  return fallbackCatalog
+  // Japanese stocks by Japanese, English or Chinese name (Yahoo's search does not read Japanese names).
+  const japanese = market === 'US' ? [] : searchJpStocks(query).map<SymbolResult>((item) => ({ symbol: item.symbol, name: item.name, exchange: 'Tokyo', type: 'Equity' }));
+  const known = new Set(japanese.map((item) => item.symbol));
+  return [...japanese, ...fallbackCatalog
     .filter((item) => matchesMarket(item.symbol, market) && (item.symbol.includes(term) || item.name.toUpperCase().includes(query.toUpperCase())))
-    .sort((a, b) => relevanceScore(a, term) - relevanceScore(b, term) || a.symbol.length - b.symbol.length)
-    .slice(0, 8);
+    .filter((item) => !known.has(item.symbol))
+    .sort((a, b) => relevanceScore(a, term) - relevanceScore(b, term) || a.symbol.length - b.symbol.length)].slice(0, 8);
 }
 
 function relevanceScore(item: SymbolResult, term: string) {
@@ -82,7 +88,9 @@ export async function GET(request: Request) {
   const fallback = localMatches(query, market);
   for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
     try {
-      const response = await fetch(`https://${host}/v1/finance/search?q=${encodeURIComponent(searchQuery)}&quotesCount=10&newsCount=0&listsCount=0&enableFuzzyQuery=true`, {
+      // Japanese searches ask Yahoo's Japan region, with more results so Tokyo listings are not crowded out by ADRs.
+      const japan = market === 'JP' || hasCjk(query);
+      const response = await fetch(`https://${host}/v1/finance/search?q=${encodeURIComponent(searchQuery)}&quotesCount=${japan ? 25 : 10}&newsCount=0&listsCount=0&enableFuzzyQuery=true${japan ? '&lang=ja-JP&region=JP' : ''}`, {
         headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OptionFlow/1.0' },
         cache: 'no-store',
       });
@@ -100,8 +108,11 @@ export async function GET(request: Request) {
         }];
       });
       const unique = new Map<string, SymbolResult>();
-      [...remote, ...fallback].forEach((item) => { if (!unique.has(item.symbol)) unique.set(item.symbol, item); });
-      const suggestions = [...unique.values()].sort((a, b) => relevanceScore(a, searchQuery) - relevanceScore(b, searchQuery) || a.symbol.length - b.symbol.length).slice(0, 8);
+      const named = market !== 'US' ? fallback.filter((item) => item.symbol.endsWith('.T')) : [];
+      [...named, ...remote, ...fallback].forEach((item) => { if (!unique.has(item.symbol)) unique.set(item.symbol, item); });
+      // Name-index hits keep their order; Yahoo's results follow by relevance.
+      const rest = [...unique.values()].slice(named.length).sort((a, b) => relevanceScore(a, searchQuery) - relevanceScore(b, searchQuery) || a.symbol.length - b.symbol.length);
+      const suggestions = [...named, ...rest].slice(0, 8);
       return NextResponse.json({ suggestions, source: 'Yahoo Finance search' }, { headers: { 'Cache-Control': 'public, max-age=600, stale-while-revalidate=3600' } });
     } catch {
       // Try Yahoo's second public chart/search host before using the local catalog.

@@ -58,6 +58,9 @@ import { VisualFieldPicker, defaultVisualFields, loadVisualFields, saveVisualFie
 import type { VisualFieldId } from '@/components/wafu/VisualFields';
 import SpreadCard from '@/components/wafu/SpreadCard';
 import PerfChart from '@/components/wafu/PerfChart';
+import ChartColorPicker from '@/components/wafu/ChartColorPicker';
+import type { ChartColors, ChartSeries } from '@/lib/wafu/chart-colors';
+import { loadChartColors, saveChartColors, wairoName } from '@/lib/wafu/chart-colors';
 import type { ManualQuoteRow } from '@/components/wafu/ManualQuotes';
 import { computeRiskMetrics, monthlyGrid } from '@/lib/wafu/metrics';
 import HankoTile from '@/components/wafu/HankoTile';
@@ -1554,6 +1557,18 @@ export default function Home() {
     try { window.localStorage.setItem('optionflow-text-scale', scale); } catch { /* storage unavailable */ }
   }, []);
   const updateTone = useCallback((setting: ToneSetting) => { setToneSetting(setting); saveToneSetting(setting); }, []);
+  // 圖表顏色: chosen line colours over the theme's (saved in this browser).
+  const [chartColors, setChartColors] = useState<ChartColors>(() => typeof window === 'undefined' ? {} : loadChartColors());
+  const updateChartColor = useCallback((key: ChartSeries, color: string | undefined) => {
+    setChartColors((current) => {
+      const next = { ...current };
+      if (color) next[key] = color; else delete next[key];
+      saveChartColors(next);
+      return next;
+    });
+  }, []);
+  const resetChartColors = useCallback(() => { setChartColors({}); saveChartColors({}); }, []);
+  const lineColors = useMemo(() => ({ ...perfColors, ...chartColors }), [chartColors]);
   // The summary cards jump to the part of the page they summarise.
   const scrollToId = (id: string) => window.requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   const showOpenPositions = () => {
@@ -3355,13 +3370,13 @@ export default function Home() {
               <div><dt>最大回撤</dt><dd className={riskMetrics && riskMetrics.mdd < 0 ? 'negative' : ''}>{riskMetrics ? signedPrecisePercent(riskMetrics.mdd) : '—'}{riskMetrics?.mddAt && <small>{riskMetrics.mddAt}</small>}</dd></div>
             </dl>
             {returnView !== 'heat' && <div className="wafu-perf-legend" role="group" aria-label="顯示的序列">
-              {(['mine', 'spy', 'boxx'] as const).filter((key) => returnView !== 'dd' || key !== 'boxx').map((key) => <button type="button" key={key} className={perfVisible[key] ? '' : 'is-off'} aria-pressed={perfVisible[key]} onClick={() => setPerfVisible((current) => ({ ...current, [key]: !current[key] }))}><i className={key === 'mine' ? 'portfolio-key' : key === 'spy' ? 'spy-key' : 'boxx-key'} />{perfNames[key]}</button>)}
+              {(['mine', 'spy', 'boxx'] as const).filter((key) => returnView !== 'dd' || key !== 'boxx').map((key) => <span key={key} className={`wafu-perf-legend-item ${perfVisible[key] ? '' : 'is-off'}`}><ChartColorPicker label={perfNames[key]} value={chartColors[key]} fallback={returnView === 'dd' && key === 'mine' ? 'var(--wa-down)' : perfColors[key]} onChange={(color) => updateChartColor(key, color)} /><button type="button" aria-pressed={perfVisible[key]} onClick={() => setPerfVisible((current) => ({ ...current, [key]: !current[key] }))}>{perfNames[key]}</button></span>)}
             </div>}
           </div>
           <div className="wafu-perf-body">
             <div className="wafu-perf-main">
               {returnView === 'heat' ? <MonthlyHeatmap grid={heatGrid} loading={priceHistoryPending} />
-                : <PerfChart mode={returnView} labels={perfLabels} series={perfSeries} visible={perfVisible} colors={perfColors} names={perfNames} />}
+                : <PerfChart mode={returnView} labels={perfLabels} series={perfSeries} visible={perfVisible} colors={lineColors} names={perfNames} ddColor={chartColors.mine ?? 'var(--wa-down)'} />}
               <p className="return-method-note">時間加權報酬：每日損益 ÷ 當日占用資本；股票用 Yahoo 含息調整收盤，選擇權以進出場價線性估算{returnEstimateNote}</p>
             </div>
             <aside className="wafu-perf-side" aria-label="績效與風險指標">
@@ -3561,6 +3576,14 @@ export default function Home() {
                 <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="tone-label">
                   {toneChoices.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={toneSetting === value} className={toneSetting === value ? 'active' : ''} onClick={() => updateTone(value)}>{label}</button>)}
                 </div>
+              </div>
+            </section>
+            <section className={`settings-feature-card ${Object.keys(chartColors).length ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">彩</span><div><p>Chart colours</p><h3>圖表顏色</h3></div><span className="settings-feature-status">{Object.keys(chartColors).length ? '自訂' : '跟隨主題'}</span></div>
+              <p>收益分析折線的顏色，從和色中選擇；也可以直接點圖表圖例旁的色點更改。單期長條仍以綠漲紅跌顯示。</p>
+              <div className="wafu-chart-color-rows">
+                {(['mine', 'spy', 'boxx'] as const).map((key) => <div key={key} className="wafu-chart-color-row"><ChartColorPicker label={perfNames[key]} value={chartColors[key]} fallback={perfColors[key]} onChange={(color) => updateChartColor(key, color)} align="start" /><span>{perfNames[key]}</span><small>{wairoName(chartColors[key]) ?? '跟隨主題'}</small></div>)}
+                <button type="button" className="wafu-chart-color-reset" disabled={!Object.keys(chartColors).length} onClick={resetChartColors}>全部改回主題色</button>
               </div>
             </section>
             <section className={`settings-feature-card home-bar-settings-card ${bottomNav !== 'off' ? 'is-enabled' : ''}`}>

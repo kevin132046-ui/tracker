@@ -40,6 +40,8 @@ import { tradesToCsv } from '@/lib/trade-csv';
 import AiSettingsCard from '@/components/AiSettingsCard';
 import type { AiStatus } from '@/components/AiSettingsCard';
 import type { AiEntryContext } from '@/components/AiTradeEntry';
+import type { ToneSetting } from '@/lib/wafu/tone';
+import { applyTone, loadToneSetting, resolveTone, saveToneSetting, toneChoices } from '@/lib/wafu/tone';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
 import FilingAnalysisDialog from '@/components/FilingAnalysisDialog';
 import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
@@ -1051,6 +1053,8 @@ export default function Home() {
   // The notice bar in the middle of the top bar (wide screens); can be turned off in the settings.
   const [notifyBar, setNotifyBar] = useState(true);
   const [gainsTab, setGainsTab] = useState(true);
+  // 色調: read at once (the boot script already painted it), so the first effect does not undo it.
+  const [toneSetting, setToneSetting] = useState<ToneSetting>(() => typeof window === 'undefined' ? 'off' : loadToneSetting());
   const [noticeNow, setNoticeNow] = useState<number | null>(null);
   // Phones: the main menu as a bar along the bottom instead of the top strip.
   // Bottom navigation: the guide bar (every screen, default), the phone menu bar, or nothing.
@@ -1516,6 +1520,15 @@ export default function Home() {
       return !current;
     });
   }, []);
+  // 暖色自動 follows the clock: 和紙 by day, 燈籠 at night, checked every few minutes.
+  useEffect(() => {
+    const apply = () => applyTone(resolveTone(toneSetting));
+    apply();
+    if (toneSetting !== 'auto') return;
+    const timer = window.setInterval(apply, 5 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [toneSetting]);
+  const updateTone = useCallback((setting: ToneSetting) => { setToneSetting(setting); saveToneSetting(setting); }, []);
   const toggleGainsTab = useCallback(() => {
     setGainsTab((current) => {
       try { window.localStorage.setItem(gainsTabKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
@@ -3482,6 +3495,16 @@ export default function Home() {
           <div className="settings-body" id="settings-tabpanel" role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} key={settingsTab}>
             {settingsTab === 'look' && <>
             <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
+            <section className={`settings-feature-card ${toneSetting !== 'off' ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">燈</span><div><p>Warm tone</p><h3>色調</h3></div><span className="settings-feature-status">{toneChoices.find(([value]) => value === toneSetting)?.[1] ?? '現行'}</span></div>
+              <p>在桔梗與時雨之上換成柔和暖色：燈籠是暖色夜晚，和紙是白天的紙本帳簿，昭和是復古印刷的試作風格。暖色自動會在 06:00–18:00 用和紙、其餘時間用燈籠。只換顏色與質感，版面與功能不變。</p>
+              <div className="wafu-intro-row">
+                <span id="tone-label">色調</span>
+                <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="tone-label">
+                  {toneChoices.map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={toneSetting === value} className={toneSetting === value ? 'active' : ''} onClick={() => updateTone(value)}>{label}</button>)}
+                </div>
+              </div>
+            </section>
             <section className={`settings-feature-card home-bar-settings-card ${bottomNav !== 'off' ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帖</span><div><p>Bottom navigation</p><h3>底部導覽</h3></div><span className="settings-feature-status">{bottomNav === 'guide' ? '引導條' : bottomNav === 'menu' ? '選單列' : '已關閉'}</span></div>
               <p>引導條：畫面下方一條細線，左右滑切換區塊、點一下回頂部、往上滑或長按開啟快捷面板（新增交易、匯入、AI、個股研究、通知、設定、音樂）；鍵盤可用 ← → 與 Enter。選單列：手機上把總覽、持倉、收益、AI、設定、更多放在底部，直接點選。</p>

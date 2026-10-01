@@ -1,3 +1,4 @@
+import { toneBootSnippet } from '@/lib/wafu/tone';
 import { defaultWafuIntro, wafuIntroKey, wafuIntroLiteKey, wafuIntroSeenKey } from '@/lib/wafu/intro';
 
 /**
@@ -56,4 +57,4 @@ export function applyWafu(theme: WafuTheme) {
  * (the server renders 桔梗). Kept in step with resolveWafu and applyWafu above. When the opening will play it also veils the
  * page (data-wafu-intro); the veil lifts by itself after 8 s in case the page never starts.
  */
-export const wafuBootScript = `(function(){try{var p=localStorage.getItem('${wafuPreferenceKey}');var t=p;if(p==='random'){t=sessionStorage.getItem('${sessionPickKey}');if(t!=='kikyo'&&t!=='shigure'){t=Math.random()<0.5?'kikyo':'shigure';sessionStorage.setItem('${sessionPickKey}',t);}}if(t!=='kikyo'&&t!=='shigure')t='${defaultWafuPreference}';var r=document.documentElement;r.dataset.wafu=t;var pm=localStorage.getItem('optionflow-perf-mode');if(pm==='on'||(pm!=='off'&&localStorage.getItem('${wafuIntroLiteKey}')==='1'))r.dataset.perf='lite';var i=localStorage.getItem('${wafuIntroKey}')||'${defaultWafuIntro}';if(i==='off'||(i==='session'&&sessionStorage.getItem('${wafuIntroSeenKey}')))return;r.dataset.wafuIntro='1';window.__wafuIntroT=setTimeout(function(){delete r.dataset.wafuIntro;},12000);}catch(e){}})();`;
+export const wafuBootScript = `(function(){try{var p=localStorage.getItem('${wafuPreferenceKey}');var t=p;if(p==='random'){t=sessionStorage.getItem('${sessionPickKey}');if(t!=='kikyo'&&t!=='shigure'){t=Math.random()<0.5?'kikyo':'shigure';sessionStorage.setItem('${sessionPickKey}',t);}}if(t!=='kikyo'&&t!=='shigure')t='${defaultWafuPreference}';var r=document.documentElement;r.dataset.wafu=t;${toneBootSnippet}var pm=localStorage.getItem('optionflow-perf-mode');if(pm==='on'||(pm!=='off'&&localStorage.getItem('${wafuIntroLiteKey}')==='1'))r.dataset.perf='lite';var i=localStorage.getItem('${wafuIntroKey}')||'${defaultWafuIntro}';if(i==='off'||(i==='session'&&sessionStorage.getItem('${wafuIntroSeenKey}')))return;r.dataset.wafuIntro='1';window.__wafuIntroT=setTimeout(function(){delete r.dataset.wafuIntro;},12000);}catch(e){}})();`;

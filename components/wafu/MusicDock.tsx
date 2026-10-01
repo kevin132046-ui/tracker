@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWafuAssets } from '@/lib/wafu/assets';
 import { getMediaPrefs, useMediaPrefs } from '@/lib/wafu/media';
-import { musicRates, next, play, previous, select, setRate, setTracks, setVolume, stop, toggle, useMusic } from '@/lib/wafu/music';
+import { musicRates, next, play, previous, select, setRate, setShuffle, setTracks, setVolume, stop, toggle, useMusic } from '@/lib/wafu/music';
 import { unlockAudio } from '@/lib/wafu/sfx';
 import type { WafuTheme } from '@/lib/wafu/theme';
 
+const shuffleIcon = <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5" /></svg>;
 const note = <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="17" cy="16" r="3" /></svg>;
 
 /**
@@ -64,6 +65,7 @@ export default function MusicDock({ theme }: { theme: WafuTheme }) {
         {music.tracks.length > 1 && <button type="button" className="wafu-music-next" aria-label="上一首" onClick={() => { unlockAudio(); previous(); }}>⏮</button>}
         <button type="button" className="wafu-music-play" disabled={!hasTracks} aria-label={music.playing ? '暫停' : '播放'} onClick={() => { unlockAudio(); toggle(); }}>{music.playing ? '❚❚' : '▶'}</button>
         {music.tracks.length > 1 && <button type="button" className="wafu-music-next" aria-label="下一首" onClick={() => { unlockAudio(); next(); }}>⏭</button>}
+        {music.tracks.length > 2 && <button type="button" className={`wafu-music-next wafu-music-shuffle${music.shuffle ? ' on' : ''}`} aria-pressed={music.shuffle} aria-label="隨機播放" title={music.shuffle ? '隨機播放：開' : '隨機播放：關'} onClick={() => setShuffle(!music.shuffle)}>{shuffleIcon}</button>}
       </div>
       {listOpen && music.tracks.length > 1 && <ol className="wafu-music-list" aria-label="歌曲清單">
         {music.tracks.map((track, i) => <li key={track.src}><button type="button" className={i === music.index ? 'on' : ''} aria-current={i === music.index ? 'true' : undefined} onClick={() => { unlockAudio(); select(i); }}><span>{i + 1}</span>{track.title}</button></li>)}

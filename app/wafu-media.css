@@ -180,3 +180,7 @@
 :root[data-perf='lite'][data-wafu] .topbar { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgb(var(--wa-bg-rgb) / .94); }
 :root[data-perf='lite'][data-home-bar] .wafu-homebar { backdrop-filter: none; -webkit-backdrop-filter: none; }
 :root[data-perf='lite'] .wafu-notify.has-unread .wafu-notify-icon { animation: none; }
+/* Shuffle: lit while on. */
+.wafu-music-shuffle { display: grid; place-items: center; }
+.wafu-music-shuffle.on { color: var(--wa-on-accent); background: var(--wa-accent); border-color: var(--wa-accent); }
+.wafu-music-rate button { min-width: 0; }

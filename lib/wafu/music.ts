@@ -17,9 +17,14 @@ let error: '' | 'blocked' | 'load' = '';
 let version = 0;
 // Playback speed, remembered across visits.
 const rateKey = 'optionflow-music-rate';
-export const musicRates = [0.75, 1, 1.25, 1.5] as const;
+export const musicRates = [0.75, 1, 1.25, 1.5, 2] as const;
 let rate = 1;
 try { const saved = Number(window.localStorage.getItem(rateKey)); if ((musicRates as readonly number[]).includes(saved)) rate = saved; } catch { /* server or storage unavailable */ }
+// Shuffle (remembered): the next song is a random other one; ⏮ walks back through what was played.
+const shuffleKey = 'optionflow-music-shuffle';
+let shuffle = false;
+try { shuffle = window.localStorage.getItem(shuffleKey) === '1'; } catch { /* server or storage unavailable */ }
+const history: number[] = [];
 const listeners = new Set<() => void>();
 const emit = () => { version++; listeners.forEach((listener) => listener()); };
 
@@ -61,6 +66,7 @@ export async function play(at = index) {
   const player = element();
   const nextIndex = (at + tracks.length) % tracks.length;
   if (nextIndex !== index || player.getAttribute('src') !== tracks[nextIndex].src) {
+    if (player.getAttribute('src')) { history.push(index); if (history.length > 50) history.shift(); }
     index = nextIndex;
     player.src = tracks[index].src;
   }
@@ -77,10 +83,24 @@ export async function play(at = index) {
 }
 export function pause() { audio?.pause(); setMediaPrefs({ bgm: false }); emit(); }
 export function toggle() { if (playing) pause(); else void play(); }
-export function next() { void play(index + 1); }
+export function next() {
+  if (shuffle && tracks.length > 2) {
+    let pick = index;
+    while (pick === index) pick = Math.floor(Math.random() * tracks.length);
+    void play(pick);
+    return;
+  }
+  void play(index + 1);
+}
+export function setShuffle(on: boolean) {
+  shuffle = on;
+  try { window.localStorage.setItem(shuffleKey, on ? '1' : '0'); } catch { /* storage unavailable */ }
+  emit();
+}
 export function previous() {
   // Past the first few seconds, ⏮ restarts the song; otherwise it goes to the one before.
   if (audio && audio.currentTime > 4) { audio.currentTime = 0; if (!playing) void play(); return; }
+  if (shuffle && history.length) { const back = history.pop()!; void play(back).then(() => { history.pop(); }); return; }
   void play(index - 1);
 }
 /** Plays the chosen song from the list. */
@@ -96,6 +116,6 @@ export function setVolume(volume: number) { setMediaPrefs({ volume }); if (audio
 /** Stops without forgetting that music was on (the dock was switched off or the theme left). */
 export function stop() { audio?.pause(); }
 
-export const musicState = () => ({ tracks, index, current: tracks[index] ?? null, playing, error, rate });
+export const musicState = () => ({ tracks, index, current: tracks[index] ?? null, playing, error, rate, shuffle });
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 export const useMusic = () => { useSyncExternalStore(subscribe, () => version, () => 0); return musicState(); };

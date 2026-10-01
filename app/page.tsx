@@ -1034,8 +1034,6 @@ export default function Home() {
   const [positionView, setPositionView] = useState<PositionViewMode>('visual');
   const [query, setQuery] = useState('');
   const [activeSection, setActiveSection] = useState<'overview' | 'positions' | 'returns' | 'valuation'>('overview');
-  const [valuationOpen, setValuationOpen] = useState(false);
-  const [valuationTicker, setValuationTicker] = useState('MSFT');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [holidayNoticeEnabled, setHolidayNoticeEnabled] = useState(true);
   // The notification center gathers the header notice line and more; off → the line as before.
@@ -2137,7 +2135,7 @@ export default function Home() {
       if (section) observer.observe(section);
     });
     return () => observer.disconnect();
-  }, [valuationOpen]);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -3019,18 +3017,14 @@ export default function Home() {
     window.requestAnimationFrame(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
   }
 
+  // 估值 opens the DCF tab of a stock's research drawer (the open one, else the first holding).
   function openValuation(ticker?: string) {
-    if (ticker) setValuationTicker(ticker);
-    setValuationOpen(true);
-    setActiveSection('valuation');
-    window.setTimeout(() => document.getElementById('valuation')?.scrollIntoView({ behavior: 'auto', block: 'start' }), 0);
+    const symbol = ticker ?? researchSymbols[0];
+    if (!symbol) return;
+    openTickerDetails(symbol);
+    setResearchTab('dcf');
   }
 
-  function closeValuation() {
-    setValuationOpen(false);
-    setActiveSection(drilledTicker ? 'positions' : 'overview');
-    window.requestAnimationFrame(() => document.getElementById(drilledTicker ? 'stock-analysis' : 'overview')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
-  }
 
   function selectAllocationItem(item: { label: string; members: string[] }) {
     setAllocationPinnedLabel(item.label);
@@ -3188,7 +3182,7 @@ export default function Home() {
         <nav className="side-nav" aria-label="頁面切換">
           <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}>{navGlyph('settings', settingsOpen)}<span>設定</span></button>
           {([['overview', '總覽'], ['positions', '持倉'], ['returns', '收益']] as const).map(([section, label]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}>{navGlyph(section, activeSection === section)}<span>{label}</span></a>)}
-          <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}>{navGlyph('valuation', activeSection === 'valuation')}<span>估值</span></button>
+          <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? undefined)}>{navGlyph('valuation', activeSection === 'valuation')}<span>估值</span></button>
           {assistantOn && <button type="button" className={`settings-nav-button wafu-nav-ai ${assistantOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}><i className="wafu-nav-glyph"><HaloIcon theme={wafuTheme} size={24} spin={assistantOpen} minStrokePx={1} /></i><span>AI</span></button>}
           <div className="background-control">
             <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}>{navGlyph(backgroundSaving ? 'saving' : 'background', false)}<span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
@@ -3341,7 +3335,6 @@ export default function Home() {
         />}
         </ResearchDrawer>}
 
-        {valuationOpen && <Suspense fallback={<section className="broker-hub-loader" id="valuation" aria-busy="true"><span /><strong>正在開啟 DCF 估值工作區…</strong></section>}><DcfCalculator key={valuationTicker} initialTicker={valuationTicker} onClose={closeValuation} /></Suspense>}
 
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
@@ -3771,7 +3764,7 @@ export default function Home() {
         theme={wafuTheme}
         sections={guideSections}
         current={activeSection}
-        onGo={(id) => { if (id === 'valuation') openValuation(drilledTicker ?? valuationTicker); else if (id === 'overview' || id === 'positions' || id === 'returns') goToSection(id); }}
+        onGo={(id) => { if (id === 'valuation') openValuation(drilledTicker ?? undefined); else if (id === 'overview' || id === 'positions' || id === 'returns') goToSection(id); }}
         actions={[
           { id: 'add', label: '新增交易', icon: '＋', run: () => setEditor(blankTrade()) },
           { id: 'import', label: '匯入 CSV／截圖', icon: '⇪', run: () => { void loadTradeImportDialog(); setImportOpen(true); } },
@@ -3788,7 +3781,7 @@ export default function Home() {
         assistant={assistantOn ? { open: assistantOpen, toggle: () => setAssistantOpen((open) => !open) } : null}
         onSection={goToSection}
         onSettings={() => setSettingsOpen(true)}
-        onValuation={() => openValuation(drilledTicker ?? valuationTicker)}
+        onValuation={() => openValuation(drilledTicker ?? undefined)}
         background={{ label: backgroundSaving ? '保存中' : backgroundImage ? '換背景圖片' : '背景圖片', busy: backgroundSaving, pick: () => backgroundInputRef.current?.click() }}
       />}
       {assistantOpen && assistantOn && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={importAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}

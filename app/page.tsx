@@ -40,7 +40,7 @@ import { tradesToCsv } from '@/lib/trade-csv';
 import AiSettingsCard from '@/components/AiSettingsCard';
 import type { AiStatus } from '@/components/AiSettingsCard';
 import type { AiEntryContext } from '@/components/AiTradeEntry';
-import type { ToneSetting } from '@/lib/wafu/tone';
+import type { Tone, ToneSetting } from '@/lib/wafu/tone';
 import { applyTone, loadToneSetting, resolveTone, saveToneSetting, toneChoices } from '@/lib/wafu/tone';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
 import FilingAnalysisDialog from '@/components/FilingAnalysisDialog';
@@ -225,6 +225,18 @@ const AssistantPanel = lazy(loadAssistantPanel);
 const palettes: Record<WafuTheme, string[]> = {
   kikyo: ['#9dbcf0', '#b3a5f0', '#7d93d6', '#8f7fd0', '#c9a45c', '#6479b4', '#a9b6dc', '#5c5a9e'],
   shigure: ['#62d4d2', '#3fa7ae', '#9fd8e6', '#b69ae8', '#f0c24b', '#2f8590', '#c7e6ea', '#7c8fd6'],
+};
+// 色調 palettes: 燈籠 warm lantern steps with the theme's own accent as the second colour; 和紙 deeper
+// ink tones that hold up on paper.
+const tonePalettes: Record<Tone, Record<WafuTheme, string[]>> = {
+  lantern: {
+    kikyo: ['#e6b778', '#c9a8e6', '#d98f6a', '#a98fd0', '#f0d29a', '#b8735a', '#e2c7b0', '#8c7bb8'],
+    shigure: ['#e8b878', '#8fd0c4', '#d98f6a', '#5fb3ab', '#f0d29a', '#b8735a', '#c4e2da', '#7c9fd0'],
+  },
+  washi: {
+    kikyo: ['#4f55a3', '#8a5aa8', '#b5533c', '#7d86c9', '#9a7128', '#3d4390', '#b9a0cf', '#6b5b4a'],
+    shigure: ['#2a7a7b', '#7a5aa8', '#b5533c', '#5fa7a3', '#9a7128', '#1f5f63', '#a6c9c4', '#6b5b4a'],
+  },
 };
 const companyNames: Record<string, string> = {
   AAPL: 'Apple', AMZN: 'Amazon', AXP: 'American Express', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
@@ -1521,8 +1533,9 @@ export default function Home() {
     });
   }, []);
   // 暖色自動 follows the clock: 和紙 by day, 燈籠 at night, checked every few minutes.
+  const [activeTone, setActiveTone] = useState<Tone | null>(() => resolveTone(toneSetting));
   useEffect(() => {
-    const apply = () => applyTone(resolveTone(toneSetting));
+    const apply = () => { const tone = resolveTone(toneSetting); applyTone(tone); setActiveTone(tone); };
     apply();
     if (toneSetting !== 'auto') return;
     const timer = window.setInterval(apply, 5 * 60_000);
@@ -2691,6 +2704,8 @@ export default function Home() {
     { label: '1 年', date: monthsBefore(currentAllocationDate, 12) },
   ];
   const earliestAllocationDate = trades.reduce((earliest, trade) => !earliest || trade.openDate < earliest ? trade.openDate : earliest, '') || currentAllocationDate;
+  // The donut follows the 色調 when one is on.
+  const allocationColors = activeTone ? tonePalettes[activeTone][wafuTheme] : palettes[wafuTheme];
   const allocationSnapshot = useMemo(() => {
     const current = allocationDate === currentAllocationDate;
     const groups = new Map<string, { label: string; value: number; tradeCount: number; estimated: boolean }>();
@@ -2719,12 +2734,12 @@ export default function Home() {
       }), { label: '其他', value: 0, tradeCount: 0, estimated: false, members: [] as string[] }));
     }
     return {
-      items: top.map((item, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: palettes[wafuTheme][index % palettes[wafuTheme].length] })),
+      items: top.map((item, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: allocationColors[index % allocationColors.length] })),
       total,
       tradeCount: current ? openTrades.length : allocationHistory?.date === allocationDate ? allocationHistory.tradeCount : 0,
       estimatedTickers: current ? [] : allocationHistory?.date === allocationDate ? allocationHistory.estimatedTickers : [],
     };
-  }, [allocationDate, allocationHistory, currentAllocationDate, openTrades, wafuTheme]);
+  }, [allocationColors, allocationDate, allocationHistory, currentAllocationDate, openTrades]);
   const allocation = allocationSnapshot.items as AllocationItem[];
   // 集中度提醒 (from the prototype): how much of the book sits in the three largest holdings.
   const concentration = useMemo(() => {
@@ -3497,7 +3512,7 @@ export default function Home() {
             <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
             <section className={`settings-feature-card ${toneSetting !== 'off' ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">燈</span><div><p>Warm tone</p><h3>色調</h3></div><span className="settings-feature-status">{toneChoices.find(([value]) => value === toneSetting)?.[1] ?? '現行'}</span></div>
-              <p>在桔梗與時雨之上換成柔和暖色：燈籠是暖色夜晚，和紙是白天的紙本帳簿，昭和是復古印刷的試作風格。暖色自動會在 06:00–18:00 用和紙、其餘時間用燈籠。只換顏色與質感，版面與功能不變。</p>
+              <p>在桔梗與時雨之上換成柔和暖色：燈籠是暖色夜晚，和紙是白天的紙本帳簿。暖色自動會在 06:00–18:00 用和紙、其餘時間用燈籠。只換顏色與質感，版面與功能不變。</p>
               <div className="wafu-intro-row">
                 <span id="tone-label">色調</span>
                 <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="tone-label">

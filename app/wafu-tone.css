@@ -1,5 +1,5 @@
 /*
- * 色調 (lib/wafu/tone.ts): optional warm palettes over the 和風 themes, chosen in 設定 → 外觀.
+ * 色調 (lib/wafu/tone.ts): optional warm palettes (燈籠 / 和紙) over the 和風 themes, chosen in 設定 → 外觀.
  * Only the theme tokens and a few surface details change; layout and behaviour stay as they are.
  * Each tone keeps the theme's own accent family: 桔梗 bellflower violet-blue, 時雨 teal.
  */
@@ -67,37 +67,12 @@
 :root[data-tone='washi'] .wafu-perf-tip { background: var(--wa-panel-solid); box-shadow: 0 10px 24px -14px rgb(70 50 20 / .45); }
 :root[data-tone='washi'] img.hanko, :root[data-tone='washi'] .visual-asset img { filter: none; }
 
-/* ---------- 昭和モダン (sample): plum dusk, pastel print, pill controls ---------- */
-:root[data-wafu][data-tone='showa'] {
-  --wa-bg: #1f1a24; --wa-bg-rgb: 31 26 36;
-  --wa-panel: rgb(45 37 50 / .9); --wa-panel-solid: #2d2532; --wa-panel-hi: rgb(58 48 64 / .96);
-  --wa-raise: rgb(255 230 220 / .04); --wa-raise-rgb: 255 230 220;
-  --wa-line: rgb(240 210 200 / .14); --wa-line-2: rgb(240 210 200 / .26); --wa-line-2-rgb: 240 210 200;
-  --wa-ink: #f2e7d7; --wa-ink-rgb: 242 231 215; --wa-ink-2: #dacab5; --wa-ink-2-rgb: 218 202 181;
-  --wa-muted: #a8977f; --wa-muted-rgb: 168 151 127;
-  --wa-gold: #e9c46a; --wa-gold-rgb: 233 196 106; --wa-gold-soft: rgb(233 196 106 / .14);
-  --wa-up: #a9d39b; --wa-up-rgb: 169 211 155; --wa-up-soft: rgb(169 211 155 / .13);
-  --wa-down: #f0a07a; --wa-down-rgb: 240 160 122; --wa-down-soft: rgb(240 160 122 / .13);
-  --wa-seal: #e8a0a4;
-  --wa-r: 12px; --wa-r-lg: 18px;
-  --wa-f-body: 'Zen Maru Gothic', 'Noto Sans TC', 'Hiragino Sans', system-ui, sans-serif;
-  --wa-shell-bg:
-    radial-gradient(rgb(255 220 200 / .045) 1px, transparent 1.4px) 0 0 / 6px 6px,
-    radial-gradient(80% 55% at 78% -10%, rgb(232 160 164 / .16), transparent 62%),
-    radial-gradient(60% 45% at 5% 105%, rgb(159 199 192 / .12), transparent 70%),
-    linear-gradient(180deg, #231d28 0%, #1e1922 100%);
-}
-:root[data-wafu='kikyo'][data-tone='showa'] {
-  --wa-accent: #e8a0a4; --wa-accent-rgb: 232 160 164; --wa-accent-strong: #dc878c; --wa-accent-soft: rgb(232 160 164 / .15); --wa-on-accent: #2a1518;
-  --wa-accent-2: #b9a6e6; --wa-accent-2-rgb: 185 166 230; --wa-accent-2-soft: rgb(185 166 230 / .15);
-}
-:root[data-wafu='shigure'][data-tone='showa'] {
-  --wa-accent: #9fc7c0; --wa-accent-rgb: 159 199 192; --wa-accent-strong: #84b5ad; --wa-accent-soft: rgb(159 199 192 / .15); --wa-on-accent: #13221f;
-  --wa-accent-2: #e8a0a4; --wa-accent-2-rgb: 232 160 164; --wa-accent-2-soft: rgb(232 160 164 / .15);
-}
-:root[data-tone='showa'] .segmented, :root[data-tone='showa'] .segmented button, :root[data-tone='showa'] .view-switch button,
-:root[data-tone='showa'] .primary-button, :root[data-tone='showa'] .secondary-button, :root[data-tone='showa'] .toolbar-io-button,
-:root[data-tone='showa'] .filter-row button { border-radius: 999px; }
-:root[data-tone='showa'] .panel, :root[data-tone='showa'] .metric-card { border-style: dashed; box-shadow: 0 0 0 1px var(--wa-line); }
 /* The notice pill's dark well becomes a paper well in 和紙. */
 :root[data-tone='washi'] .topbar-notice .wafu-notify-toggle:has(.wafu-notify-roll) { background: rgb(255 252 246 / .75); }
+/* The opening is drawn for a dark ground: in 和紙 it keeps the theme's own night colour. */
+:root[data-wafu='kikyo'][data-tone='washi'] #wafu-opening { --wa-bg: #0c0d11; }
+:root[data-wafu='shigure'][data-tone='washi'] #wafu-opening { --wa-bg: #07141a; }
+:root[data-wafu='kikyo'][data-tone='washi'][data-wafu-intro] body::after { background: #0c0d11; }
+:root[data-wafu='shigure'][data-tone='washi'][data-wafu-intro] body::after { background: #07141a; }
+/* 和紙's deep ink slices need light figures on the donut. */
+:root[data-tone='washi'] .donut-segment-label { color: #fbf6ec; fill: #fbf6ec; text-shadow: 0 1px 2px rgb(40 30 20 / .45); }

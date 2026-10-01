@@ -76,3 +76,34 @@
 :root[data-wafu='shigure'][data-tone='washi'][data-wafu-intro] body::after { background: #07141a; }
 /* 和紙's deep ink slices need light figures on the donut. */
 :root[data-tone='washi'] .donut-segment-label { color: #fbf6ec; fill: #fbf6ec; text-shadow: 0 1px 2px rgb(40 30 20 / .45); }
+
+/* 文字大小 (設定 → 外觀): the page content scales evenly, layout included, so proportions hold.
+   大 is the default; 標準 is the original size. */
+:root[data-text-scale='large'] .dashboard { zoom: 1.12; }
+:root[data-text-scale='xlarge'] .dashboard { zoom: 1.2; }
+
+/* ---- Summary cards: each a light tint of its own, a press effect, and a jump to its section ---- */
+:root[data-wafu] .metric-card-link { --card-tint: var(--wa-accent); cursor: pointer; transition: transform .12s ease, border-color .2s ease, box-shadow .2s ease; }
+:root[data-wafu] .metric-grid > .metric-card-link:nth-child(1) { --card-tint: var(--wa-accent); }
+:root[data-wafu] .metric-grid > .metric-card-link:nth-child(2) { --card-tint: var(--wa-up); }
+:root[data-wafu] .metric-grid > .metric-card-link:nth-child(3) { --card-tint: var(--wa-gold); }
+:root[data-wafu] .metric-grid > .metric-card-link:nth-child(4) { --card-tint: var(--wa-accent-2); }
+:root[data-wafu] .metric-card-link { background-color: color-mix(in srgb, var(--card-tint) 6%, transparent); }
+:root[data-wafu] .metric-card-link::before { background: color-mix(in srgb, var(--card-tint) 55%, transparent) !important; }
+:root[data-wafu] .metric-card-link:hover { border-color: color-mix(in srgb, var(--card-tint) 45%, var(--wa-line)); }
+:root[data-wafu] .metric-card-link:active { transform: translateY(1px) scale(.992); border-color: var(--card-tint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--card-tint) 22%, transparent), 0 8px 18px -12px rgb(0 0 0 / .5); }
+.metric-card-hit { position: absolute; inset: 0; z-index: 1; padding: 0; background: none; border: 0; border-radius: inherit; cursor: pointer; }
+.metric-card-hit:focus-visible { outline: 2px solid var(--card-tint, var(--wa-accent)); outline-offset: -3px; }
+/* The ROC card's own 查看明細 button stays above the card-wide hit area. */
+.metric-card-link .metric-card-action { position: relative; z-index: 2; }
+
+/* 組合占比 bars: thicker, in each holding's donut colour (set inline). */
+:root[data-wafu] .visual-weight b { height: 6px; border-radius: 99px; }
+:root[data-wafu] .visual-weight b i { height: 100%; border-radius: 99px; }
+
+/* 和紙: the market clock and its notes sit on a paper backing over the artwork. */
+:root[data-tone='washi'] .hero .as-of { padding: 10px 14px; background: rgb(251 246 236 / .82); border-radius: 12px; box-shadow: 0 8px 22px -16px rgb(70 50 20 / .5); backdrop-filter: blur(6px); }
+:root[data-tone='washi'] .hero .as-of, :root[data-tone='washi'] .hero .as-of p, :root[data-tone='washi'] .clock-stack-heading > span { color: var(--wa-ink-2); }
+:root[data-tone='washi'] .hero-sub, :root[data-tone='washi'] .wafu-hero-sub { color: var(--wa-ink-2); text-shadow: 0 1px 0 rgb(255 255 255 / .6); }
+/* Jumps (cards, rail) land below the sticky top bar. */
+:root[data-wafu] #positions, :root[data-wafu] #allocation, :root[data-wafu] #returns, :root[data-wafu] #overview { scroll-margin-top: 96px; }

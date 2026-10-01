@@ -61,6 +61,19 @@
 .wafu-music-play { color: var(--wa-on-accent); background: var(--wa-accent); border: 1px solid var(--wa-accent); }
 .wafu-music-play:disabled { opacity: .45; cursor: default; }
 .wafu-music-next { color: var(--wa-ink-2); background: transparent; border: 1px solid var(--wa-line-2); }
+.wafu-music-title { flex: 1; min-width: 0; display: grid; gap: 2px; padding: 0; color: inherit; background: none; border: 0; text-align: left; cursor: pointer; }
+.wafu-music-title b { font-family: var(--wa-f-display); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wafu-music-title small { color: var(--wa-muted); font-size: 11.5px; }
+.wafu-music-title:hover b { color: var(--wa-accent); }
+.wafu-music-list { display: grid; gap: 2px; max-height: 200px; margin: 0; padding: 4px; overflow-y: auto; list-style: none; border: 1px solid var(--wa-line); border-radius: var(--wa-r); overscroll-behavior: contain; }
+.wafu-music-list button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; color: var(--wa-ink-2); background: none; border: 0; border-radius: var(--wa-r); font-size: 12.5px; text-align: left; cursor: pointer; }
+.wafu-music-list button span { width: 18px; color: var(--wa-muted); font-family: var(--wa-f-mono); font-size: 11px; }
+.wafu-music-list button:hover { background: rgb(var(--wa-raise-rgb) / .06); }
+.wafu-music-list button.on { color: var(--wa-accent); background: var(--wa-accent-soft); }
+.wafu-music-rate { display: flex; align-items: center; gap: 4px; color: var(--wa-muted); font-size: 12.5px; }
+.wafu-music-rate span { margin-right: 6px; }
+.wafu-music-rate button { flex: 1; min-height: 30px; padding: 0; color: var(--wa-ink-2); background: none; border: 1px solid var(--wa-line); border-radius: 999px; font-family: var(--wa-f-mono); font-size: 12px; cursor: pointer; }
+.wafu-music-rate button.on { color: var(--wa-on-accent); background: var(--wa-accent); border-color: var(--wa-accent); }
 .wafu-music-volume { display: flex; align-items: center; gap: 10px; color: var(--wa-muted); font-size: 12.5px; }
 .wafu-music-volume input { flex: 1; accent-color: var(--wa-accent); }
 .wafu-eq { display: flex; align-items: flex-end; gap: 2px; width: 16px; height: 16px; flex: none; }

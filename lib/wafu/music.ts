@@ -15,6 +15,11 @@ let index = 0;
 let playing = false;
 let error: '' | 'blocked' | 'load' = '';
 let version = 0;
+// Playback speed, remembered across visits.
+const rateKey = 'optionflow-music-rate';
+export const musicRates = [0.75, 1, 1.25, 1.5] as const;
+let rate = 1;
+try { const saved = Number(window.localStorage.getItem(rateKey)); if ((musicRates as readonly number[]).includes(saved)) rate = saved; } catch { /* server or storage unavailable */ }
 const listeners = new Set<() => void>();
 const emit = () => { version++; listeners.forEach((listener) => listener()); };
 
@@ -23,6 +28,8 @@ function element() {
   audio = new Audio();
   audio.preload = 'none';
   audio.volume = getMediaPrefs().volume;
+  audio.defaultPlaybackRate = rate;
+  audio.playbackRate = rate;
   audio.addEventListener('ended', () => { if (tracks.length > 1) next(); else void play(); });
   audio.addEventListener('play', () => { playing = true; error = ''; emit(); });
   audio.addEventListener('pause', () => { playing = false; emit(); });
@@ -57,6 +64,9 @@ export async function play(at = index) {
     index = nextIndex;
     player.src = tracks[index].src;
   }
+  // A new source resets the speed to the default one; keep the chosen speed.
+  player.defaultPlaybackRate = rate;
+  player.playbackRate = rate;
   try {
     await player.play();
     setMediaPrefs({ bgm: true });
@@ -68,10 +78,24 @@ export async function play(at = index) {
 export function pause() { audio?.pause(); setMediaPrefs({ bgm: false }); emit(); }
 export function toggle() { if (playing) pause(); else void play(); }
 export function next() { void play(index + 1); }
+export function previous() {
+  // Past the first few seconds, ⏮ restarts the song; otherwise it goes to the one before.
+  if (audio && audio.currentTime > 4) { audio.currentTime = 0; if (!playing) void play(); return; }
+  void play(index - 1);
+}
+/** Plays the chosen song from the list. */
+export function select(at: number) { void play(at); }
+export function setRate(next: number) {
+  if (!(musicRates as readonly number[]).includes(next)) return;
+  rate = next;
+  try { window.localStorage.setItem(rateKey, String(next)); } catch { /* storage unavailable */ }
+  if (audio) { audio.defaultPlaybackRate = next; audio.playbackRate = next; }
+  emit();
+}
 export function setVolume(volume: number) { setMediaPrefs({ volume }); if (audio) audio.volume = volume; emit(); }
 /** Stops without forgetting that music was on (the dock was switched off or the theme left). */
 export function stop() { audio?.pause(); }
 
-export const musicState = () => ({ tracks, index, current: tracks[index] ?? null, playing, error });
+export const musicState = () => ({ tracks, index, current: tracks[index] ?? null, playing, error, rate });
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 export const useMusic = () => { useSyncExternalStore(subscribe, () => version, () => 0); return musicState(); };

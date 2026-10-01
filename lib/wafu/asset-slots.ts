@@ -4,22 +4,23 @@
  * /api/wafu-assets and the settings card. The first slot of each kind keeps its original name
  * (bg-kikyo …), so files uploaded before stay where they were; more slots are -2, -3, ….
  */
-export type WafuAssetKind = 'bg' | 'sil' | 'bgm';
+/** bg backdrop · sil opening silhouette · bgm music · icon the opening's central emblem (in colour). */
+export type WafuAssetKind = 'bg' | 'sil' | 'bgm' | 'icon';
 type WafuAssetTheme = 'kikyo' | 'shigure';
 /** How many files of each kind a theme can hold. */
-export const assetSlotCount: Record<WafuAssetKind, number> = { bg: 5, sil: 3, bgm: 8 };
+export const assetSlotCount: Record<WafuAssetKind, number> = { bg: 5, sil: 3, bgm: 8, icon: 1 };
 export type WafuAssetSlot = `${WafuAssetKind}-${WafuAssetTheme}` | `${WafuAssetKind}-${WafuAssetTheme}-${number}`;
 /** The slots of one kind and theme, in order. */
 export const themeSlots = (kind: WafuAssetKind, theme: WafuAssetTheme): WafuAssetSlot[] =>
   Array.from({ length: assetSlotCount[kind] }, (_, i) => (i === 0 ? `${kind}-${theme}` : `${kind}-${theme}-${i + 1}`) as WafuAssetSlot);
-export const wafuAssetSlots: readonly WafuAssetSlot[] = (['bg', 'sil', 'bgm'] as const).flatMap((kind) => (['kikyo', 'shigure'] as const).flatMap((theme) => themeSlots(kind, theme)));
+export const wafuAssetSlots: readonly WafuAssetSlot[] = (['bg', 'sil', 'bgm', 'icon'] as const).flatMap((kind) => (['kikyo', 'shigure'] as const).flatMap((theme) => themeSlots(kind, theme)));
 
 export const isWafuAssetSlot = (value: unknown): value is WafuAssetSlot => (wafuAssetSlots as readonly unknown[]).includes(value);
 export const assetKind = (slot: WafuAssetSlot) => slot.slice(0, slot.indexOf('-')) as WafuAssetKind;
 export const assetSlot = (kind: WafuAssetKind, theme: 'kikyo' | 'shigure') => `${kind}-${theme}` as WafuAssetSlot;
 
 /** Largest upload per kind. Backdrops are re-encoded as JPEG and silhouettes as PNG masks in the browser first. */
-export const maxAssetBytes: Record<WafuAssetKind, number> = { bg: 6 * 1024 * 1024, sil: 3 * 1024 * 1024, bgm: 25 * 1024 * 1024 };
+export const maxAssetBytes: Record<WafuAssetKind, number> = { bg: 6 * 1024 * 1024, sil: 3 * 1024 * 1024, bgm: 25 * 1024 * 1024, icon: 3 * 1024 * 1024 };
 
 export type WafuAsset = { slot: WafuAssetSlot; version: string; type: string; size: number; name: string; updatedAt: string; url: string };
 export type WafuAssets = Partial<Record<WafuAssetSlot, WafuAsset>>;
@@ -31,7 +32,7 @@ export const assetUrl = (slot: WafuAssetSlot, version: string) => `/api/wafu-ass
 export function sniffAsset(kind: WafuAssetKind, bytes: Uint8Array): string | null {
   const at = (offset: number, text: string) => [...text].every((char, i) => bytes[offset + i] === char.charCodeAt(0));
   if (kind === 'bg') return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? 'image/jpeg' : null;
-  if (kind === 'sil') return bytes[0] === 0x89 && at(1, 'PNG') ? 'image/png' : null;
+  if (kind === 'sil' || kind === 'icon') return bytes[0] === 0x89 && at(1, 'PNG') ? 'image/png' : null;
   if (at(0, 'ID3') || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0)) return 'audio/mpeg';
   if (at(4, 'ftyp')) return 'audio/mp4';
   if (at(0, 'OggS')) return 'audio/ogg';
@@ -48,7 +49,7 @@ export const themeAssets = (assets: WafuAssets, kind: WafuAssetKind, theme: Wafu
 // One pick per kind and theme for the whole visit, so the backdrop does not change while browsing.
 const picks = new Map<string, number>();
 /** A backdrop or silhouette for this visit: one of the uploaded ones, chosen at random once. */
-export function visitPick(assets: WafuAssets, kind: 'bg' | 'sil', theme: WafuAssetTheme): WafuAsset | null {
+export function visitPick(assets: WafuAssets, kind: 'bg' | 'sil' | 'icon', theme: WafuAssetTheme): WafuAsset | null {
   const list = themeAssets(assets, kind, theme);
   if (!list.length) return null;
   const key = `${kind}-${theme}`;

@@ -11,6 +11,8 @@ type YahooChart = {
       chartPreviousClose?: number;
       previousClose?: number;
       currency?: string;
+      fiftyTwoWeekHigh?: number;
+      fiftyTwoWeekLow?: number;
       currentTradingPeriod?: {
         pre?: { start?: number; end?: number };
         regular?: { start?: number; end?: number };
@@ -103,6 +105,9 @@ async function fetchLatestPrice(ticker: string) {
     change,
     changePercent,
     sparkline,
+    // 52-week range for the visual list's 欄位 (Yahoo includes it in the chart meta).
+    yearHigh: Number(result?.meta?.fiftyTwoWeekHigh) > 0 ? Number(result?.meta?.fiftyTwoWeekHigh) : null,
+    yearLow: Number(result?.meta?.fiftyTwoWeekLow) > 0 ? Number(result?.meta?.fiftyTwoWeekLow) : null,
   };
 }
 

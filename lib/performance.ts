@@ -180,26 +180,29 @@ export function rangeBuckets(mode: RangeMode, todayKey: string): RangeBucket[] {
   const today = toDayNumber(todayKey);
   const buckets: RangeBucket[] = [];
   if (mode === 'day') {
-    for (let offset = 29; offset >= 0; offset -= 1) {
-      const key = fromDayNumber(today - offset);
-      buckets.push({ key, label: shortDateLabel(today - offset), start: key });
+    // The last 60 weekdays (weekends carry no prices).
+    for (let day = today; buckets.length < 60; day -= 1) {
+      const weekdayOf = new Date(day * dayMs).getUTCDay();
+      if (weekdayOf === 0 || weekdayOf === 6) continue;
+      const key = fromDayNumber(day);
+      buckets.unshift({ key, label: shortDateLabel(day), start: key });
     }
   } else if (mode === 'week') {
     const monday = toDayNumber(mondayOf(todayKey));
-    for (let offset = 11; offset >= 0; offset -= 1) {
+    for (let offset = 51; offset >= 0; offset -= 1) {
       const key = fromDayNumber(monday - offset * 7);
       buckets.push({ key, label: shortDateLabel(monday - offset * 7), start: key });
     }
   } else if (mode === 'month') {
     const now = new Date(today * dayMs);
-    for (let offset = 11; offset >= 0; offset -= 1) {
+    for (let offset = 35; offset >= 0; offset -= 1) {
       const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
       const key = date.toISOString().slice(0, 7);
       buckets.push({ key, label: monthLabelFormatter.format(date), start: `${key}-01` });
     }
   } else {
     const year = new Date(today * dayMs).getUTCFullYear();
-    for (let offset = 4; offset >= 0; offset -= 1) {
+    for (let offset = 5; offset >= 0; offset -= 1) {
       const key = String(year - offset);
       buckets.push({ key, label: key, start: `${key}-01-01` });
     }

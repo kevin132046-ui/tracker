@@ -4,7 +4,7 @@
  */
 :root[data-wafu='kikyo'] {
   --wa-bg: #0c0d11; --wa-bg-rgb: 12 13 17;
-  --wa-panel: rgb(17 19 26 / .84); --wa-panel-solid: #14161d; --wa-panel-hi: rgb(30 33 43 / .96);
+  --wa-panel: rgb(17 19 26 / .88); --wa-panel-solid: #14161d; --wa-panel-hi: rgb(30 33 43 / .96);
   --wa-raise: rgb(255 255 255 / .035); --wa-raise-rgb: 255 255 255;
   --wa-line: rgb(206 214 232 / .1); --wa-line-2: rgb(206 214 232 / .2); --wa-line-2-rgb: 206 214 232;
   --wa-ink: #ece8df; --wa-ink-rgb: 236 232 223; --wa-ink-2: #c9c5bc; --wa-ink-2-rgb: 201 197 188;
@@ -16,7 +16,7 @@
   --wa-down: #ec7a72; --wa-down-rgb: 236 122 114; --wa-down-soft: rgb(236 122 114 / .13);
   --wa-seal: #d9483b;
   --wa-r: 2px; --wa-r-lg: 3px;
-  --wa-f-display: 'Shippori Mincho B1', 'Noto Serif TC', 'Songti TC', serif;
+  --wa-f-display: 'Source Serif 4', 'Shippori Mincho B1', 'Noto Serif TC', 'Songti TC', serif;
   --wa-f-title: 'Shippori Mincho B1', 'Noto Serif TC', serif;
   --wa-f-body: 'Noto Sans TC', 'Hiragino Sans', system-ui, sans-serif;
   --wa-f-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
@@ -27,7 +27,7 @@
 }
 :root[data-wafu='shigure'] {
   --wa-bg: #07141a; --wa-bg-rgb: 7 20 26;
-  --wa-panel: rgb(11 30 38 / .8); --wa-panel-solid: #0e222a; --wa-panel-hi: rgb(20 46 55 / .96);
+  --wa-panel: rgb(11 30 38 / .86); --wa-panel-solid: #0e222a; --wa-panel-hi: rgb(20 46 55 / .96);
   --wa-raise: rgb(190 235 235 / .04); --wa-raise-rgb: 190 235 235;
   --wa-line: rgb(190 235 235 / .11); --wa-line-2: rgb(190 235 235 / .22); --wa-line-2-rgb: 190 235 235;
   --wa-ink: #eef7f6; --wa-ink-rgb: 238 247 246; --wa-ink-2: #cfe0df; --wa-ink-2-rgb: 207 224 223;
@@ -39,7 +39,7 @@
   --wa-down: #f08a86; --wa-down-rgb: 240 138 134; --wa-down-soft: rgb(240 138 134 / .13);
   --wa-seal: #ec8f7f;
   --wa-r: 12px; --wa-r-lg: 18px;
-  --wa-f-display: 'Kaisei Decol', 'Noto Serif TC', serif;
+  --wa-f-display: 'Source Serif 4', 'Kaisei Decol', 'Noto Serif TC', serif;
   --wa-f-title: 'Yuji Syuku', 'Kaisei Decol', 'Noto Serif TC', serif;
   --wa-f-body: 'Noto Sans TC', 'Hiragino Sans', system-ui, sans-serif;
   --wa-f-mono: 'IBM Plex Mono', ui-monospace, monospace;
@@ -64,9 +64,7 @@
 /* ---------- Top bar ---------- */
 :root[data-wafu] .topbar { color: var(--wa-ink); background: rgb(var(--wa-bg-rgb) / .72); border-bottom: 1px solid var(--wa-line); box-shadow: none; backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2); }
 :root[data-wafu] .brand { color: var(--wa-ink); }
-:root[data-wafu] .brand > span { font-family: var(--wa-f-display); font-weight: 800; letter-spacing: .24em; }
-:root[data-wafu] .brand-logo { border: 1px solid var(--wa-line-2); border-radius: var(--wa-r); box-shadow: none; }
-:root[data-wafu='shigure'] .brand-logo { border-radius: 50%; }
+:root[data-wafu] .brand > span { font-family: var(--wa-f-display); font-weight: 600; letter-spacing: .24em; }
 :root[data-wafu] .brand-calendar { border-left-color: var(--wa-line); }
 :root[data-wafu] .brand-calendar > strong { color: var(--wa-ink-2); font-weight: 600; letter-spacing: .04em; }
 :root[data-wafu] .market-calendar-tags em { color: var(--wa-ink-2); background: rgb(255 255 255 / .04); border-color: var(--wa-line); }
@@ -74,7 +72,7 @@
 :root[data-wafu] .market-pill.is-open > span { background: var(--wa-seal); box-shadow: 0 0 10px var(--wa-seal); }
 :root[data-wafu] .secondary-button { color: var(--wa-ink-2); background: transparent; border: 1px solid var(--wa-line-2); border-radius: var(--wa-r); }
 :root[data-wafu] .secondary-button:hover { color: var(--wa-ink); background: var(--wa-accent-soft); border-color: var(--wa-accent); }
-:root[data-wafu] .primary-button, :root[data-wafu] .topbar .primary-button { color: var(--wa-on-accent); background: var(--wa-accent); border-radius: var(--wa-r); box-shadow: none; font-weight: 800; }
+:root[data-wafu] .primary-button, :root[data-wafu] .topbar .primary-button { color: var(--wa-on-accent); background: var(--wa-accent); border-radius: var(--wa-r); box-shadow: none; font-weight: 600; }
 :root[data-wafu] .primary-button:hover, :root[data-wafu] .topbar .primary-button:hover { background: var(--wa-accent-strong); transform: none; }
 :root[data-wafu='shigure'] .secondary-button, :root[data-wafu='shigure'] .primary-button { border-radius: 999px; }
 :root[data-wafu] .language-picker-toggle { color: var(--wa-ink-2); background: transparent; border-color: var(--wa-line-2); }
@@ -148,7 +146,7 @@
 :root[data-wafu] .hero-title-editor input { color: var(--wa-ink); background: var(--wa-panel-solid); border-color: var(--wa-accent); border-radius: var(--wa-r); box-shadow: none; font-family: var(--wa-f-title); letter-spacing: .06em; }
 
 /* ---------- Cards ---------- */
-:root[data-wafu] .metric-card, :root[data-wafu] .panel { background: var(--wa-panel); border: 1px solid var(--wa-line); box-shadow: inset 0 1px 0 rgb(255 255 255 / .04), 0 20px 50px -30px rgb(0 0 0 / .8); backdrop-filter: blur(14px) saturate(1.1); -webkit-backdrop-filter: blur(14px) saturate(1.1); }
+:root[data-wafu] .metric-card, :root[data-wafu] .panel { background: var(--wa-panel); border: 1px solid var(--wa-line); box-shadow: inset 0 1px 0 rgb(255 255 255 / .04), 0 20px 50px -30px rgb(0 0 0 / .8); }
 :root[data-wafu] .metric-card { border-radius: var(--wa-r-lg); }
 :root[data-wafu] .panel { border-radius: var(--wa-r-lg); }
 :root[data-wafu] .metric-card:before { display: none; }
@@ -216,3 +214,62 @@
 :root[data-wafu] .wafu-intro-note { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--wa-muted); font-size: 12px; }
 :root[data-wafu] .wafu-intro-note button { padding: 3px 10px; font-size: 12px; }
 @media (max-width: 560px) { :root[data-wafu] .wafu-intro-preview { margin-left: 0; } }
+
+/* ---------- Settings as a tabbed drawer (外觀／音樂／AI／模組／資料), from the prototype ---------- */
+:root[data-wafu] .settings-panel { animation: wafu-settings-in .46s cubic-bezier(.22, 1.2, .36, 1) both; }
+@keyframes wafu-settings-in { from { transform: translateX(100%); } }
+:root[data-wafu] .settings-panel > header { padding-bottom: 14px; border-bottom: 0; }
+:root[data-wafu] .settings-panel > header h2 { display: flex; align-items: center; gap: 10px; letter-spacing: .06em; }
+.settings-tabs { position: relative; display: flex; gap: 4px; margin: 0 32px; padding: 4px; background: rgb(0 0 0 / .18); border: 1px solid var(--wa-line); border-radius: var(--wa-r-lg); }
+:root[data-wafu='shigure'] .settings-tabs { border-radius: 999px; }
+.settings-tabs button { flex: 1; min-height: 34px; padding: 0 8px; color: var(--wa-muted); background: transparent; border: 0; border-radius: calc(var(--wa-r-lg) - 1px); font-size: 13px; cursor: pointer; transition: color .2s, background .2s; }
+:root[data-wafu='shigure'] .settings-tabs button { border-radius: 999px; }
+.settings-tabs button:hover { color: var(--wa-ink); }
+.settings-tabs button.on { color: var(--wa-on-accent); background: var(--wa-accent); font-weight: 600; }
+:root[data-wafu='kikyo'] .settings-tabs { padding: 0; background: none; border: 0; border-bottom: 1px solid var(--wa-line); border-radius: 0; }
+:root[data-wafu='kikyo'] .settings-tabs button { position: relative; border-radius: 0; }
+:root[data-wafu='kikyo'] .settings-tabs button.on { color: var(--wa-ink); background: none; }
+:root[data-wafu='kikyo'] .settings-tabs button.on::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--wa-accent); }
+/* Cards float in one after another when a tab opens. */
+.settings-body > * { animation: wafu-settings-rise .4s cubic-bezier(.2, .8, .2, 1) backwards; }
+.settings-body > :nth-child(2) { animation-delay: .05s; } .settings-body > :nth-child(3) { animation-delay: .1s; } .settings-body > :nth-child(4) { animation-delay: .15s; } .settings-body > :nth-child(n+5) { animation-delay: .2s; }
+@keyframes wafu-settings-rise { from { opacity: 0; transform: translateY(14px); } }
+.settings-data-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.settings-data-actions button { flex: 1 1 180px; min-height: 40px; }
+@media (max-width: 720px) { .settings-tabs { margin: 0 18px; } :root[data-wafu] .settings-panel { animation-name: wafu-settings-up; } }
+@keyframes wafu-settings-up { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { :root[data-wafu] .settings-panel, .settings-body > * { animation: none; } }
+
+/* ---------- 銘柄リサーチ drawer (from the prototype) ---------- */
+.wafu-research-backdrop { position: fixed; inset: 0; z-index: 92; display: flex; justify-content: flex-end; background: rgb(0 0 0 / .5); animation: wafu-guide-fade .2s backwards; }
+.wafu-research { display: flex; flex-direction: column; width: min(1180px, 94vw); height: 100%; color: var(--wa-ink); background: var(--wa-panel-solid); border-left: 1px solid var(--wa-line-2); box-shadow: -30px 0 80px -20px rgb(0 0 0 / .8); animation: wafu-settings-in .46s cubic-bezier(.22, 1.2, .36, 1) both; }
+.wafu-research-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: calc(16px + env(safe-area-inset-top, 0px)) 24px 10px; }
+.wafu-research-head h2 { display: flex; align-items: baseline; gap: 12px; margin: 0; font-family: var(--wa-f-display); font-size: 21px; font-weight: 700; letter-spacing: .06em; }
+.wafu-research-kicker { font-size: 19px; }
+.wafu-research-symbol { color: var(--wa-accent); font-size: 23px; letter-spacing: .04em; }
+.wafu-research-sub { display: flex; flex-wrap: wrap; gap: 4px 0; margin: 4px 0 0; color: var(--wa-ink-2); font-size: 12.5px; }
+.wafu-research-sub span + span::before { content: '·'; margin: 0 8px; color: var(--wa-muted); }
+.wafu-research-sub .positive { color: var(--wa-up); } .wafu-research-sub .negative { color: var(--wa-down); }
+.wafu-research-close { flex: none; display: grid; place-items: center; width: 36px; height: 36px; color: var(--wa-ink); background: transparent; border: 1px solid var(--wa-line-2); border-radius: 50%; font-size: 20px; cursor: pointer; }
+.wafu-research-close:hover { border-color: var(--wa-accent); }
+.wafu-research-tabs { display: flex; gap: 4px; margin: 0 24px; padding-bottom: 10px; border-bottom: 1px solid var(--wa-line); overflow-x: auto; }
+.wafu-research-tabs button { flex: none; height: 34px; padding: 0 14px; color: var(--wa-ink-2); background: transparent; border: 0; border-radius: 999px; font-size: 13.5px; cursor: pointer; }
+.wafu-research-tabs button:hover { color: var(--wa-ink); }
+.wafu-research-tabs button.on { color: var(--wa-on-accent); background: var(--wa-accent); font-weight: 600; }
+:root[data-wafu='kikyo'] .wafu-research-tabs button { border-radius: var(--wa-r); }
+.wafu-research-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 24px calc(28px + env(safe-area-inset-bottom, 0px)); }
+.wafu-research-body > * { animation: wafu-settings-rise .35s cubic-bezier(.2, .8, .2, 1) backwards; }
+/* The site's panels inside the drawer: no second frame, no duplicate title or back button. */
+.wafu-research .stock-analysis-panel.is-embedded { margin: 0; padding: 0; background: none; border: 0; box-shadow: none; }
+.wafu-research .stock-analysis-panel.is-embedded .technical-title, .wafu-research .technical-back-inline { display: none; }
+.wafu-research .stock-analysis-panel.is-embedded .technical-header { padding-top: 0; }
+:root[data-research-open] body { overflow: hidden; }
+@media (max-width: 760px) {
+  .wafu-research { width: 100%; border-left: 0; animation-name: wafu-settings-up; }
+  .wafu-research-head { padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 8px; }
+  .wafu-research-tabs { margin: 0 16px; }
+  .wafu-research-body { padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) { .wafu-research, .wafu-research-body > * { animation: none; } }
+
+:root[data-wafu] .company-logo img[hidden] { display: none !important; }

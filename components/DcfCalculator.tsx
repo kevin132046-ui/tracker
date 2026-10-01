@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import styles from './DcfCalculator.module.css';
+import type { AiEntryContext } from '@/components/AiTradeEntry';
+import type { AiCompanyInfo } from '@/lib/company-ai';
+import { askCompanyAi, cachedCompanyAi, companyAiProviderName } from '@/lib/company-ai';
+import type { AiProvider } from '@/lib/earnings';
 
 type Currency = 'USD' | 'JPY';
 
@@ -27,8 +31,18 @@ type CompanyPayload = {
   price: number | null;
   updatedAt: string;
   metrics: { freeCashFlow: number | null; dilutedShares: number | null; netCash: number | null };
+  ai?: AiCompanyInfo;
   error?: string;
 };
+/** The base-period inputs a company lookup fills. */
+type BaseField = 'price' | 'freeCashFlow' | 'dilutedShares' | 'netCash';
+const baseFieldNames: Record<BaseField, string> = { price: '股價', freeCashFlow: 'TTM 自由現金流', dilutedShares: '稀釋後股數', netCash: '淨現金' };
+const missingFields = (payload: CompanyPayload): BaseField[] => [
+  typeof payload.price === 'number' ? null : 'price' as const,
+  typeof payload.metrics.freeCashFlow === 'number' ? null : 'freeCashFlow' as const,
+  typeof payload.metrics.dilutedShares === 'number' ? null : 'dilutedShares' as const,
+  typeof payload.metrics.netCash === 'number' ? null : 'netCash' as const,
+].filter((field): field is BaseField => field !== null);
 type SavedScenario = { id: number; name: string; ticker: string; currency: Currency; data: Assumptions; updatedAt: string };
 
 const defaultAssumptions: Assumptions = {
@@ -160,7 +174,12 @@ function NumberField({ label, value, suffix, step = '0.1', min, max, onChange }:
   />{suffix && <i>{suffix}</i>}</span></label>;
 }
 
-export default function DcfCalculator({ initialTicker = 'MSFT', onClose }: { initialTicker?: string; onClose?: () => void }) {
+export default function DcfCalculator({ initialTicker = 'MSFT', onClose, ai = null }: {
+  initialTicker?: string;
+  onClose?: () => void;
+  /** AI settings; when set and the market data fails or lacks a base input, ChatGPT or Claude can fill it. */
+  ai?: AiEntryContext | null;
+}) {
   const [assumptions, setAssumptions] = useState<Assumptions>(() => normalizeAssumptions({
     ...defaultAssumptions,
     ticker: initialTicker || defaultAssumptions.ticker,
@@ -172,6 +191,10 @@ export default function DcfCalculator({ initialTicker = 'MSFT', onClose }: { ini
   const [companyUpdatedAt, setCompanyUpdatedAt] = useState('');
   const [companyLoading, setCompanyLoading] = useState(false);
   const [companyMessage, setCompanyMessage] = useState('');
+  // What the last lookup could not fill ('all' when it failed), so the AI can be asked for just that.
+  const [companyGap, setCompanyGap] = useState<{ symbol: string; fields: BaseField[] | 'all' } | null>(null);
+  const [aiAsk, setAiAsk] = useState<{ provider: AiProvider; loading: boolean; error: string } | null>(null);
+  const [aiSource, setAiSource] = useState<AiCompanyInfo | null>(null);
   const [scenarioName, setScenarioName] = useState(`${initialTicker || 'MSFT'} Base`);
   const [scenarios, setScenarios] = useState<SavedScenario[]>([]);
   const [scenarioSaving, setScenarioSaving] = useState(false);
@@ -196,40 +219,78 @@ export default function DcfCalculator({ initialTicker = 'MSFT', onClose }: { ini
       }).catch(() => undefined);
   }, []);
 
+  // Fills the base inputs from a company payload: all of them, or only the listed ones (to fill gaps).
+  const applyCompany = useCallback((payload: CompanyPayload, only: BaseField[] | null) => {
+    const currency: Currency = payload.currency === 'JPY' ? 'JPY' : 'USD';
+    const use = (field: BaseField) => !only || only.includes(field);
+    setAssumptions((current) => normalizeAssumptions({
+      ...current,
+      ticker: payload.symbol,
+      currency: only ? current.currency : currency,
+      currentPrice: use('price') && typeof payload.price === 'number' ? payload.price : current.currentPrice,
+      freeCashFlow: use('freeCashFlow') && typeof payload.metrics.freeCashFlow === 'number' ? Number((payload.metrics.freeCashFlow / 1e9).toFixed(3)) : current.freeCashFlow,
+      shares: use('dilutedShares') && typeof payload.metrics.dilutedShares === 'number' ? Number((payload.metrics.dilutedShares / 1e9).toFixed(4)) : current.shares,
+      netCash: use('netCash') && typeof payload.metrics.netCash === 'number' ? Number((payload.metrics.netCash / 1e9).toFixed(3)) : current.netCash,
+      wacc: !only && currency !== current.currency ? currencyDefaults[currency].wacc : current.wacc,
+      terminalGrowth: !only && currency !== current.currency ? currencyDefaults[currency].terminalGrowth : current.terminalGrowth,
+    }));
+  }, []);
+
+  const applyAiCompany = useCallback((company: CompanyPayload & { ai: AiCompanyInfo }, only: BaseField[] | null, earlier = false) => {
+    applyCompany(company, only);
+    setCompanyName(company.name);
+    setCompanyUpdatedAt(company.updatedAt);
+    setAiSource(company.ai);
+    const name = companyAiProviderName(company.ai.provider);
+    const stillMissing = missingFields(company).filter((field) => !only || only.includes(field));
+    if (!only) setScenarioName(`${company.symbol} Base`);
+    setCompanyGap(stillMissing.length ? { symbol: company.symbol, fields: stillMissing } : null);
+    setCompanyMessage(`${earlier ? '已帶入稍早' : '已用'} ${name} 查詢的資料${only ? `補齊 ${only.filter((field) => !stillMissing.includes(field)).map((field) => baseFieldNames[field]).join('、') || '缺值'}` : ''}・請核對${stillMissing.length ? `；仍缺 ${stillMissing.map((field) => baseFieldNames[field]).join('、')}，請手動輸入` : ''}。`);
+  }, [applyCompany]);
+
   const loadCompany = useCallback(async (ticker: string) => {
     const symbol = ticker.trim().toUpperCase();
     if (!/^[A-Z0-9.-]{1,12}$/.test(symbol)) return setCompanyMessage('請輸入有效的股票代號。');
     setCompanyLoading(true);
     setCompanyMessage('');
+    setAiAsk(null);
+    setAiSource(null);
     try {
       const response = await fetch(`/api/company?symbol=${encodeURIComponent(symbol)}`, { cache: 'no-store' });
       const payload = await response.json() as CompanyPayload;
       if (!response.ok) throw new Error(payload.error ?? '公司資料暫時無法取得。');
-      const currency: Currency = payload.currency === 'JPY' ? 'JPY' : 'USD';
-      setAssumptions((current) => normalizeAssumptions({
-        ...current,
-        ticker: payload.symbol,
-        currency,
-        currentPrice: typeof payload.price === 'number' ? payload.price : current.currentPrice,
-        freeCashFlow: typeof payload.metrics.freeCashFlow === 'number' ? Number((payload.metrics.freeCashFlow / 1e9).toFixed(3)) : current.freeCashFlow,
-        shares: typeof payload.metrics.dilutedShares === 'number' ? Number((payload.metrics.dilutedShares / 1e9).toFixed(4)) : current.shares,
-        netCash: typeof payload.metrics.netCash === 'number' ? Number((payload.metrics.netCash / 1e9).toFixed(3)) : current.netCash,
-        wacc: currency !== current.currency ? currencyDefaults[currency].wacc : current.wacc,
-        terminalGrowth: currency !== current.currency ? currencyDefaults[currency].terminalGrowth : current.terminalGrowth,
-      }));
+      applyCompany(payload, null);
       setCompanyName(payload.name);
       setCompanyUpdatedAt(payload.updatedAt);
       setScenarioName(`${payload.symbol} Base`);
-      const missing = [payload.metrics.freeCashFlow, payload.metrics.dilutedShares, payload.metrics.netCash].filter((value) => typeof value !== 'number').length;
+      const missing = missingFields(payload).filter((field) => field !== 'price' || payload.instrumentType !== 'ETF');
+      setCompanyGap(missing.length && payload.instrumentType !== 'ETF' ? { symbol: payload.symbol, fields: missing } : null);
       setCompanyMessage(payload.instrumentType === 'ETF'
         ? 'ETF 不適合公司 DCF；請改用資產配置或成分股估值。'
-        : missing ? `已帶入可取得資料；另有 ${missing} 個基期欄位缺值，請手動確認。` : '最新可用公司資料已自動帶入。');
+        : missing.length ? `已帶入可取得資料；另有 ${missing.length} 個基期欄位缺值，請手動確認。` : '最新可用公司資料已自動帶入。');
     } catch (error) {
-      setCompanyMessage(error instanceof Error ? error.message : '公司資料暫時無法取得。');
+      setCompanyGap({ symbol, fields: 'all' });
+      // An AI lookup made earlier in this visit (here or in the 基本面 tab) stands in for the failed source.
+      const earlier = cachedCompanyAi(symbol);
+      if (earlier) applyAiCompany(earlier, null, true);
+      else setCompanyMessage(error instanceof Error ? error.message : '公司資料暫時無法取得。');
     } finally {
       setCompanyLoading(false);
     }
-  }, []);
+  }, [applyAiCompany, applyCompany]);
+
+  const askAi = async (provider: AiProvider) => {
+    if (!ai || !companyGap || aiAsk?.loading) return;
+    const { symbol, fields } = companyGap;
+    setAiAsk({ provider, loading: true, error: '' });
+    try {
+      const company = await askCompanyAi(symbol, ai, provider);
+      applyAiCompany(company, fields === 'all' ? null : fields);
+      setAiAsk(null);
+    } catch (reason) {
+      setAiAsk({ provider, loading: false, error: reason instanceof Error ? reason.message : '查詢失敗，請稍後再試。' });
+    }
+  };
 
   useEffect(() => { loadScenarios(); }, [loadScenarios]);
   useEffect(() => {
@@ -298,7 +359,11 @@ export default function DcfCalculator({ initialTicker = 'MSFT', onClose }: { ini
     </header>
 
     <div className={styles.scenarioBar}><div><label>情境名稱<input value={scenarioName} onChange={(event) => setScenarioName(event.target.value)} /></label><button type="button" disabled={scenarioSaving} onClick={() => void saveScenario()}>{scenarioSaving ? '保存中…' : '儲存情境'}</button></div><div className={styles.savedScenarios}>{scenarios.length ? scenarios.slice(0, 6).map((scenario) => <span key={scenario.id}><button type="button" onClick={() => loadScenario(scenario)}>{scenario.name}<small>{scenario.ticker}</small></button><button type="button" aria-label={`刪除 ${scenario.name}`} onClick={() => void deleteScenario(scenario.id)}>×</button></span>) : <em>尚未保存估值情境</em>}</div></div>
-    {(companyMessage || companyName) && <p className={styles.dataStatus}><b>{companyName || assumptions.ticker}</b>{companyMessage}{companyUpdatedAt && <small>資料時間 {new Intl.DateTimeFormat('zh-TW', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(companyUpdatedAt))}</small>}</p>}
+    {(companyMessage || companyName) && <p className={styles.dataStatus}><b>{companyName || assumptions.ticker}</b>{aiSource && <em className={styles.aiBadge}>AI 查詢・請核對</em>}{companyMessage}
+      {aiSource && aiSource.sources.length > 0 && <span className={styles.aiSources}>{aiSource.sources.slice(0, 3).map((source, index) => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">{source.title || `來源 ${index + 1}`}</a>)}</span>}
+      {ai && companyGap && !aiAsk?.loading && <span className={styles.aiActions}><button type="button" onClick={() => void askAi('openai')}>✦ 用 ChatGPT {companyGap.fields === 'all' ? '查詢' : '補齊缺值'}</button><button type="button" className={styles.aiAlt} onClick={() => void askAi('anthropic')}>改用 Claude</button></span>}
+      {aiAsk?.loading && <span className={styles.aiWorking} role="status">正在用 {companyAiProviderName(aiAsk.provider)} 上網查詢…（約 20–60 秒）</span>}
+      {aiAsk?.error && <span className={styles.aiError} role="alert">{aiAsk.error}</span>}{companyUpdatedAt && <small>資料時間 {new Intl.DateTimeFormat('zh-TW', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(companyUpdatedAt))}</small>}</p>}
 
     <div className={styles.summaryGrid}>
       <article><span>每股內在價值</span><strong>{result ? money(result.intrinsicValue, assumptions.currency) : '—'}</strong><small>Base case</small></article>

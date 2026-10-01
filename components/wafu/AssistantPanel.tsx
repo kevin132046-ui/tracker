@@ -56,7 +56,7 @@ export default function AssistantPanel({ theme, voice, ai, snapshot, onClose }: 
   // Which providers work, and today's free ChatGPT tokens.
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/ai?model=${encodeURIComponent(ai.openAiModel.trim())}&tier=${ai.usageTier}`, { cache: 'no-store', signal: controller.signal })
+    fetch(`/api/ai?model=${encodeURIComponent(ai.openAiModel.trim())}&tier=${ai.usageTier}`, { cache: 'no-store', headers: aiKeyHeaders(ai.keys), signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json() as { providers?: Record<AiProvider, boolean>; openAiModel?: string | null; quota?: QuotaReport; error?: string };
         if (!response.ok || !payload.providers) throw new Error(payload.error ?? 'AI 暫時無法使用。');
@@ -64,7 +64,7 @@ export default function AssistantPanel({ theme, voice, ai, snapshot, onClose }: 
       })
       .catch((reason: unknown) => { if (!controller.signal.aborted) setStatus({ state: 'error', message: reason instanceof Error ? reason.message : 'AI 暫時無法使用。' }); });
     return () => controller.abort();
-  }, [ai.openAiModel, ai.usageTier, checks]);
+  }, [ai.keys, ai.openAiModel, ai.usageTier, checks]);
 
   const quota = status.state === 'ok' ? status.quota : null;
   const ready = status.state === 'ok' && (Boolean(ai.keys[provider].trim()) || status.providers[provider]);

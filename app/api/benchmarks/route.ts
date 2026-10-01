@@ -13,7 +13,7 @@ type ChartResult = {
 };
 type ChartPayload = { chart?: { result?: ChartResult[] } };
 type MarketConfig = {
-  id: 'USDJPY' | 'US10Y' | 'US30Y' | 'GOLD' | 'OIL';
+  id: 'USDJPY' | 'US10Y' | 'US30Y' | 'GOLD' | 'OIL' | 'US3M' | 'US5Y';
   providerSymbol: string;
   symbol: string;
   label: string;
@@ -27,6 +27,13 @@ const marketConfigs: MarketConfig[] = [
   { id: 'US30Y', providerSymbol: '^TYX', symbol: 'US30-YR', label: '美國公債30年期', unit: '殖利率（%）', decimals: 2 },
   { id: 'GOLD', providerSymbol: 'GC=F', symbol: 'GC=F', label: '黃金期貨', unit: '美元／盎司', decimals: 2 },
   { id: 'OIL', providerSymbol: 'CL=F', symbol: 'CL=F', label: 'WTI 原油期貨', unit: '美元／桶', decimals: 2 },
+];
+// 殖利率曲線 only (Yahoo's Treasury yield indexes: 13-week bill, 5, 10 and 30 years).
+const curveConfigs: MarketConfig[] = [
+  { id: 'US3M', providerSymbol: '^IRX', symbol: '3M', label: '3 個月', unit: '殖利率（%）', decimals: 2 },
+  { id: 'US5Y', providerSymbol: '^FVX', symbol: '5Y', label: '5 年', unit: '殖利率（%）', decimals: 2 },
+  marketConfigs[1],
+  marketConfigs[2],
 ];
 
 const chartCache = new Map<string, { result: ChartResult; fetchedAt: number }>();
@@ -46,25 +53,25 @@ function bucketKeys(mode: Mode) {
   const now = new Date();
   const keys: string[] = [];
   if (mode === 'day') {
-    const current = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    for (let offset = 29; offset >= 0; offset -= 1) {
-      const date = new Date(current);
-      date.setUTCDate(current.getUTCDate() - offset);
-      keys.push(date.toISOString().slice(0, 10));
+    // The last 60 weekdays (weekends carry no prices).
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    while (keys.length < 60) {
+      if (date.getUTCDay() !== 0 && date.getUTCDay() !== 6) keys.unshift(date.toISOString().slice(0, 10));
+      date.setUTCDate(date.getUTCDate() - 1);
     }
   } else if (mode === 'week') {
     const current = startOfWeek(now);
-    for (let offset = 11; offset >= 0; offset -= 1) {
+    for (let offset = 51; offset >= 0; offset -= 1) {
       const date = new Date(current);
       date.setUTCDate(current.getUTCDate() - offset * 7);
       keys.push(date.toISOString().slice(0, 10));
     }
   } else if (mode === 'month') {
-    for (let offset = 11; offset >= 0; offset -= 1) {
+    for (let offset = 35; offset >= 0; offset -= 1) {
       keys.push(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1)).toISOString().slice(0, 7));
     }
   } else {
-    for (let offset = 4; offset >= 0; offset -= 1) keys.push(String(now.getUTCFullYear() - offset));
+    for (let offset = 5; offset >= 0; offset -= 1) keys.push(String(now.getUTCFullYear() - offset));
   }
   return keys;
 }
@@ -78,8 +85,9 @@ function bucketKey(date: Date, mode: Mode) {
 
 // Each range reaches back past the first bucket so chain-linked returns have a prior close.
 function yahooConfig(mode: Mode) {
-  if (mode === 'day' || mode === 'week') return 'range=6mo&interval=1d';
-  if (mode === 'month') return 'range=2y&interval=1d';
+  if (mode === 'day') return 'range=6mo&interval=1d';
+  if (mode === 'week') return 'range=2y&interval=1d';
+  if (mode === 'month') return 'range=5y&interval=1wk';
   return 'range=10y&interval=1mo';
 }
 
@@ -194,10 +202,21 @@ function emptyMarket(config: MarketConfig, mode: Mode) {
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
+  if (params.get('scope') === 'curve') {
+    const settled = await Promise.allSettled(curveConfigs.map((config) => marketHistory(config, 'month', params.has('refresh'))));
+    const points = curveConfigs.map((config, index) => {
+      const result = settled[index];
+      const value = result.status === 'fulfilled' ? result.value : null;
+      return { id: config.id, tenor: config.symbol, label: config.label, latest: value?.latest ?? null, change: value?.change ?? null };
+    });
+    return NextResponse.json({ points, updatedAt: new Date().toISOString(), source: 'Yahoo Finance — U.S. Treasury yield indexes (^IRX, ^FVX, ^TNX, ^TYX)' }, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=900' } });
+  }
   const modeParam = params.get('mode');
   const scope = params.get('scope') === 'markets' ? 'markets' : params.get('scope') === 'benchmarks' ? 'benchmarks' : 'all';
-  const marketGroup = params.get('group') === 'commodities' ? 'commodities' : 'rates';
-  const activeMarketConfigs = marketGroup === 'commodities'
+  const groupParam = params.get('group');
+  const marketGroup = groupParam === 'commodities' ? 'commodities' : groupParam === 'all' ? 'all' : 'rates';
+  const activeMarketConfigs = marketGroup === 'all' ? marketConfigs.filter((config) => ['USDJPY', 'US10Y', 'US30Y', 'GOLD', 'OIL'].includes(config.id))
+    : marketGroup === 'commodities'
     ? marketConfigs.filter((config) => config.id === 'USDJPY' || config.id === 'GOLD' || config.id === 'OIL')
     : marketConfigs.filter((config) => config.id === 'USDJPY' || config.id === 'US10Y' || config.id === 'US30Y');
   const force = params.has('refresh');

@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { claudeExtras, openAiReasoning } from '@/lib/ai-models';
 import type { AiProvider } from '@/lib/earnings';
 import type { FilingExchange, QuarterRow } from '@/lib/filings';
 
@@ -79,8 +80,7 @@ async function claudeText(apiKey: string, model: string, document: string, promp
   const response = await client.beta.messages.create({
     model,
     max_tokens: 16000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    ...claudeExtras(model),
     output_config: { effort: 'medium' },
     system: systemPrompt,
     messages: [{ role: 'user', content: [
@@ -111,7 +111,7 @@ async function chatGptText(apiKey: string, model: string, document: string, prom
         model,
         instructions: systemPrompt,
         input: [{ role: 'user', content: [{ type: 'input_text', text: document }, { type: 'input_text', text: prompt }] }],
-        max_output_tokens: maxOutput,
+        ...openAiReasoning(model, maxOutput),
       }),
       signal: controller.signal,
     });

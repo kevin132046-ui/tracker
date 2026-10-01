@@ -2,7 +2,6 @@
 
 import type { ChangeEvent, CSSProperties } from 'react';
 import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import type { BrokerWorkspace } from '@/lib/broker-workspace';
 import {
   buildAnnualRocSummary,
@@ -20,40 +19,59 @@ import {
   priceSymbolFor,
   rangeBuckets,
   timeWeightedReturnSeries,
+  dailyTimeWeightedReturns,
 } from '@/lib/performance';
 import type { AnnualRocSummary, CapitalBasis, PriceHistorySeries, RangeMode } from '@/lib/performance';
 import { addDaysToKey, dateKey, japaneseHolidays, parseDateKey, upcomingClosures, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
 import type { UpcomingClosure } from '@/lib/market-calendar';
 import { earningsReminders, exchangeTodayKey, mergeEarnings, pruneManualEarnings } from '@/lib/earnings';
 import type { AiEarningsSuggestion, AiProvider, EarningsEntry, EarningsEvent, EarningsReminder } from '@/lib/earnings';
-import { aiKeyHeaders, loadAiKeys, loadAnalyses, loadDefaultProvider, loadQuestions, releaseNoticeDays, saveAiKeys, saveAnalyses, saveDefaultProvider, saveQuestions } from '@/lib/filings';
+import { aiKeyHeaders, emptyAiKeys, loadAiKeys, loadAnalyses, loadDefaultProvider, loadQuestions, releaseNoticeDays, saveAiKeys, saveAnalyses, saveDefaultProvider, saveQuestions } from '@/lib/filings';
 import type { AiKeys, CompanyFilings, FilingAnalysis } from '@/lib/filings';
 import { loadUsageTier, saveUsageTier } from '@/lib/filings';
 import type { ClaudeModel } from '@/lib/ai-models';
 import { defaultClaudeModel, loadClaudeModel, requestModel, saveClaudeModel } from '@/lib/ai-models';
 import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
-import { analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
+import { OPTION_CONTRACT_SIZE, analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
 import type { TradeColumnId } from '@/lib/trade-columns';
 import { tradesToCsv } from '@/lib/trade-csv';
 import AiSettingsCard from '@/components/AiSettingsCard';
 import type { AiStatus } from '@/components/AiSettingsCard';
+import type { AiEntryContext } from '@/components/AiTradeEntry';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
 import FilingAnalysisDialog from '@/components/FilingAnalysisDialog';
 import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import HaloIcon from '@/components/wafu/HaloIcon';
+// The opening's controller (its markup ships with the layout: StaticOpening).
+import WafuOpening from '@/components/wafu/opening/Opening';
 import NavIcon from '@/components/wafu/NavIcon';
 import type { WafuNavIconName } from '@/components/wafu/NavIcon';
 import WafuThemeCard from '@/components/wafu/WafuThemeCard';
 import WafuBackdrop from '@/components/wafu/Backdrop';
 import MusicDock from '@/components/wafu/MusicDock';
 import NotifyCenter from '@/components/wafu/NotifyCenter';
+import GuideBar from '@/components/wafu/GuideBar';
+import { MetricsGrid, MonthlyHeatmap } from '@/components/wafu/PerfMetrics';
+import { VisualFieldPicker, defaultVisualFields, loadVisualFields, saveVisualFields, visualFields as visualFieldList } from '@/components/wafu/VisualFields';
+import type { VisualFieldId } from '@/components/wafu/VisualFields';
+import ManualQuotes from '@/components/wafu/ManualQuotes';
+import SpreadCard from '@/components/wafu/SpreadCard';
+import PerfChart from '@/components/wafu/PerfChart';
+import type { ManualQuoteRow } from '@/components/wafu/ManualQuotes';
+import { computeRiskMetrics, monthlyGrid } from '@/lib/wafu/metrics';
+import HankoTile from '@/components/wafu/HankoTile';
+import ResearchDrawer from '@/components/wafu/ResearchDrawer';
+import type { ResearchChip, ResearchTab } from '@/components/wafu/ResearchDrawer';
 import HomeBar from '@/components/wafu/HomeBar';
-import type { NoticeItem } from '@/components/wafu/NotifyCenter';
+import type { NoticeCalendar, NoticeItem } from '@/components/wafu/NotifyCenter';
 import WafuMediaCard from '@/components/wafu/WafuMediaCard';
 import { useMediaPrefs } from '@/lib/wafu/media';
+import { applyPerf, probeFramesOnce } from '@/lib/wafu/perf';
+import { jikanOf, sekkiOf } from '@/lib/wafu/koyomi';
+import { kikyoInner, kikyoOutline, snowCrystal, yukiwaOutline } from '@/lib/wafu/marks';
 import type { AssistantPrefs, PortfolioSnapshot, SnapshotPosition } from '@/lib/ai-assistant';
 import { defaultAssistantPrefs, loadAssistantPrefs, saveAssistantPrefs } from '@/lib/ai-assistant';
 import type { WafuPreference, WafuTheme } from '@/lib/wafu/theme';
@@ -92,13 +110,12 @@ type Trade = {
   dividendAdjustment?: number;
 };
 
-type MacroMarketGroup = 'rates' | 'commodities';
 type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock' | 'cash';
-type PositionViewMode = 'visual' | 'details';
+type PositionViewMode = 'visual' | 'details' | 'gains';
 type AllocationChartMode = 'donut' | 'bars';
 type SymbolSuggestion = { symbol: string; name: string; exchange: string; type: string };
 type QuoteSession = 'pre' | 'regular' | 'post' | 'closed';
-type LiveQuote = { ticker: string; price: number; marketTime: number | null; session: QuoteSession; currency: string; regularPrice: number; extendedPrice: number | null; previousClose: number | null; regularChange: number | null; regularChangePercent: number | null; extendedChange: number | null; extendedChangePercent: number | null; change: number | null; changePercent: number | null; sparkline: number[] };
+type LiveQuote = { ticker: string; price: number; marketTime: number | null; session: QuoteSession; currency: string; regularPrice: number; extendedPrice: number | null; previousClose: number | null; regularChange: number | null; regularChangePercent: number | null; extendedChange: number | null; extendedChangePercent: number | null; change: number | null; changePercent: number | null; sparkline: number[]; yearHigh?: number | null; yearLow?: number | null };
 type UnderlyingQuote = { price: number; session: QuoteSession; marketTime: number | null; fetchedAt: number };
 type OptionRowAnalytics = { right: OptionRight; direction: 1 | -1; strike: number | null; dte: number | null; underlying: number | null; analytics: OptionPositionAnalytics | null };
 type AllocationHistory = {
@@ -191,18 +208,22 @@ const loadBrokerHub = () => import('@/components/BrokerHub');
 const loadDcfCalculator = () => import('@/components/DcfCalculator');
 const loadCompanyFundamentals = () => import('@/components/CompanyFundamentals');
 const loadTradeImportDialog = () => import('@/components/TradeImportDialog');
-// The 和風 opening (and its ink engine) is only fetched when a 和風 theme plays it.
-const loadWafuOpening = () => import('@/components/wafu/opening/Opening');
 const BrokerHub = lazy(loadBrokerHub);
 const DcfCalculator = lazy(loadDcfCalculator);
+const GainsLedger = lazy(() => import('@/components/wafu/GainsLedger'));
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
 const TradeImportDialog = lazy(loadTradeImportDialog);
-const WafuOpening = lazy(loadWafuOpening);
 // The AI assistant panel is only fetched when it is opened.
 const loadAssistantPanel = () => import('@/components/wafu/AssistantPanel');
 const AssistantPanel = lazy(loadAssistantPanel);
 
-const palette = ['#2f6fd5', '#248fa8', '#6c5dd3', '#188f70', '#b9781f', '#c75267'];
+// Allocation colours per theme: tonal steps of the theme's own accents (the largest holding in the
+// main accent), with the theme's gold as the one warm note. 桔梗: periwinkle → wisteria → indigo;
+// 時雨: teal → frost → lavender.
+const palettes: Record<WafuTheme, string[]> = {
+  kikyo: ['#9dbcf0', '#b3a5f0', '#7d93d6', '#8f7fd0', '#c9a45c', '#6479b4', '#a9b6dc', '#5c5a9e'],
+  shigure: ['#62d4d2', '#3fa7ae', '#9fd8e6', '#b69ae8', '#f0c24b', '#2f8590', '#c7e6ea', '#7c8fd6'],
+};
 const companyNames: Record<string, string> = {
   AAPL: 'Apple', AMZN: 'Amazon', AXP: 'American Express', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
   CNC: 'Centene', META: 'Meta Platforms', MSFT: 'Microsoft', NVDA: 'NVIDIA', SPGI: 'S&P Global', SPY: 'SPDR S&P 500',
@@ -211,7 +232,6 @@ const companyNames: Record<string, string> = {
   '7203.T': 'Toyota Motor', '6758.T': 'Sony Group', '9984.T': 'SoftBank Group', '6861.T': 'Keyence',
   '8306.T': 'Mitsubishi UFJ Financial Group', '8035.T': 'Tokyo Electron', '9983.T': 'Fast Retailing', '7974.T': 'Nintendo',
 };
-const panelRatioKey = 'optionflow-analytics-panel-ratio';
 const backgroundImageKey = 'optionflow-custom-background';
 const backgroundModeKey = 'optionflow-background-mode';
 const backgroundPendingKey = 'optionflow-pending-background';
@@ -219,8 +239,17 @@ const backgroundPendingModeKey = 'optionflow-pending-background-mode';
 const usdJpyRateKey = 'optionflow-usdjpy-rate';
 const holidayNoticeKey = 'optionflow-holiday-notice';
 const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
+const aiEnabledKey = 'optionflow-ai-enabled';
 const notifyCenterKey = 'optionflow-notify-center';
-const homeBarKey = 'optionflow-home-bar';
+const notifyBarKey = 'optionflow-notify-bar';
+// The 益損 tab in 交易與持倉 ('off' hides it).
+const gainsTabKey = 'optionflow-gains-tab';
+const bottomNavKey = 'optionflow-bottom-nav';
+type SettingsTab = 'look' | 'sound' | 'ai' | 'modules' | 'data';
+const settingsTabs: ReadonlyArray<readonly [SettingsTab, string]> = [['look', '外觀'], ['sound', '音樂'], ['ai', 'AI'], ['modules', '模組'], ['data', '資料']];
+// The page's sections, in page order, for the guide bar's swipes.
+const guideSections = [{ id: 'overview', label: '總覽' }, { id: 'returns', label: '收益' }, { id: 'positions', label: '持倉' }, { id: 'valuation', label: '估值' }];
+type BottomNav = 'guide' | 'menu' | 'off';
 const earningsReminderKey = 'optionflow-earnings-reminder';
 const manualEarningsKey = 'optionflow-earnings-manual';
 const openAiModelKey = 'optionflow-openai-model';
@@ -230,13 +259,9 @@ const localBackgroundPattern = /^data:image\/jpeg;base64,/i;
 const serverBackgroundPattern = /^\/api\/background\?image=1&version=\d{10,16}-[0-9a-f-]{36}$/i;
 const isLocalBackground = (value: string) => localBackgroundPattern.test(value);
 const isServerBackground = (value: string) => serverBackgroundPattern.test(value);
+const perfColors = { mine: 'var(--wa-accent)', spy: 'var(--wa-ink-2)', boxx: 'var(--wa-gold)' };
+const perfNames = { mine: '我的組合', spy: 'SPY', boxx: 'BOXX' };
 const isStoredBackground = (value: string) => isLocalBackground(value) || isServerBackground(value);
-const clampPanelRatio = (value: number) => Math.min(72, Math.max(46, value));
-const initialPanelRatio = () => {
-  if (typeof window === 'undefined') return 60;
-  const savedRatio = Number(window.localStorage.getItem(panelRatioKey));
-  return Number.isFinite(savedRatio) && savedRatio > 0 ? clampPanelRatio(savedRatio) : 60;
-};
 const initialUsdJpyRate = () => {
   if (typeof window === 'undefined') return 150;
   const savedRate = Number(window.localStorage.getItem(usdJpyRateKey));
@@ -282,7 +307,10 @@ const yenMoney = new Intl.NumberFormat('ja-JP', { style: 'currency', currency: '
 const quantityNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 });
 const percent = new Intl.NumberFormat('zh-TW', { style: 'percent', maximumFractionDigits: 1 });
 const precisePercent = new Intl.NumberFormat('zh-TW', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const signedPrecisePercent = (value: number) => `${value > 0 ? '+' : ''}${precisePercent.format(value)}`;
+// Rounded first, so a tiny loss shows 0.00% rather than −0.00%.
+const signedPrecisePercent = (value: number) => { const rounded = Math.round(value * 10000) / 10000 || 0; return `${rounded > 0 ? '+' : ''}${precisePercent.format(rounded)}`; };
+// 收益分析 labels: 36 months span three years, so month labels carry the year (2025/9).
+const perfLabel = (mode: string, item: { key: string; label: string }) => mode === 'month' ? `${item.key.slice(0, 4)}/${Number(item.key.slice(5, 7))}` : item.label;
 const dateLabel = (date: string | null) => date ? new Intl.DateTimeFormat('zh-TW', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${date}T00:00:00Z`)) : '—';
 const clockFormatter = (timeZone: string) => new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 const easternClockFormatter = clockFormatter('America/New_York');
@@ -567,7 +595,7 @@ const RocBreakdownDialog = memo(function RocBreakdownDialog({ summary, onClose }
   </div>;
 });
 
-const OptionRiskStrip = memo(function OptionRiskStrip({ risk }: { risk: OptionRiskSummary }) {
+const OptionRiskStrip = memo(function OptionRiskStrip({ risk, premium }: { risk: OptionRiskSummary; premium: { received: number; count: number; kept: number; closed: number } | null }) {
   const unpriced = risk.positions - risk.analyzed;
   const greeksReady = risk.analyzed > 0;
   const { nearestExpiry: nearest, maxAssignment: assignment } = risk;
@@ -578,10 +606,11 @@ const OptionRiskStrip = memo(function OptionRiskStrip({ risk }: { risk: OptionRi
     </header>
     <dl>
       <div><dt>淨 Delta（股數當量）</dt><dd><strong>{greeksReady ? `${signedDecimal(risk.netDelta)} 股` : '—'}</strong><small>{greeksReady ? `≈ ${signedMoney(risk.netDeltaDollars)} 標的名目` : '等待標的報價'}</small></dd></div>
-      <div><dt>每日 Theta</dt><dd><strong className={greeksReady ? risk.theta >= 0 ? 'positive' : 'negative' : ''}>{greeksReady ? signedMoney(risk.theta) : '—'}</strong><small>每過一天；賣方為正收入</small></dd></div>
+      <div><dt>每日 Theta</dt><dd><strong className={greeksReady ? risk.theta >= 0 ? 'positive' : 'negative' : ''}>{greeksReady ? signedMoney(risk.theta) : '—'}</strong><small>時間價值收入；每過一天，賣方為正</small></dd></div>
       <div><dt>Vega（$／vol 點）</dt><dd><strong>{greeksReady ? signedMoney(risk.vega) : '—'}</strong><small>隱含波動率上升 1 點</small></dd></div>
       <div><dt>最近到期</dt><dd><strong>{nearest ? `${nearest.ticker} · ${nearest.days} 天` : '—'}</strong><small>{nearest ? dateLabel(nearest.expiryDate) : '未填到期日'}</small></dd></div>
       <div><dt>最高被指派機率</dt><dd><strong>{assignment ? percent.format(assignment.probability) : '—'}</strong><small>{assignment ? `${assignment.ticker} ${assignment.strike ?? ''} ${assignment.right === 'put' ? 'PUT' : 'CALL'}` : greeksReady ? '沒有賣方部位' : '等待標的報價'}</small></dd></div>
+      {premium && <div><dt>本年權利金</dt><dd><strong className="positive">{signedMoney(premium.received)}</strong><small>{`${premium.count} 筆賣出`}{premium.closed > 0 && ` · 已平倉實收 ${signedMoney(premium.kept)}`}</small></dd></div>}
       <div><dt>擔保占用</dt><dd><strong>{money.format(risk.shortCapital)}</strong><small>{risk.shortCapitalShare === null ? '賣方選擇權的投入資本' : `占全部投入資本 ${percent.format(risk.shortCapitalShare)}`}</small></dd></div>
     </dl>
   </section>;
@@ -606,7 +635,7 @@ const LiveMarketClocks = memo(function LiveMarketClocks({ lastQuoteAt }: { lastQ
   ];
   return <div className="as-of">
     <div className="clock-stack-heading"><span>即時市場時間</span><div className="clock-zone-switch" role="group" aria-label="切換即時時區">{clocks.map((clock) => <button type="button" key={clock.id} className={activeZone === clock.id ? 'active' : ''} aria-pressed={activeZone === clock.id} onClick={() => setActiveZone(clock.id)}>{clock.label}</button>)}</div></div>
-    <div className="stacked-clock-deck" aria-live="polite">{clocks.map((clock) => <div key={clock.id} className={`stacked-clock-card ${activeZone === clock.id ? 'is-active' : 'is-behind'}`} aria-hidden={activeZone !== clock.id}><span>{clock.label}</span><strong>{clock.time}</strong><b>[{clock.zone}]</b></div>)}</div>
+    <div className="stacked-clock-deck" aria-live="polite">{clocks.map((clock) => <div key={clock.id} className={`stacked-clock-card ${activeZone === clock.id ? 'is-active' : 'is-behind'}`} aria-hidden={activeZone !== clock.id}><span>{clock.label}</span><strong>{clock.time}</strong><b>[{clock.zone}]</b>{clockNow !== null && <em className="clock-jikan">{jikanOf(clockNow)}</em>}</div>)}</div>
     <p>報價每 60 秒更新 · 上次 {lastQuoteLabel}</p>
   </div>;
 });
@@ -621,7 +650,7 @@ const HeaderMarketCalendar = memo(function HeaderMarketCalendar() {
   }, []);
   const status = timestamp === null ? null : marketCalendarStatus(timestamp);
   return <div className="brand-calendar" aria-live="polite">
-    <strong>{status?.japaneseDate ?? '日本日期讀取中'}</strong>
+    <strong>{status?.japaneseDate ?? '日本日期讀取中'}{timestamp !== null && <small className="brand-sekki"> · {sekkiOf(timestamp)}</small>}</strong>
     {status && (status.japanHoliday || status.japanClosedReason || status.usClosedReason) && <span className="market-calendar-tags">
       {status.japanHoliday && <em className="holiday-tag">日本祝日 · {status.japanHoliday}</em>}
       {status.japanClosedReason && <em>日股休市 · {status.japanClosedReason}</em>}
@@ -778,7 +807,9 @@ function lastIndicator(values: Array<number | null>) {
   return values.findLast((value): value is number => typeof value === 'number' && Number.isFinite(value)) ?? null;
 }
 
-const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, customFrom, customTo, data, loading, error, stockTrades, lotSavingId, valuationOpen, onRangeChange, onCustomRangeApply, onClose, onOpenDcf, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
+const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, range, customFrom, customTo, data, loading, error, stockTrades, lotSavingId, valuationOpen, ai, onRangeChange, onCustomRangeApply, onClose, onOpenDcf, onAddLot, onSaveLot, onEditLot, onDeleteLot }: {
+  /** Which part the research drawer shows: the charts, the company fundamentals or the purchase lots. */
+  view: 'technical' | 'fundamentals' | 'lots';
   symbol: string;
   range: TechnicalRange;
   customFrom: string;
@@ -789,6 +820,8 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, c
   stockTrades: Trade[];
   lotSavingId: number | null;
   valuationOpen: boolean;
+  /** AI settings for the fundamentals' AI lookup; null while AI is off. */
+  ai: AiEntryContext | null;
   onRangeChange: (range: TechnicalRange) => void;
   onCustomRangeApply: (from: string, to: string) => void;
   onClose: () => void;
@@ -864,7 +897,8 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, c
       ? { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }
       : { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(point.timestamp * 1000));
 
-  return <section className="panel stock-analysis-panel" id="stock-analysis" aria-live="polite">
+  return <section className={`panel stock-analysis-panel is-embedded view-${view}`} id="stock-analysis" aria-live="polite">
+    {view === 'technical' && <>
     <header className="technical-header">
       <div className="technical-title"><CompanyLogo ticker={symbol} /><div><p className="eyebrow">Technical view</p><div className="technical-title-heading"><h2>{symbol} 股票走勢</h2><button type="button" className="technical-back-inline" onClick={onClose}>← 返回持倉總覽</button></div><span>{activeData?.intervalLabel ?? '價格'} · RSI 14 · MACD 12/26/9</span></div></div>
       {activeData && <div className="technical-quote"><span>最新價格</span><strong>{priceMoney(activeData.latestPrice)}</strong><b className={activeData.change >= 0 ? 'positive' : 'negative'}>{signedPrice(symbol, activeData.change)} · {signedPrecisePercent(activeData.changePercent)}</b><small>前收 {priceMoney(activeData.previousClose)}</small></div>}
@@ -897,7 +931,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, c
             if (event.key === 'Home') { event.preventDefault(); setPriceHoverIndex(0); }
             if (event.key === 'End') { event.preventDefault(); setPriceHoverIndex(points.length - 1); }
           }}
-        ><defs><linearGradient id={`price-fill-${symbol}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".25"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="93" y2="93" className="technical-grid-line"/>{overlays.boll && <><polygon points={technicalBandPolygon(bollUpper, bollLower, priceBounds.min, priceBounds.max)} className="technical-boll-band"/><polyline points={technicalPoints(bollUpper, priceBounds.min, priceBounds.max)} className="technical-boll-line"/><polyline points={technicalPoints(bollLower, priceBounds.min, priceBounds.max)} className="technical-boll-line"/></>}{priceChartMode === 'line' ? <><polygon points={`0,93 ${technicalPoints(closes, priceBounds.min, priceBounds.max)} 100,93`} fill={`url(#price-fill-${symbol})`}/><polyline points={technicalPoints(closes, priceBounds.min, priceBounds.max)} className="technical-price-line"/></> : <g className="technical-candles">{candles.map((point, index) => {
+        ><defs><linearGradient id={`price-fill-${symbol}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" style={{ stopColor: 'var(--wa-accent)' }} stopOpacity=".25"/><stop offset="100%" style={{ stopColor: 'var(--wa-accent)' }} stopOpacity="0"/></linearGradient></defs><line x1="0" x2="100" y1="93" y2="93" className="technical-grid-line"/>{overlays.boll && <><polygon points={technicalBandPolygon(bollUpper, bollLower, priceBounds.min, priceBounds.max)} className="technical-boll-band"/><polyline points={technicalPoints(bollUpper, priceBounds.min, priceBounds.max)} className="technical-boll-line"/><polyline points={technicalPoints(bollLower, priceBounds.min, priceBounds.max)} className="technical-boll-line"/></>}{priceChartMode === 'line' ? <><polygon points={`0,93 ${technicalPoints(closes, priceBounds.min, priceBounds.max)} 100,93`} fill={`url(#price-fill-${symbol})`}/><polyline points={technicalPoints(closes, priceBounds.min, priceBounds.max)} className="technical-price-line"/></> : <g className="technical-candles">{candles.map((point, index) => {
           const x = candles.length === 1 ? 50 : index / (candles.length - 1) * 100;
           const width = Math.max(.28, Math.min(1.35, 62 / candles.length));
           const openY = technicalY(point.open, priceBounds.min, priceBounds.max);
@@ -925,8 +959,10 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, c
         <div className="macd-legend"><span><i className="macd-key"/>MACD</span><span><i className="signal-key"/>Signal</span><span><i className="histogram-key"/>Histogram</span></div>
       </article>
     </div>}
-    <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 公司資料…</div>}><CompanyFundamentals key={symbol} symbol={symbol} valuationOpen={valuationOpen} onOpenDcf={onOpenDcf} onReturn={onClose} /></Suspense>
-    <section className="stock-lots-section">
+    <footer className="technical-note">價格、OHLC 與技術指標採同一組交易所時段資料計算；短期間使用分時 K，長期間使用日 K。僅供持倉追蹤，不構成投資建議。</footer>
+    </>}
+    {view === 'fundamentals' && <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在讀取 {symbol} 公司資料…</div>}><CompanyFundamentals key={symbol} symbol={symbol} valuationOpen={valuationOpen} onOpenDcf={onOpenDcf} onReturn={onClose} ai={ai} /></Suspense>}
+    {view === 'lots' && <section className="stock-lots-section">
       <div className="stock-lots-heading"><div><p className="eyebrow">Cost basis</p><h3>買入均價與購買紀錄</h3><span>直接修改日期或均價；儲存後持倉、損益與圖表會立即重算。</span></div><button type="button" onClick={onAddLot}>＋新增 {symbol} 買入紀錄</button></div>
       <div className="stock-lot-summary"><div><span>股票加權均價</span><strong>{summaryLots.length ? priceMoney(averageEntry) : '—'}</strong></div><div><span>持股數量</span><strong>{totalQuantity || '—'}</strong></div><div><span>首次買入日期</span><strong>{firstPurchaseDate ? dateLabel(firstPurchaseDate) : '—'}</strong></div><div><span>購買紀錄</span><strong>{stockTrades.length} 筆</strong></div></div>
       <div className="stock-lot-list">
@@ -944,10 +980,10 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, c
           <div className="stock-lot-actions"><button type="submit" className="lot-save" disabled={lotSavingId === trade.id}>{lotSavingId === trade.id ? '儲存中…' : '儲存'}</button><button type="button" onClick={() => onEditLot(trade)}>完整編輯</button><button type="button" className="delete" onClick={() => onDeleteLot(trade)}>刪除</button></div>
         </form>)}
       </div>
-    </section>
-    <footer className="technical-note">價格、OHLC 與技術指標採同一組交易所時段資料計算；短期間使用分時 K，長期間使用日 K。僅供持倉追蹤，不構成投資建議。</footer>
+    </section>}
   </section>;
-}, (previous, next) => previous.symbol === next.symbol
+}, (previous, next) => previous.view === next.view
+  && previous.symbol === next.symbol
   && previous.range === next.range
   && previous.customFrom === next.customFrom
   && previous.customTo === next.customTo
@@ -956,7 +992,35 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ symbol, range, c
   && previous.error === next.error
   && previous.stockTrades === next.stockTrades
   && previous.lotSavingId === next.lotSavingId
-  && previous.valuationOpen === next.valuationOpen);
+  && previous.valuationOpen === next.valuationOpen
+  && previous.ai === next.ai);
+
+/** The 欄位 strip under a visual position; a field without a value for this position is left out. */
+function VisualFieldStrip({ fields, values }: { fields: VisualFieldId[]; values: Partial<Record<VisualFieldId, { text: string; tone?: 'positive' | 'negative'; range?: number; title?: string }>> }) {
+  const shown = visualFieldList.filter((field) => fields.includes(field.id) && values[field.id]);
+  if (!shown.length) return null;
+  return <div className="wafu-vstrip">{shown.map((field) => {
+    const value = values[field.id]!;
+    return <span key={field.id} className={value.tone ?? ''} title={field.hint}>
+      <small>{field.label}</small>
+      {value.range !== undefined ? <><i className="wafu-vrange"><em style={{ left: `${value.range * 100}%` }} /></i><b>{value.text}</b></> : <b>{value.text}</b>}
+    </span>;
+  })}</div>;
+}
+
+// US session for the top-bar pill: 盤前 04:00–09:30, 交易中 09:30–16:00, 盤後 16:00–20:00 (ET).
+type MarketSession = 'pre' | 'open' | 'post' | 'closed';
+function marketSessionAt(timestamp: number): MarketSession {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(timestamp));
+  const day = parts.find((part) => part.type === 'weekday')?.value ?? '';
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
+  const clock = hour * 60 + minute;
+  const easternDate = zonedDate(timestamp, 'America/New_York');
+  const holiday = usMarketHolidays(easternDate.year).has(zonedDateKey(easternDate));
+  if (holiday || ['Sat', 'Sun'].includes(day)) return 'closed';
+  return clock >= 570 && clock < 960 ? 'open' : clock >= 240 && clock < 570 ? 'pre' : clock >= 960 && clock < 1200 ? 'post' : 'closed';
+}
 
 export default function Home() {
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -965,10 +1029,13 @@ export default function Home() {
   const [lotSavingId, setLotSavingId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [rangeMode, setRangeMode] = useState<RangeMode>('month');
-  const [returnHoverIndex, setReturnHoverIndex] = useState<number | null>(null);
+  const [manualQuotesOpen, setManualQuotesOpen] = useState(false);
+  const [returnView, setReturnView] = useState<'period' | 'cum' | 'dd' | 'heat'>('cum');
+  const [perfVisible, setPerfVisible] = useState({ mine: true, spy: true, boxx: true });
+  const [visualFieldSet, setVisualFieldSet] = useState<VisualFieldId[]>(defaultVisualFields);
+  useEffect(() => { setVisualFieldSet(loadVisualFields()); }, []);
+  const updateVisualFields = useCallback((next: VisualFieldId[]) => { setVisualFieldSet(next); saveVisualFields(next); }, []);
   const [macroRangeMode, setMacroRangeMode] = useState<RangeMode>('month');
-  const [macroMarketGroup, setMacroMarketGroup] = useState<MacroMarketGroup>('rates');
-  const [macroDeckDirection, setMacroDeckDirection] = useState<'up' | 'down'>('up');
   const [allocationChartMode, setAllocationChartMode] = useState<AllocationChartMode>('donut');
   const [allocationGroupSelection, setAllocationGroupSelection] = useState<{ label: string; members: string[] } | null>(null);
   const [allocationHoveredLabel, setAllocationHoveredLabel] = useState<string | null>(null);
@@ -977,15 +1044,21 @@ export default function Home() {
   const [positionView, setPositionView] = useState<PositionViewMode>('visual');
   const [query, setQuery] = useState('');
   const [activeSection, setActiveSection] = useState<'overview' | 'positions' | 'returns' | 'valuation'>('overview');
-  const [valuationOpen, setValuationOpen] = useState(false);
-  const [valuationTicker, setValuationTicker] = useState('MSFT');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [holidayNoticeEnabled, setHolidayNoticeEnabled] = useState(true);
   // The notification center gathers the header notice line and more; off → the line as before.
   const [notifyEnabled, setNotifyEnabled] = useState(true);
+  // The notice bar in the middle of the top bar (wide screens); can be turned off in the settings.
+  const [notifyBar, setNotifyBar] = useState(true);
+  const [gainsTab, setGainsTab] = useState(true);
   const [noticeNow, setNoticeNow] = useState<number | null>(null);
   // Phones: the main menu as a bar along the bottom instead of the top strip.
-  const [homeBarEnabled, setHomeBarEnabled] = useState(true);
+  // Bottom navigation: the guide bar (every screen, default), the phone menu bar, or nothing.
+  const [bottomNav, setBottomNav] = useState<BottomNav>('guide');
+  const homeBarEnabled = bottomNav === 'menu';
+  const [notifySignal, setNotifySignal] = useState(0);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('look');
+  const [researchTab, setResearchTab] = useState<ResearchTab>('technical');
   // Android Chrome offers installing the site as an app; the event is kept for the settings button.
   const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
   const [earningsEnabled, setEarningsEnabled] = useState(true);
@@ -995,7 +1068,7 @@ export default function Home() {
   // Bumped after each AI call so the quota is read again.
   const [quotaCheck, setQuotaCheck] = useState(0);
   const refreshQuota = useCallback(() => setQuotaCheck((current) => current + 1), []);
-  const [aiKeys, setAiKeys] = useState<AiKeys>({ openai: '', anthropic: '' });
+  const [aiKeys, setAiKeys] = useState<AiKeys>(emptyAiKeys);
   const [defaultAiProvider, setDefaultAiProvider] = useState<AiProvider>('openai');
   const [analysisQuestions, setAnalysisQuestions] = useState<string[]>([]);
   const [filingAnalyses, setFilingAnalyses] = useState<Record<string, FilingAnalysis>>({});
@@ -1012,6 +1085,9 @@ export default function Home() {
   const [intro, setIntro] = useState<{ theme: WafuTheme; reduced: boolean } | null>(null);
   const wafuMedia = useMediaPrefs();
   const [assistantPrefs, setAssistantPrefs] = useState<AssistantPrefs>(defaultAssistantPrefs);
+  // The master switch for every AI feature (財報解讀、AI 查財報日、AI 記錄交易、AI 助理); the rest of the site is unaffected.
+  const [aiEnabled, setAiEnabled] = useState(true);
+  const assistantOn = aiEnabled && assistantPrefs.enabled;
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [aiLookups, setAiLookups] = useState<Record<string, { loading: boolean; suggestion?: AiEarningsSuggestion; error?: string }>>({});
   const [yahooEarnings, setYahooEarnings] = useState<{ key: string; events: Record<string, EarningsEvent>; failed: string[] } | null>(null);
@@ -1062,8 +1138,6 @@ export default function Home() {
   const [editorQuoteError, setEditorQuoteError] = useState('');
   const [editorQuote, setEditorQuote] = useState<LiveQuote | null>(null);
   const [editorQuoteRetry, setEditorQuoteRetry] = useState(0);
-  const [panelRatio, setPanelRatio] = useState(initialPanelRatio);
-  const [resizingPanels, setResizingPanels] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState('');
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>('default');
   const [backgroundSaving, setBackgroundSaving] = useState(false);
@@ -1077,8 +1151,6 @@ export default function Home() {
   const [allocationDate, setAllocationDate] = useState(today);
   const [allocationHistory, setAllocationHistory] = useState<AllocationHistory | null>(null);
   const [allocationLoading, setAllocationLoading] = useState(false);
-  const contentGridRef = useRef<HTMLElement>(null);
-  const panelRatioRef = useRef(panelRatio);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const backgroundOperationRef = useRef(false);
   const backgroundGenerationRef = useRef(0);
@@ -1088,7 +1160,6 @@ export default function Home() {
   const rocTriggerRef = useRef<HTMLButtonElement>(null);
   const macroCacheRef = useRef(new Map<string, MacroCacheEntry>());
   const macroRefreshRequestedRef = useRef(false);
-  const macroDeckSwipeStartRef = useRef<number | null>(null);
   const technicalCacheRef = useRef(new Map<string, TechnicalCacheEntry>());
   const allocationHistoryCacheRef = useRef(new Map<string, AllocationHistory>());
   const quoteRefreshInFlightRef = useRef(false);
@@ -1185,11 +1256,6 @@ export default function Home() {
     }
   }, [dividendAdjustmentCount, dividendSaving, notify, refreshDividendCash]);
 
-  const showMacroMarketGroup = useCallback((group: MacroMarketGroup, direction: 'up' | 'down') => {
-    setMacroDeckDirection(direction);
-    setMacroMarketGroup(group);
-  }, []);
-
   useEffect(() => {
     const controller = new AbortController();
     fetch('/api/broker-hub?summary=1', { cache: 'no-store', signal: controller.signal })
@@ -1219,7 +1285,10 @@ export default function Home() {
     try {
       if (window.localStorage.getItem(holidayNoticeKey) === 'off') queueMicrotask(() => setHolidayNoticeEnabled(false));
       if (window.localStorage.getItem(notifyCenterKey) === 'off') queueMicrotask(() => setNotifyEnabled(false));
-      if (window.localStorage.getItem(homeBarKey) === 'off') queueMicrotask(() => setHomeBarEnabled(false));
+      if (window.localStorage.getItem(notifyBarKey) === 'off') queueMicrotask(() => setNotifyBar(false));
+      if (window.localStorage.getItem(gainsTabKey) === 'off') queueMicrotask(() => setGainsTab(false));
+      const storedNav = window.localStorage.getItem(bottomNavKey);
+      if (storedNav === 'menu' || storedNav === 'off') queueMicrotask(() => setBottomNav(storedNav));
     } catch { /* storage unavailable: keep the default */ }
   }, []);
 
@@ -1240,6 +1309,7 @@ export default function Home() {
       const introPreference = loadWafuIntro();
       const assistant = loadAssistantPrefs();
       const liteAuto = loadIntroLiteAuto();
+      const aiOn = window.localStorage.getItem(aiEnabledKey) !== 'off';
       // The boot script veiled the page when the opening should play; otherwise lift any veil now.
       const playIntro = introPending() ? { theme: wafuShown, reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches } : null;
       if (!playIntro) liftIntroVeil();
@@ -1260,12 +1330,40 @@ export default function Home() {
         setWafuIntro(introPreference);
         setAssistantPrefs(assistant);
         setIntroLiteAuto(liteAuto);
+        setAiEnabled(aiOn);
         setIntro(playIntro);
         setAnalysisQuestions(questions);
         setFilingAnalyses(analyses);
       });
     } catch { liftIntroVeil(); /* storage unavailable: keep the defaults */ }
   }, []);
+
+  // 游標光暈 (prototype): the panel under the pointer gets its position for a soft radial light.
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce), (pointer: coarse)').matches) return;
+    let frame = 0;
+    const onMove = (event: PointerEvent) => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (document.documentElement.dataset.perf === 'lite') return;
+        const panel = (event.target as Element | null)?.closest?.('.panel, .metric-card') as HTMLElement | null;
+        if (!panel) return;
+        const box = panel.getBoundingClientRect();
+        panel.style.setProperty('--mx', `${event.clientX - box.left}px`);
+        panel.style.setProperty('--my', `${event.clientY - box.top}px`);
+      });
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => { window.removeEventListener('pointermove', onMove); cancelAnimationFrame(frame); };
+  }, []);
+
+  // 效能模式: the boot script already set it; this adds the device check, and measures once after
+  // the page settles when nothing has measured this device yet (the opening does it when it plays).
+  useEffect(() => {
+    applyPerf();
+    if (intro) return;
+    return probeFramesOnce();
+  }, [intro]);
 
   const toggleEarnings = useCallback(() => {
     setEarningsEnabled((current) => {
@@ -1289,25 +1387,25 @@ export default function Home() {
     try { window.localStorage.setItem(openAiModelKey, value.trim()); } catch { /* storage unavailable */ }
   }, []);
 
-  // AI lookups sit behind Cloudflare Access. The status carries today's free ChatGPT tokens, so it
+  // AI lookups use the Worker's keys only behind Cloudflare Access (else the browser's own keys). The status carries today's free ChatGPT tokens, so it
   // is asked again every time the settings panel or the analysis dialog opens, after every AI call,
   // and when the model or usage tier changes.
   useEffect(() => {
-    if (!settingsOpen && !filingDialogSymbol) return;
+    if (!aiEnabled || (!settingsOpen && !filingDialogSymbol)) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      fetch(`/api/ai?model=${encodeURIComponent(openAiModel.trim())}&tier=${openAiTier}`, { cache: 'no-store', signal: controller.signal })
+      fetch(`/api/ai?model=${encodeURIComponent(openAiModel.trim())}&tier=${openAiTier}`, { cache: 'no-store', headers: aiKeyHeaders(aiKeys), signal: controller.signal })
         .then(async (response) => {
-          const payload = await response.json() as { providers?: Record<AiProvider, boolean>; openAiModel?: string | null; sec?: boolean; quota?: QuotaReport; error?: string };
+          const payload = await response.json() as { mode?: 'access' | 'byok'; note?: string | null; providers?: Record<AiProvider, boolean>; openAiModel?: string | null; sec?: boolean; quota?: QuotaReport; error?: string };
           if (!response.ok || !payload.providers) throw new Error(payload.error ?? 'AI 查詢暫時無法使用。');
-          if (!controller.signal.aborted) setAiStatus({ state: 'ok', providers: payload.providers, openAiModel: payload.openAiModel ?? null, sec: Boolean(payload.sec), quota: payload.quota ?? null });
+          if (!controller.signal.aborted) setAiStatus({ state: 'ok', mode: payload.mode === 'byok' ? 'byok' : 'access', note: payload.note ?? null, providers: payload.providers, openAiModel: payload.openAiModel ?? null, sec: Boolean(payload.sec), quota: payload.quota ?? null });
         })
         .catch((error: unknown) => {
           if (!controller.signal.aborted) setAiStatus({ state: 'error', message: error instanceof Error ? error.message : 'AI 查詢暫時無法使用。' });
         });
     }, 300);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [filingDialogSymbol, openAiModel, openAiTier, quotaCheck, settingsOpen]);
+  }, [aiEnabled, aiKeys, filingDialogSymbol, openAiModel, openAiTier, quotaCheck, settingsOpen]);
 
   const lookupEarningsWithAi = useCallback(async (symbol: string, provider: AiProvider) => {
     const id = `${provider}:${symbol}`;
@@ -1337,6 +1435,11 @@ export default function Home() {
   }, []);
 
   const updateAiKeys = useCallback((keys: AiKeys) => { setAiKeys(keys); saveAiKeys(keys); }, []);
+  const updateAiEnabled = useCallback((enabled: boolean) => {
+    setAiEnabled(enabled);
+    if (!enabled) { setAssistantOpen(false); setFilingDialogSymbol(null); }
+    try { window.localStorage.setItem(aiEnabledKey, enabled ? 'on' : 'off'); } catch { /* storage unavailable */ }
+  }, []);
   const updateOpenAiTier = useCallback((tier: UsageTier) => { setOpenAiTier(tier); saveUsageTier(tier); }, []);
   const updateClaudeModel = useCallback((model: ClaudeModel) => { setClaudeModel(model); saveClaudeModel(model); }, []);
   const updateWafuPreference = useCallback((preference: WafuPreference) => {
@@ -1369,6 +1472,8 @@ export default function Home() {
   }, []);
   // The import dialog's AI entry starts from the AI settings and can pick another model per use.
   const importAi = useMemo(() => ({ keys: aiKeys, defaultProvider: defaultAiProvider, openAiModel, claudeModel, usageTier: openAiTier, onUsed: refreshQuota }), [aiKeys, claudeModel, defaultAiProvider, openAiModel, openAiTier, refreshQuota]);
+  // The research drawer's AI lookups (基本面 / DCF) when the usual company data fails.
+  const researchAi = aiEnabled ? importAi : null;
   const updateDefaultAiProvider = useCallback((provider: AiProvider) => { setDefaultAiProvider(provider); saveDefaultProvider(provider); }, []);
   const updateAnalysisQuestions = useCallback((questions: string[]) => { setAnalysisQuestions(questions); saveQuestions(questions); }, []);
   const saveFilingAnalysis = useCallback((analysis: FilingAnalysis) => {
@@ -1381,11 +1486,9 @@ export default function Home() {
   // A provider is usable with a key typed into this browser or one set on the server.
   const aiProviderReady = useCallback((provider: AiProvider) => Boolean(aiKeys[provider].trim()) || (aiStatus?.state === 'ok' && aiStatus.providers[provider]), [aiKeys, aiStatus]);
 
-  const toggleHomeBar = useCallback(() => {
-    setHomeBarEnabled((current) => {
-      try { window.localStorage.setItem(homeBarKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
-      return !current;
-    });
+  const updateBottomNav = useCallback((nav: BottomNav) => {
+    setBottomNav(nav);
+    try { window.localStorage.setItem(bottomNavKey, nav); } catch { /* storage unavailable */ }
   }, []);
   useEffect(() => {
     const offer = (event: Event) => { event.preventDefault(); setInstallPrompt(event as Event & { prompt: () => Promise<void> }); };
@@ -1399,11 +1502,26 @@ export default function Home() {
     const root = document.documentElement;
     if (homeBarEnabled) root.dataset.homeBar = '1';
     else delete root.dataset.homeBar;
-  }, [homeBarEnabled]);
+    if (bottomNav === 'guide') root.dataset.guideBar = '1';
+    else delete root.dataset.guideBar;
+  }, [bottomNav, homeBarEnabled]);
   const goToSection = useCallback((section: 'overview' | 'positions' | 'returns') => {
     setActiveSection(section);
     window.history.replaceState(null, '', `#${section}`);
     document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' });
+  }, []);
+  const toggleNotifyBar = useCallback(() => {
+    setNotifyBar((current) => {
+      try { window.localStorage.setItem(notifyBarKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
+  }, []);
+  const toggleGainsTab = useCallback(() => {
+    setGainsTab((current) => {
+      try { window.localStorage.setItem(gainsTabKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      if (current) setPositionView((view) => view === 'gains' ? 'visual' : view);
+      return !current;
+    });
   }, []);
   const toggleNotifyCenter = useCallback(() => {
     setNotifyEnabled((current) => {
@@ -1745,6 +1863,30 @@ export default function Home() {
     }).sort((a, b) => b.filed.localeCompare(a.filed));
   }, [earningsEnabled, secFilings]);
 
+  // 通知中心 calendar (prototype): all known upcoming earnings of holdings, closures in the next 45
+  // days, and a 財報解讀 card for the latest results of up to four holdings.
+  const noticeCalendar = useMemo<NoticeCalendar | undefined>(() => {
+    if (!notifyEnabled || noticeNow === null) return undefined;
+    const usToday = zonedDateKey(zonedDate(noticeNow, 'America/New_York'));
+    const closures = holidayNoticeEnabled ? [
+      ...upcomingClosures('US', usToday, 45),
+      ...upcomingClosures('JP', zonedDateKey(zonedDate(noticeNow, 'Asia/Tokyo')), 45),
+    ].sort((a, b) => a.key.localeCompare(b.key) || a.market.localeCompare(b.market))
+      .map((closure) => ({ key: closure.key, market: closure.market, label: closureLabel(closure), name: closure.name, early: closure.kind === 'early', daysAway: closure.daysAway })) : [];
+    const earnings = noticeEarnings
+      ? earningsReminders(mergeEarnings(noticeEarnings.symbols, noticeEarnings.yahoo, noticeEarnings.manual, noticeNow), noticeNow, 120)
+        .map((entry) => ({ symbol: entry.symbol, date: entry.date, timing: entry.timing, estimate: entry.estimate, daysAway: entry.daysAway }))
+        .sort((a, b) => a.daysAway - b.daysAway)
+      : [];
+    const digestFrom = addDaysToKey(usToday, -60);
+    const digests = earningsEnabled && secFilings ? Object.entries(secFilings.filings).flatMap(([symbol, company]) => {
+      const release = company.earningsRelease ?? company.periodicReport;
+      if (!release || release.filed < digestFrom) return [];
+      return [{ symbol, name: company.name, cik: company.cik, form: release.form, filed: release.filed, url: release.url, analysis: filingAnalyses[release.accession]?.text ?? null }];
+    }).sort((a, b) => b.filed.localeCompare(a.filed)).slice(0, 4) : [];
+    return { earnings, closures, digests, onAskAi: (symbol: string) => setFilingDialogSymbol(symbol) };
+  }, [earningsEnabled, filingAnalyses, holidayNoticeEnabled, noticeEarnings, noticeNow, notifyEnabled, secFilings]);
+
   // Notification center: the header notice line (results, closures, earnings dates) plus options
   // expiring within a week and dividends paid or about to be paid.
   const noticeItems = useMemo<NoticeItem[]>(() => {
@@ -1918,7 +2060,7 @@ export default function Home() {
   useEffect(() => {
     const controller = new AbortController();
     let inFlight = false;
-    const cacheKey = `${macroRangeMode}:${macroMarketGroup}`;
+    const cacheKey = `${macroRangeMode}:all`;
     const cached = macroCacheRef.current.get(cacheKey) ?? readStoredMacroMarket(cacheKey);
     const mergeMarketState = (current: MacroMarketData, markets: BenchmarkMarket[], updatedAt: string) => {
       const incomingIds = new Set(markets.map((market) => market.id));
@@ -1938,7 +2080,7 @@ export default function Home() {
       if (!quiet) setMacroLoading(true);
       try {
         const refreshParam = force ? '&refresh=1' : '';
-        const response = await fetch(`/api/benchmarks?mode=${macroRangeMode}&scope=markets&group=${macroMarketGroup}${refreshParam}`, { signal: controller.signal });
+        const response = await fetch(`/api/benchmarks?mode=${macroRangeMode}&scope=markets&group=all${refreshParam}`, { signal: controller.signal });
         const payload = await response.json() as { markets?: BenchmarkMarket[]; updatedAt?: string; warnings?: string[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? '宏觀行情暫時無法取得');
         if (controller.signal.aborted) return;
@@ -1978,7 +2120,7 @@ export default function Home() {
     void loadMarkets(Boolean(cached), forceRefresh);
     const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void loadMarkets(true, false); }, 60_000);
     return () => { controller.abort(); window.clearInterval(timer); };
-  }, [macroMarketGroup, macroRangeMode, macroRefreshKey]);
+  }, [macroRangeMode, macroRefreshKey]);
 
   useEffect(() => {
     const currentDate = today();
@@ -2014,7 +2156,7 @@ export default function Home() {
       if (section) observer.observe(section);
     });
     return () => observer.disconnect();
-  }, [valuationOpen]);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2153,41 +2295,6 @@ export default function Home() {
     void restoreBackground();
     return () => controller.abort();
   }, []);
-
-  const updatePanelRatio = useCallback((clientX: number) => {
-    const bounds = contentGridRef.current?.getBoundingClientRect();
-    if (!bounds || bounds.width <= 0) return;
-    const nextRatio = clampPanelRatio(((clientX - bounds.left) / bounds.width) * 100);
-    panelRatioRef.current = nextRatio;
-    contentGridRef.current?.style.setProperty('--return-panel-ratio', `${nextRatio}%`);
-  }, []);
-
-  const adjustPanelRatio = useCallback((delta: number) => {
-    const nextRatio = clampPanelRatio(panelRatioRef.current + delta);
-    panelRatioRef.current = nextRatio;
-    setPanelRatio(nextRatio);
-    window.localStorage.setItem(panelRatioKey, String(nextRatio));
-  }, []);
-
-  useEffect(() => {
-    if (!resizingPanels) return;
-    const move = (event: PointerEvent) => updatePanelRatio(event.clientX);
-    const finish = () => {
-      setPanelRatio(panelRatioRef.current);
-      window.localStorage.setItem(panelRatioKey, String(panelRatioRef.current));
-      setResizingPanels(false);
-    };
-    document.body.classList.add('is-resizing-panels');
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', finish, { once: true });
-    window.addEventListener('pointercancel', finish, { once: true });
-    return () => {
-      document.body.classList.remove('is-resizing-panels');
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', finish);
-      window.removeEventListener('pointercancel', finish);
-    };
-  }, [resizingPanels, updatePanelRatio]);
 
   const todayKey = today();
   const editorMarket: 'US' | 'JP' = editor?.market ?? (editor?.ticker === 'JPY' || isJapaneseTicker(editor?.ticker) ? 'JP' : 'US');
@@ -2437,6 +2544,19 @@ export default function Home() {
     }
     return items.length ? summarizeOptionRisk(items, capitalAtRisk) : null;
   }, [capitalAtRisk, optionRows, trades, usdJpyRate]);
+  // 本年權利金 (from the prototype): premium received on options sold this calendar year (USD, before
+  // buy-backs), and what the ones already closed this year actually kept.
+  const yearPremium = useMemo(() => {
+    const year = todayKey.slice(0, 4);
+    let received = 0, count = 0, kept = 0, closed = 0;
+    for (const item of enriched) {
+      const trade = item.trade;
+      if (!optionRightOf(trade) || !isShortTrade(trade) || trade.derived) continue;
+      if (trade.openDate.startsWith(year)) { received += normalizedUsdAmount(trade, trade.entryPrice * OPTION_CONTRACT_SIZE * Math.abs(trade.quantity), usdJpyRate); count += 1; }
+      if (trade.status === 'closed' && (trade.closeDate ?? '').startsWith(year)) { kept += item.pnl; closed += 1; }
+    }
+    return count || closed ? { received, count, kept, closed } : null;
+  }, [enriched, todayKey, usdJpyRate]);
   const currentRocYear = Number(today().slice(0, 4));
   const annualRocSummary = useMemo(() => buildAnnualRocSummary(closedTrades, currentRocYear, usdJpyRate), [closedTrades, currentRocYear, usdJpyRate]);
 
@@ -2502,39 +2622,53 @@ export default function Home() {
     };
     return { SPY: align(source?.SPY ?? []), BOXX: align(source?.BOXX ?? []) };
   }, [benchmarks, rangeMode, returnSeries]);
-  const spyCumulative = activeBenchmarks.SPY.length ? activeBenchmarks.SPY.reduce((growth, value) => growth * (1 + value), 1) - 1 : null;
   const estimatedReturnTickers = returnAnalytics.estimatedTickers;
   const returnEstimateNote = priceHistoryPending
     ? '（股價資料讀取中，暫以線性估算）'
     : estimatedReturnTickers.length
       ? `（估算：${estimatedReturnTickers.slice(0, 6).join('、')}${estimatedReturnTickers.length > 6 ? ` 等 ${estimatedReturnTickers.length} 檔` : ''}）`
       : '';
-  const chartStep = .05;
-  const chartValues = [...returnSeries.map((item) => item.value), ...activeBenchmarks.SPY, ...activeBenchmarks.BOXX].filter(Number.isFinite);
-  const chartStepCount = Math.max(1, Math.ceil(Math.max(0, ...chartValues.map(Math.abs)) / chartStep));
-  const maxAbsReturn = chartStepCount * chartStep;
-  const chartY = (value: number) => 50 - (value / maxAbsReturn) * 50;
-  const chartTicks = Array.from({ length: chartStepCount * 2 + 1 }, (_, index) => (chartStepCount - index) * chartStep);
-  const pointsFor = (values: number[]) => values.map((value, index) => {
-    const x = values.length === 1 ? 50 : (index / (values.length - 1)) * 100;
-    const y = chartY(value);
-    return `${x},${y}`;
-  }).join(' ');
-  const chartPoints = pointsFor(returnSeries.map((item) => item.value));
-  const spyPoints = pointsFor(activeBenchmarks.SPY);
-  const boxxPoints = pointsFor(activeBenchmarks.BOXX);
+  // The chart and the figures above it start at the first period with money in the market: the
+  // portfolio has no return before that, and compounding SPY over those periods made 相對 SPY meaningless.
+  const perfStart = useMemo(() => {
+    const first = returnSeries.findIndex((item) => item.capital > 0);
+    return first < 0 ? 0 : Math.min(first, Math.max(0, returnSeries.length - 2));
+  }, [returnSeries]);
+  const perfLabels = useMemo(() => returnSeries.slice(perfStart).map((item) => perfLabel(rangeMode, item)), [perfStart, rangeMode, returnSeries]);
+  const perfSeries = useMemo(() => ({ mine: returnSeries.slice(perfStart).map((item) => item.value), spy: activeBenchmarks.SPY.slice(perfStart), boxx: activeBenchmarks.BOXX.slice(perfStart) }), [activeBenchmarks, perfStart, returnSeries]);
+  const spyCumulative = perfSeries.spy.length ? perfSeries.spy.reduce((growth, value) => growth * (1 + value), 1) - 1 : null;
+  const returnWindowLabel = perfStart > 0 ? `${perfLabels[0]} 起` : rangeMode === 'day' ? '近 60 個交易日' : rangeMode === 'week' ? '近 52 週' : rangeMode === 'month' ? '近 36 個月' : '近 6 年';
+  // Metrics leave out the stretch before the first position.
+  const riskMetrics = useMemo(() => {
+    const first = returnSeries.findIndex((item) => item.capital > 0);
+    if (first < 0) return null;
+    const rows = returnSeries.map((item, index) => ({ item, index })).filter(({ index }) => index >= first);
+    if (rows.length < 2) return null;
+    return computeRiskMetrics({
+      labels: rows.map(({ item }) => perfLabel(rangeMode, item)),
+      mine: rows.map(({ item }) => item.value),
+      spy: rows.map(({ index }) => activeBenchmarks.SPY[index] ?? 0),
+      boxx: rows.map(({ index }) => activeBenchmarks.BOXX[index] ?? 0),
+    }, rangeMode);
+  }, [activeBenchmarks, rangeMode, returnSeries]);
+  // 月曆 needs every day since the first trade, so it is only computed while that view is open.
+  const heatGrid = useMemo(() => {
+    if (returnView !== 'heat') return [];
+    const from = trades.reduce((earliest, trade) => trade.openDate && /^\d{4}-\d{2}-\d{2}$/.test(trade.openDate) && (!earliest || trade.openDate < earliest) ? trade.openDate : earliest, '');
+    if (!from) return [];
+    const daily = dailyTimeWeightedReturns(trades, { startDate: from, endDate: today(), usdJpyRate, prices: activePriceHistory?.series ?? null });
+    return monthlyGrid(daily.days);
+  }, [activePriceHistory, returnView, trades, usdJpyRate]);
   const rangeModeLabel = rangeMode === 'day' ? '日' : rangeMode === 'week' ? '週' : rangeMode === 'month' ? '月' : '年';
   const macroRangeModeLabel = macroRangeMode === 'day' ? '日' : macroRangeMode === 'week' ? '週' : macroRangeMode === 'month' ? '月' : '年';
   const macroTimeline = useMemo(() => rangeBuckets(macroRangeMode, today()), [macroRangeMode]);
-  const activeMacroIds: BenchmarkMarket['id'][] = macroMarketGroup === 'rates' ? ['USDJPY', 'US10Y', 'US30Y'] : ['GOLD', 'OIL'];
+  const activeMacroIds: BenchmarkMarket['id'][] = ['USDJPY', 'US10Y', 'US30Y', 'GOLD', 'OIL'];
   const activeMacroMarkets = macroMarkets.mode === macroRangeMode ? activeMacroIds.flatMap((id) => {
     const market = macroMarkets.markets.find((candidate) => candidate.id === id);
     return market ? [market] : [];
   }) : [];
   const usdJpyEstimated = !(usdJpyRate > 50 && usdJpyUpdatedAt);
   const macroUpdatedLabel = macroMarkets.updatedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(macroMarkets.updatedAt)) : '等待更新';
-  const chartDateStep = Math.max(1, Math.ceil((returnSeries.length - 1) / 5));
-  const activeReturnHoverIndex = returnHoverIndex !== null && returnSeries[returnHoverIndex] ? returnHoverIndex : null;
 
   const currentAllocationDate = today();
   const allocationPresets = [
@@ -2572,13 +2706,22 @@ export default function Home() {
       }), { label: '其他', value: 0, tradeCount: 0, estimated: false, members: [] as string[] }));
     }
     return {
-      items: top.map((item, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: palette[index % palette.length] })),
+      items: top.map((item, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: palettes[wafuTheme][index % palettes[wafuTheme].length] })),
       total,
       tradeCount: current ? openTrades.length : allocationHistory?.date === allocationDate ? allocationHistory.tradeCount : 0,
       estimatedTickers: current ? [] : allocationHistory?.date === allocationDate ? allocationHistory.estimatedTickers : [],
     };
-  }, [allocationDate, allocationHistory, currentAllocationDate, openTrades]);
+  }, [allocationDate, allocationHistory, currentAllocationDate, openTrades, wafuTheme]);
   const allocation = allocationSnapshot.items as AllocationItem[];
+  // 集中度提醒 (from the prototype): how much of the book sits in the three largest holdings.
+  const concentration = useMemo(() => {
+    const ranked = [...allocation].filter((item) => item.share > 0).sort((a, b) => b.share - a.share);
+    if (ranked.length < 2) return null;
+    const top3 = ranked.slice(0, 3).reduce((sum, item) => sum + item.share, 0);
+    return { top3, top1: ranked[0].share, names: ranked.slice(0, 3).map((item) => item.label), level: top3 >= 0.75 ? 'high' as const : top3 >= 0.5 ? 'mid' as const : 'low' as const };
+  }, [allocation]);
+  // The quick sheet's 個股研究 opens the ticker in view, else the largest position.
+  const researchTicker = drilledTicker ?? allocation.flatMap((item) => item.members).find((member) => member !== 'USD' && member !== 'JPY') ?? null;
   const allocationFallbackLabel = allocationGroupSelection?.label ?? allocation.find((item) => drilledTicker && item.members.includes(drilledTicker))?.label ?? null;
   const activeAllocationLabel = allocationHoveredLabel ?? allocationPinnedLabel ?? allocationFallbackLabel;
   const activeAllocationItem = allocation.find((item) => item.label === activeAllocationLabel) ?? null;
@@ -2644,6 +2787,47 @@ export default function Home() {
       strategy: [...group.strategies].slice(0, 2).join(' · '),
     }));
   }, [filteredTrades, usdJpyRate]);
+  // The research drawer's header: holding, average cost and unrealised P&L of the ticker in view.
+  // 個股研究 chip row (prototype): every current holding with its P&L % as in the 持倉 list (all of the
+  // ticker's trades, like the drawer's header); the list itself is filtered to one ticker while the
+  // drawer is up, so this groups the unfiltered trades. Stocks by value first, then cash, then options.
+  const researchChips = useMemo(() => {
+    const groups = new Map<string, { symbol: string; pnl: number; capital: number; value: number; stock: boolean; option: boolean; cash: boolean }>();
+    for (const item of enriched) {
+      const symbol = item.trade.ticker || 'OTHER';
+      const group = groups.get(symbol) ?? { symbol, pnl: 0, capital: 0, value: 0, stock: false, option: false, cash: false };
+      group.pnl += item.pnl;
+      group.capital += investedCapitalUsd(item.trade, usdJpyRate);
+      group.value += item.marketValue;
+      if (item.trade.status === 'open') {
+        if (isCashTrade(item.trade)) group.cash = true;
+        else if (item.trade.type === 'SDI' || item.trade.event === 'STOCK') group.stock = true;
+        else group.option = true;
+      }
+      groups.set(symbol, group);
+    }
+    const rank = { stock: 0, cash: 1, option: 2 } as const;
+    return [...groups.values()]
+      .filter((group) => group.symbol !== 'OTHER' && (group.stock || group.option || group.cash))
+      .map((group): ResearchChip & { value: number } => ({
+        symbol: group.symbol,
+        kind: group.symbol === 'USD' || group.symbol === 'JPY' ? 'cash' : group.stock ? 'stock' : group.option ? 'option' : 'cash',
+        roc: group.capital > 0 ? group.pnl / group.capital : 0,
+        value: group.value,
+      }))
+      .sort((a, b) => rank[a.kind] - rank[b.kind] || b.value - a.value);
+  }, [enriched, usdJpyRate]);
+  const researchSymbols = useMemo(() => researchChips.filter((chip) => chip.kind === 'stock').map((chip) => chip.symbol), [researchChips]);
+  const researchPosition = drilledTicker ? visualPositions.find((position) => position.ticker === drilledTicker) ?? null : null;
+  const researchSummary = useMemo(() => {
+    if (!drilledTicker || !researchPosition) return [];
+    const parts: Array<{ text: string; tone?: 'positive' | 'negative' }> = [];
+    if (researchPosition.stockQuantity > 0) parts.push({ text: `持有 ${researchPosition.stockQuantity} 股` });
+    if (researchPosition.optionQuantity > 0) parts.push({ text: `選擇權 ${researchPosition.optionQuantity} 口` });
+    parts.push({ text: `平均取得 ${nativeMoney(drilledTicker, researchPosition.entryPrice)}` });
+    parts.push({ text: `未實現損益 ${researchPosition.pnl >= 0 ? '+' : '−'}${money.format(Math.abs(researchPosition.pnl))}（${signedPrecisePercent(researchPosition.roc)}）`, tone: researchPosition.pnl >= 0 ? 'positive' : 'negative' });
+    return parts;
+  }, [drilledTicker, researchPosition]);
 
   async function persistTrade(trade: Trade, method: 'POST' | 'PUT') {
     const response = await fetch('/api/trades', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(trade) });
@@ -2702,6 +2886,40 @@ export default function Home() {
     } catch (error) {
       notify(error instanceof Error ? error.message : '價格儲存失敗');
     }
+  }
+
+  // 手動報價: the rows (options first, then manual stocks; auto stocks only on request) and the batch save.
+  const manualQuoteRows = useMemo<ManualQuoteRow[]>(() => {
+    if (!manualQuotesOpen) return [];
+    return trades.filter((trade) => trade.status === 'open' && !trade.derived && !isCashTrade(trade) && trade.ticker).map((trade) => {
+      const stock = trade.type === 'SDI' || trade.event === 'STOCK';
+      const right = optionRightOf(trade);
+      const option = optionRows.get(trade.id);
+      const yen = isJapaneseTicker(trade.ticker);
+      return {
+        id: trade.id,
+        ticker: trade.ticker!,
+        label: stock ? '股票' : right ? `${right.toUpperCase()} ${trade.strike ?? ''}`.trim() : trade.event,
+        sub: [trade.expiryDate ? `到期 ${trade.expiryDate}` : '', `成本 ${nativeMoney(trade.ticker, trade.entryPrice)}`, `${trade.quantity} ${stock ? '股' : '口'}`].filter(Boolean).join(' · '),
+        current: trade.currentPrice,
+        hint: option?.underlying ? `標的 ${nativeMoney(trade.ticker, option.underlying)}` : undefined,
+        auto: stock && trade.quoteMode === 'auto',
+        currency: yen ? '¥' as const : '$' as const,
+      };
+    }).sort((a, b) => Number(a.label === '股票') - Number(b.label === '股票') || a.ticker.localeCompare(b.ticker));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualQuotesOpen]);
+
+  async function saveManualQuotes(changes: Array<{ id: number; price: number }>) {
+    let saved = 0;
+    for (const change of changes) {
+      const trade = trades.find((item) => item.id === change.id);
+      if (!trade) continue;
+      try { await persistTrade({ ...trade, currentPrice: change.price, quoteMode: 'manual' }, 'PUT'); saved += 1; } catch { /* reported below */ }
+    }
+    notify(saved === changes.length ? `已更新 ${saved} 筆手動報價` : `已更新 ${saved} 筆，${changes.length - saved} 筆儲存失敗`);
+    if (saved !== changes.length) throw new Error('partial');
+    return saved;
   }
 
   async function saveStockLot(trade: Trade, openDate: string, entryPrice: number) {
@@ -2817,8 +3035,8 @@ export default function Home() {
     if (tickerChanged) {
       setTechnicalLoading(true);
       setTechnicalError('');
+      setResearchTab('technical');
     }
-    window.requestAnimationFrame(() => document.getElementById('stock-analysis')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
   }
 
   function selectTechnicalRange(range: TechnicalRange) {
@@ -2853,26 +3071,12 @@ export default function Home() {
     window.requestAnimationFrame(() => document.getElementById('positions')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
   }
 
+  // 估值 opens the DCF tab of a stock's research drawer (the open one, else the first holding).
   function openValuation(ticker?: string) {
-    if (ticker) setValuationTicker(ticker);
-    setValuationOpen(true);
-    setActiveSection('valuation');
-    window.setTimeout(() => document.getElementById('valuation')?.scrollIntoView({ behavior: 'auto', block: 'start' }), 0);
-  }
-
-  function closeValuation() {
-    setValuationOpen(false);
-    setActiveSection(drilledTicker ? 'positions' : 'overview');
-    window.requestAnimationFrame(() => document.getElementById(drilledTicker ? 'stock-analysis' : 'overview')?.scrollIntoView({ behavior: 'auto', block: 'start' }));
-  }
-
-  function toggleValuation(ticker?: string) {
-    const target = ticker || valuationTicker;
-    if (valuationOpen && target === valuationTicker) {
-      closeValuation();
-      return;
-    }
-    openValuation(target);
+    const symbol = ticker ?? researchSymbols[0];
+    if (!symbol) return;
+    openTickerDetails(symbol);
+    setResearchTab('dcf');
   }
 
   function selectAllocationItem(item: { label: string; members: string[] }) {
@@ -2898,6 +3102,40 @@ export default function Home() {
     setTradeColumnSet(next);
     writeStoredTradeColumns(next);
   }, []);
+
+  // 欄位 values for one visual position: options are summed or take the nearest / riskiest leg.
+  function visualFieldValues(position: (typeof visualPositions)[number], openItems: typeof filteredTrades, snapshot: LiveQuote | undefined, price: number): Partial<Record<VisualFieldId, { text: string; tone?: 'positive' | 'negative'; range?: number; title?: string }>> {
+    const values: Partial<Record<VisualFieldId, { text: string; tone?: 'positive' | 'negative'; range?: number; title?: string }>> = {};
+    const signed = (value: number) => value >= 0 ? 'positive' as const : 'negative' as const;
+    const firstOpen = openItems.reduce((earliest, item) => !earliest || item.trade.openDate < earliest ? item.trade.openDate : earliest, '');
+    const held = firstOpen ? Math.max(1, calendarDaysBetween(firstOpen, todayKey) ?? 1) : null;
+    if (held !== null) values.held = { text: `${held} 天` };
+    if (held !== null && position.capital > 0) { const annual = position.roc * 365 / held; values.annual = { text: cappedAnnualized(annual), tone: signed(annual) }; }
+    const high = snapshot?.yearHigh ?? null, low = snapshot?.yearLow ?? null;
+    if (high !== null && low !== null && high > low) values.range = { text: `${nativeMoney(position.ticker, low)} – ${nativeMoney(position.ticker, high)}`, range: Math.max(0, Math.min(1, (price - low) / (high - low))) };
+    let delta = 0, theta = 0, hasGreeks = false, dte: number | null = null, otm: number | null = null, assign: number | null = null;
+    for (const { trade } of openItems) {
+      const option = optionRows.get(trade.id);
+      if (!option) {
+        if (trade.type === 'SDI' || trade.event === 'STOCK') { delta += Math.abs(trade.quantity) * (trade.type.toLowerCase() === 'sell' ? -1 : 1); hasGreeks = true; }
+        continue;
+      }
+      if (option.dte !== null && (dte === null || option.dte < dte)) dte = option.dte;
+      const analytics = option.analytics;
+      if (analytics?.positionDelta != null) { delta += analytics.positionDelta; hasGreeks = true; }
+      if (analytics?.positionTheta != null) theta += analytics.positionTheta;
+      if (analytics?.otmPercent != null && (otm === null || analytics.otmPercent < otm)) otm = analytics.otmPercent;
+      if (analytics?.greeks && (assign === null || analytics.greeks.probabilityItm > assign)) assign = analytics.greeks.probabilityItm;
+    }
+    if (dte !== null) values.dte = { text: `${dte} 天` };
+    if (hasGreeks) values.delta = { text: `${signedDecimal(delta)} 股` };
+    if (theta) values.theta = { text: signedMoney(theta), tone: signed(theta) };
+    if (otm !== null) values.moneyness = { text: signedPercent(otm), tone: signed(otm) };
+    if (assign !== null) values.assign = { text: percent.format(assign) };
+    const openCapital = openItems.reduce((sum, item) => sum + investedCapitalUsd(item.trade, usdJpyRate), 0);
+    if (openCapital > 0 && capitalAtRisk > 0) values.capital = { text: percent.format(openCapital / capitalAtRisk) };
+    return values;
+  }
 
   // One details-table cell. The original eleven columns render exactly as before; the optional
   // columns show "—" wherever a value does not apply (stock, cash, closed or unpriced options).
@@ -2950,18 +3188,14 @@ export default function Home() {
     }
   }
 
-  const marketOpen = (() => {
-    const timestamp = Date.now();
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(timestamp));
-    const day = parts.find((part) => part.type === 'weekday')?.value ?? '';
-    const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0);
-    const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
-    const clock = hour * 60 + minute;
-    const easternDate = zonedDate(timestamp, 'America/New_York');
-    const holiday = usMarketHolidays(easternDate.year).has(zonedDateKey(easternDate));
-    return !holiday && !['Sat', 'Sun'].includes(day) && clock >= 570 && clock < 960;
-  })();
-  const contentGridStyle = useMemo(() => ({ '--return-panel-ratio': `${panelRatio}%` }) as CSSProperties, [panelRatio]);
+  // Worked out in the browser (and every 30 s) so the pill never differs from the server's render.
+  const [marketSession, setMarketSession] = useState<MarketSession>('closed');
+  useEffect(() => {
+    const update = () => setMarketSession(marketSessionAt(Date.now()));
+    update();
+    const timer = window.setInterval(update, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const imageBackgroundActive = backgroundMode === 'image' && Boolean(backgroundImage);
   const shellStyle = useMemo(() => imageBackgroundActive ? { '--custom-background': `url("${backgroundImage}")` } as CSSProperties : undefined, [backgroundImage, imageBackgroundActive]);
   const selectedStockTrades = useMemo(() => drilledTicker ? trades.filter((trade) => trade.ticker === drilledTicker && (trade.type === 'SDI' || trade.event === 'STOCK')) : [], [drilledTicker, trades]);
@@ -2979,17 +3213,18 @@ export default function Home() {
       <header className="topbar">
         <div className="brand-cluster">
           <a className="brand" href="#top" aria-label="OptionFlow 首頁">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="brand-logo" src="/optionflow-logo.jpg" alt="" width="52" height="52" />
+            <i className="brand-crest" aria-hidden="true"><svg viewBox="-1.3 -1.3 2.6 2.6">{wafuTheme === 'shigure'
+              ? <g fill="none" strokeLinejoin="round" strokeLinecap="round"><path d={yukiwaOutline()} strokeWidth={0.08} /><path d={snowCrystal(0.44)} strokeWidth={0.06} /></g>
+              : <g fill="none" strokeLinejoin="round" strokeLinecap="round"><path d={kikyoOutline()} strokeWidth={0.08} /><path d={kikyoInner()} strokeWidth={0.06} /></g>}</svg></i>
             <span>OPTIONFLOW</span>
           </a>
           <HeaderMarketCalendar />
         </div>
+        {notifyEnabled && <div className="topbar-notice"><NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} bar={notifyBar} calendar={noticeCalendar} /></div>}
         <div className="header-actions">
           <LanguageSwitcher />
-          {notifyEnabled && <NotifyCenter theme={wafuTheme} items={noticeItems} />}
           {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
-          <span className={`market-pill ${marketOpen ? 'is-open' : ''}`}><span />{marketOpen ? '美股交易中' : '非交易時段'}</span>
+          <span className={`market-pill is-${marketSession}`}><span />{marketSession === 'open' ? '美股交易中' : marketSession === 'pre' ? '盤前' : marketSession === 'post' ? '盤後' : '非交易時段'}</span>
           <button className="secondary-button" type="button" onClick={() => refreshQuotes()} disabled={refreshing}>{refreshing ? '更新中…' : '↻ 更新報價'}</button>
           <button className="primary-button" type="button" onClick={() => setEditor(blankTrade())}>＋新增交易</button>
         </div>
@@ -3000,8 +3235,8 @@ export default function Home() {
         <nav className="side-nav" aria-label="頁面切換">
           <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}>{navGlyph('settings', settingsOpen)}<span>設定</span></button>
           {([['overview', '總覽'], ['positions', '持倉'], ['returns', '收益']] as const).map(([section, label]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}>{navGlyph(section, activeSection === section)}<span>{label}</span></a>)}
-          <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? valuationTicker)}>{navGlyph('valuation', activeSection === 'valuation')}<span>估值</span></button>
-          {assistantPrefs.enabled && <button type="button" className={`settings-nav-button wafu-nav-ai ${assistantOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}><i className="wafu-nav-glyph"><HaloIcon theme={wafuTheme} size={24} spin={assistantOpen} minStrokePx={1} /></i><span>AI</span></button>}
+          <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? undefined)}>{navGlyph('valuation', activeSection === 'valuation')}<span>估值</span></button>
+          {assistantOn && <button type="button" className={`settings-nav-button wafu-nav-ai ${assistantOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}><i className="wafu-nav-glyph"><HaloIcon theme={wafuTheme} size={24} spin={assistantOpen} minStrokePx={1} /></i><span>AI</span></button>}
           <div className="background-control">
             <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}>{navGlyph(backgroundSaving ? 'saving' : 'background', false)}<span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
             {backgroundImage && <div className="background-mode-switch" aria-label="背景顯示方式"><button type="button" disabled={backgroundSaving} className={backgroundMode === 'default' ? 'active' : ''} aria-pressed={backgroundMode === 'default'} onClick={() => switchBackgroundMode('default')}>原始</button><button type="button" disabled={backgroundSaving} className={backgroundMode === 'image' ? 'active' : ''} aria-pressed={backgroundMode === 'image'} onClick={() => switchBackgroundMode('image')}>圖片</button></div>}
@@ -3010,7 +3245,7 @@ export default function Home() {
         </nav>
         <div className="dashboard">
         <section className="hero" id="overview">
-          <div><EditableHeroTitle onNotify={notify} /></div>
+          <div className="wafu-hero-title"><EditableHeroTitle onNotify={notify} theme={wafuTheme} /><p className="wafu-hero-sub">{wafuTheme === 'shigure' ? '赤冬 · 雪夜的自家調配帳' : '作戰參謀的帳簿 · 百花繚亂'}</p></div>
           <LiveMarketClocks lastQuoteAt={lastQuoteAt} />
         </section>
 
@@ -3039,89 +3274,53 @@ export default function Home() {
           <BrokerHub initialWorkspace={brokerWorkspaceSeed} usdJpyRate={usdJpyRate} usdJpyEstimated={usdJpyEstimated} usdJpyUpdatedAt={usdJpyEstimated ? null : usdJpyUpdatedAt} onNotify={notify} />
         </Suspense>}
 
-        <section ref={contentGridRef} className={`content-grid ${resizingPanels ? 'is-resizing' : ''}`} style={contentGridStyle}>
-          <article className="panel return-panel" id="returns" aria-busy={benchmarkLoading}>
-            <div className="panel-heading">
-              <div><p className="eyebrow">Return analytics</p><h2>{rangeModeLabel}收益率</h2></div>
+        <article className="panel return-panel wafu-perf-panel" id="returns" aria-busy={benchmarkLoading}>
+          <div className="panel-heading">
+            <div><p className="eyebrow">Return analytics</p><h2>收益分析</h2></div>
+            <div className="wafu-perf-controls">
+              <div className="segmented wafu-return-views" role="group" aria-label="收益圖表檢視">
+                {([['cum', '累積'], ['period', '單期'], ['dd', '回撤'], ['heat', '月曆']] as const).map(([view, label]) => <button type="button" key={view} className={returnView === view ? 'selected' : ''} aria-pressed={returnView === view} onClick={() => setReturnView(view)}>{label}</button>)}
+              </div>
               <div className="segmented" role="group" aria-label="收益率期間">
                 {([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={rangeMode === mode ? 'selected' : ''} aria-pressed={rangeMode === mode} onClick={() => setRangeMode(mode)}>{label}</button>)}
               </div>
             </div>
-            <div className="return-summary"><strong>{percent.format(returnSeries.at(-1)?.value ?? 0)}</strong><span>最近一期報酬率</span><span className="return-cumulative">區間累積 <b className={returnAnalytics.cumulative >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(returnAnalytics.cumulative)}</b>（SPY {spyCumulative === null ? '—' : signedPrecisePercent(spyCumulative)}）</span><div className="benchmark-legend"><span><i className="portfolio-key" />我的組合</span><span><i className="spy-key" />SPY</span><span><i className="boxx-key" />BOXX</span></div></div>
-            <div className="chart-shell">
-              {chartTicks.map((tick) => <span key={`label-${tick.toFixed(4)}`} className="axis-label" style={{ top: `${chartY(tick)}%` }}>{tick > 0 ? '+' : ''}{Math.round(tick * 100)}%</span>)}
-              <svg className="return-chart" viewBox="0 0 100 100" role="img" aria-label="日週月年收益率折線圖" preserveAspectRatio="none">
-                <defs><linearGradient id="returnFade" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#2f73ed" stopOpacity=".24"/><stop offset="100%" stopColor="#2f73ed" stopOpacity="0"/></linearGradient></defs>
-                {chartTicks.map((tick) => <line key={`grid-${tick.toFixed(4)}`} x1="0" x2="100" y1={chartY(tick)} y2={chartY(tick)} className={Math.abs(tick) < .0001 ? 'zero-line' : 'chart-grid-line'} />)}
-                {chartPoints && <><polygon points={`0,${chartY(0)} ${chartPoints} 100,${chartY(0)}`} fill="url(#returnFade)" /><polyline points={chartPoints} className="return-line portfolio-line" /></>}
-                {spyPoints && <polyline points={spyPoints} className="return-line spy-line" />}
-                {boxxPoints && <polyline points={boxxPoints} className="return-line boxx-line" />}
-              </svg>
-              <div className="return-markers" aria-hidden="true">{returnSeries.map((item, index) => {
-                const x = returnSeries.length === 1 ? 50 : (index / (returnSeries.length - 1)) * 100;
-                const y = chartY(item.value);
-                return <span key={item.key} className={item.value >= 0 ? 'point-positive' : 'point-negative'} style={{ left: `${x}%`, top: `${y}%` }} title={`${item.label}: ${percent.format(item.value)}`} />;
-              })}</div>
-              {activeReturnHoverIndex !== null && (() => {
-                const item = returnSeries[activeReturnHoverIndex];
-                const x = returnSeries.length === 1 ? 50 : activeReturnHoverIndex / (returnSeries.length - 1) * 100;
-                const spyValue = activeBenchmarks.SPY[activeReturnHoverIndex] ?? 0;
-                const boxxValue = activeBenchmarks.BOXX[activeReturnHoverIndex] ?? 0;
-                return <><span className="return-hover-line" style={{ left: `${x}%` }} aria-hidden="true" /><div className={`return-chart-tooltip ${x < 18 ? 'align-left' : x > 82 ? 'align-right' : ''}`} style={{ left: `${x}%` }} role="status"><strong>{item.label}</strong><span><i className="portfolio-key" />我的組合 <b>{signedPrecisePercent(item.value)}</b></span><span><i className="spy-key" />SPY <b>{signedPrecisePercent(spyValue)}</b></span><span><i className="boxx-key" />BOXX <b>{signedPrecisePercent(boxxValue)}</b></span></div></>;
-              })()}
-              <div className="return-hover-zones" onMouseLeave={() => setReturnHoverIndex(null)}>{returnSeries.map((item, index) => {
-                const pointX = returnSeries.length === 1 ? 50 : index / (returnSeries.length - 1) * 100;
-                const previousX = index === 0 ? 0 : (index - 1) / (returnSeries.length - 1) * 100;
-                const nextX = index === returnSeries.length - 1 ? 100 : (index + 1) / (returnSeries.length - 1) * 100;
-                const left = index === 0 ? 0 : (previousX + pointX) / 2;
-                const right = index === returnSeries.length - 1 ? 100 : (pointX + nextX) / 2;
-                return <button type="button" key={`hover-${item.key}`} style={{ left: `${left}%`, width: `${right - left}%` }} aria-label={`${item.label}：我的組合 ${signedPrecisePercent(item.value)}，SPY ${signedPrecisePercent(activeBenchmarks.SPY[index] ?? 0)}，BOXX ${signedPrecisePercent(activeBenchmarks.BOXX[index] ?? 0)}`} onMouseEnter={() => setReturnHoverIndex(index)} onFocus={() => setReturnHoverIndex(index)} onBlur={() => setReturnHoverIndex(null)} onClick={() => setReturnHoverIndex(index)} />;
-              })}</div>
+          </div>
+          <div className="wafu-perf-summary">
+            <div className="wafu-perf-big"><strong className={returnAnalytics.cumulative >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(returnAnalytics.cumulative)}</strong><span>{returnWindowLabel}累積報酬</span></div>
+            <dl>
+              <div><dt>相對 SPY</dt><dd className={spyCumulative === null ? '' : returnAnalytics.cumulative - spyCumulative >= 0 ? 'positive' : 'negative'}>{spyCumulative === null ? '—' : `${signedPrecisePercent(returnAnalytics.cumulative - spyCumulative)}`}</dd></div>
+              <div><dt>最新一{rangeModeLabel}</dt><dd className={(returnSeries.at(-1)?.value ?? 0) >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(returnSeries.at(-1)?.value ?? 0)}</dd></div>
+              <div><dt>最大回撤</dt><dd className={riskMetrics && riskMetrics.mdd < 0 ? 'negative' : ''}>{riskMetrics ? signedPrecisePercent(riskMetrics.mdd) : '—'}{riskMetrics?.mddAt && <small>{riskMetrics.mddAt}</small>}</dd></div>
+            </dl>
+            {returnView !== 'heat' && <div className="wafu-perf-legend" role="group" aria-label="顯示的序列">
+              {(['mine', 'spy', 'boxx'] as const).filter((key) => returnView !== 'dd' || key !== 'boxx').map((key) => <button type="button" key={key} className={perfVisible[key] ? '' : 'is-off'} aria-pressed={perfVisible[key]} onClick={() => setPerfVisible((current) => ({ ...current, [key]: !current[key] }))}><i className={key === 'mine' ? 'portfolio-key' : key === 'spy' ? 'spy-key' : 'boxx-key'} />{perfNames[key]}</button>)}
+            </div>}
+          </div>
+          <div className="wafu-perf-body">
+            <div className="wafu-perf-main">
+              {returnView === 'heat' ? <MonthlyHeatmap grid={heatGrid} loading={priceHistoryPending} />
+                : <PerfChart mode={returnView} labels={perfLabels} series={perfSeries} visible={perfVisible} colors={perfColors} names={perfNames} />}
+              <p className="return-method-note">時間加權報酬：每日損益 ÷ 當日占用資本；股票用 Yahoo 含息調整收盤，選擇權以進出場價線性估算{returnEstimateNote}</p>
             </div>
-            <div className="chart-dates">{returnSeries.map((item, index) => <span key={item.key} className={index !== 0 && index !== returnSeries.length - 1 && index % chartDateStep !== 0 ? 'hide-small-label' : ''}>{item.label}</span>)}</div>
-            <p className="return-method-note">時間加權報酬：每日損益 ÷ 當日占用資本；股票用 Yahoo 含息調整收盤，選擇權以進出場價線性估算{returnEstimateNote}</p>
-            <section className="macro-market-section" aria-labelledby="macro-market-title">
-              <div className="macro-market-heading"><div><p className="eyebrow">Macro price monitor</p><h3 id="macro-market-title">{macroMarketGroup === 'rates' ? '匯率與美債殖利率' : '黃金與原油期貨'}</h3></div><div className="macro-market-actions"><button type="button" className="macro-deck-toggle" onClick={() => showMacroMarketGroup(macroMarketGroup === 'rates' ? 'commodities' : 'rates', macroMarketGroup === 'rates' ? 'up' : 'down')} aria-label={macroMarketGroup === 'rates' ? '向上切換至黃金與原油期貨' : '向下切換至匯率與美債殖利率'}><span aria-hidden="true">{macroMarketGroup === 'rates' ? '↑' : '↓'}</span><b>{macroMarketGroup === 'rates' ? '黃金／原油' : '美元／美債'}</b><i aria-hidden="true"><em className={macroMarketGroup === 'rates' ? 'active' : ''} /><em className={macroMarketGroup === 'commodities' ? 'active' : ''} /></i></button><div className="segmented macro-range-switch" role="group" aria-label="宏觀歷史期間">{([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={macroRangeMode === mode ? 'selected' : ''} aria-pressed={macroRangeMode === mode} onClick={() => setMacroRangeMode(mode)}>{label}</button>)}</div><button type="button" className="macro-refresh-button" disabled={macroLoading} onClick={() => { macroRefreshRequestedRef.current = true; setMacroRefreshKey((current) => current + 1); }}>↻ 更新</button><span>美東 {macroUpdatedLabel} · 每 60 秒</span></div></div>
-              {macroError && <p className="macro-market-error" role="status">{macroError}</p>}
-              <div className={`macro-market-deck deck-${macroDeckDirection}`} onPointerDown={(event) => { if (event.pointerType === 'mouse' && event.button !== 0) return; macroDeckSwipeStartRef.current = event.clientY; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerUp={(event) => { const start = macroDeckSwipeStartRef.current; macroDeckSwipeStartRef.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); if (start === null) return; const distance = event.clientY - start; if (distance < -34 && macroMarketGroup === 'rates') showMacroMarketGroup('commodities', 'up'); if (distance > 34 && macroMarketGroup === 'commodities') showMacroMarketGroup('rates', 'down'); }} onPointerCancel={() => { macroDeckSwipeStartRef.current = null; }}>
-                <div key={`${macroMarketGroup}-${macroRangeMode}`} className={`macro-market-grid group-${macroMarketGroup} ${macroLoading ? 'is-loading' : ''}`} aria-busy={macroLoading}>
-                  {activeMacroMarkets.map((market) => <MacroMarketCard key={market.id} market={market} startLabel={macroTimeline[0]?.label ?? ''} endLabel={macroTimeline.at(-1)?.label ?? ''} rangeLabel={macroRangeModeLabel} />)}
-                  {!activeMacroMarkets.length && Array.from({ length: macroMarketGroup === 'rates' ? 3 : 2 }, (_, item) => <article className="macro-market-card macro-market-placeholder" key={item}><span /><b /><i /></article>)}
-                </div>
-              </div>
-              <p className="macro-market-note">{macroMarketGroup === 'rates' ? '美元／日圓顯示至小數點後 2 位；美國 10 年與 30 年公債顯示殖利率、變動點數與漲跌幅。' : '黃金與 WTI 原油採連續近月期貨價格；上下滑動卡片或使用推疊按鈕即可返回匯率與美債。'}</p>
-            </section>
-          </article>
+            <aside className="wafu-perf-side" aria-label="績效與風險指標">
+              {riskMetrics ? <MetricsGrid m={riskMetrics} mode={rangeMode} /> : <p className="wafu-perf-empty"><b>績效與風險指標</b>開始交易後就會計算報酬、波動與回撤。</p>}
+            </aside>
+          </div>
+        </article>
 
-          <div
-            className="panel-resizer"
-            role="separator"
-            aria-label="調整收益圖與持倉配置寬度"
-            aria-orientation="vertical"
-            aria-valuemin={46}
-            aria-valuemax={72}
-            aria-valuenow={Math.round(panelRatio)}
-            tabIndex={0}
-            onPointerDown={(event) => { event.preventDefault(); setResizingPanels(true); }}
-            onDoubleClick={() => {
-              panelRatioRef.current = 60;
-              setPanelRatio(60);
-              window.localStorage.setItem(panelRatioKey, '60');
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'ArrowLeft') { event.preventDefault(); adjustPanelRatio(-2); }
-              if (event.key === 'ArrowRight') { event.preventDefault(); adjustPanelRatio(2); }
-              if (event.key === 'Home') { event.preventDefault(); adjustPanelRatio(46 - panelRatioRef.current); }
-              if (event.key === 'End') { event.preventDefault(); adjustPanelRatio(72 - panelRatioRef.current); }
-            }}
-          ><span /></div>
-
+        <section className="content-grid wafu-pair-grid">
           <article className="panel allocation-panel">
             <div className="panel-heading"><div><p className="eyebrow">Holdings</p><h2>持倉配置</h2></div><div className="allocation-heading-actions"><div className="allocation-chart-switch" role="group" aria-label="持倉配置圖表類型"><button type="button" className={allocationChartMode === 'donut' ? 'active' : ''} aria-pressed={allocationChartMode === 'donut'} onClick={() => setAllocationChartMode('donut')}>圓餅圖</button><button type="button" className={allocationChartMode === 'bars' ? 'active' : ''} aria-pressed={allocationChartMode === 'bars'} onClick={() => setAllocationChartMode('bars')}>長條圖</button></div><span className="count-badge">{allocationSnapshot.tradeCount} positions</span></div></div>
             <div className="allocation-history-controls" aria-label="持倉配置歷史日期">
               <div>{allocationPresets.map((preset) => <button key={preset.label} className={allocationDate === preset.date ? 'active' : ''} onClick={() => selectAllocationDate(preset.date)}>{preset.label}</button>)}</div>
               <label><span>歷史日期</span><input type="date" min={earliestAllocationDate} max={currentAllocationDate} value={allocationDate} onChange={(event) => selectAllocationDate(event.target.value || currentAllocationDate)} /></label>
             </div>
+            {concentration && <p className={`wafu-concentration is-${concentration.level}`} role="note">
+              <i aria-hidden="true" />
+              <span>前三大部位占 <b>{percent.format(concentration.top3)}</b>{concentration.level === 'high' ? '，集中度偏高' : concentration.level === 'mid' ? '，略為集中' : '，分散良好'}</span>
+              <small>{concentration.names.join('、')} · 最大單一 {percent.format(concentration.top1)}</small>
+            </p>}
             {allocationChartMode === 'donut' ? <div className="allocation-content">
               <AllocationDonut items={allocation} total={allocationSnapshot.total} loading={allocationLoading} activeLabel={activeAllocationItem?.label ?? null} onHover={setAllocationHoveredLabel} onPin={setAllocationPinnedLabel} onSelect={selectAllocationItem} />
               <div className="legend">
@@ -3138,9 +3337,35 @@ export default function Home() {
               ? '股票按目前價格、選擇權按擔保金、現金按原幣餘額計算；日圓部位會換算為 USD。'
               : `股票使用所選日期以前最近一個交易日的收盤價，選擇權按當時擔保金、現金按當時餘額計算${allocationSnapshot.estimatedTickers.length ? `；${allocationSnapshot.estimatedTickers.join('、')} 因缺少歷史報價而以成交價估算` : ''}。`}</p>
           </article>
+          <article className="panel macro-panel" aria-labelledby="macro-market-title">
+            <div className="panel-heading">
+              <div><p className="eyebrow">Macro monitor</p><h2 id="macro-market-title">宏觀行情</h2></div>
+              <div className="macro-market-actions"><div className="segmented macro-range-switch" role="group" aria-label="宏觀歷史期間">{([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={macroRangeMode === mode ? 'selected' : ''} aria-pressed={macroRangeMode === mode} onClick={() => setMacroRangeMode(mode)}>{label}</button>)}</div><button type="button" className="macro-refresh-button" disabled={macroLoading} onClick={() => { macroRefreshRequestedRef.current = true; setMacroRefreshKey((current) => current + 1); }}>↻ 更新</button></div>
+            </div>
+            <p className="macro-panel-meta">美東 {macroUpdatedLabel} · 每 60 秒更新</p>
+            {macroError && <p className="macro-market-error" role="status">{macroError}</p>}
+            <div className={`macro-market-grid wafu-macro-grid ${macroLoading ? 'is-loading' : ''}`} aria-busy={macroLoading}>
+              {activeMacroMarkets.map((market) => <MacroMarketCard key={market.id} market={market} startLabel={macroTimeline[0]?.label ?? ''} endLabel={macroTimeline.at(-1)?.label ?? ''} rangeLabel={macroRangeModeLabel} />)}
+              {!activeMacroMarkets.length && Array.from({ length: 5 }, (_, item) => <article className="macro-market-card macro-market-placeholder" key={item}><span /><b /><i /></article>)}
+              <SpreadCard />
+            </div>
+          </article>
         </section>
 
-        {drilledTicker && <StockTechnicalPanel
+        {drilledTicker && <ResearchDrawer
+          symbol={drilledTicker}
+          company={researchPosition?.company ?? companyNames[drilledTicker] ?? ''}
+          summary={researchSummary}
+          tab={researchTab}
+          onTab={setResearchTab}
+          onClose={returnToPositionsOverview}
+          chips={researchChips}
+          onSymbol={(symbol) => { const keep = researchTab; openTickerDetails(symbol); setResearchTab(keep); }}
+        >
+          {researchTab === 'dcf'
+            ? <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在開啟 DCF 估值…</div>}><DcfCalculator key={drilledTicker} initialTicker={drilledTicker} onClose={() => setResearchTab('technical')} ai={researchAi} /></Suspense>
+            : <StockTechnicalPanel
+          view={researchTab}
           key={drilledTicker}
           symbol={drilledTicker}
           range={technicalRange}
@@ -3151,29 +3376,29 @@ export default function Home() {
           error={technicalError}
           stockTrades={selectedStockTrades}
           lotSavingId={lotSavingId}
-          valuationOpen={valuationOpen && valuationTicker === drilledTicker}
+          valuationOpen={false}
+          ai={researchAi}
           onRangeChange={selectTechnicalRange}
           onCustomRangeApply={applyTechnicalCustomRange}
           onClose={returnToPositionsOverview}
-          onOpenDcf={() => toggleValuation(drilledTicker)}
+          onOpenDcf={() => setResearchTab('dcf')}
           onAddLot={() => setEditor({ ...blankTrade(), type: 'SDI', ticker: drilledTicker, event: 'STOCK', quoteMode: 'auto' })}
           onSaveLot={saveStockLot}
           onEditLot={(trade) => setEditor({ ...trade })}
           onDeleteLot={(trade) => setDeleteCandidate(trade)}
         />}
-
-        {valuationOpen && <Suspense fallback={<section className="broker-hub-loader" id="valuation" aria-busy="true"><span /><strong>正在開啟 DCF 估值工作區…</strong></section>}><DcfCalculator key={valuationTicker} initialTicker={valuationTicker} onClose={closeValuation} /></Suspense>}
+        </ResearchDrawer>}
 
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
             <div><p className="eyebrow">Active book</p><h2>交易與持倉</h2></div>
-            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" ref={importTriggerRef} className="toolbar-io-button" aria-haspopup="dialog" onClick={() => { void loadTradeImportDialog(); setImportOpen(true); }}>匯入</button><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
+            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button>{gainsTab && <button className={positionView === 'gains' ? 'active' : ''} onClick={() => setPositionView('gains')}>益損</button>}</div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" ref={importTriggerRef} className="toolbar-io-button" aria-haspopup="dialog" onClick={() => { void loadTradeImportDialog(); setImportOpen(true); }}>匯入</button><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button><button type="button" className="toolbar-io-button" aria-haspopup="dialog" title="一次輸入無法自動報價的價格" onClick={() => setManualQuotesOpen(true)}>✎ 手動報價</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
           </div>
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
           {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}
-          <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['cash', '現金'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? portfolioTrades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : portfolioTrades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : mode === 'cash' ? isCashTrade(trade) : trade.type !== 'SDI' && !isCashTrade(trade)).length}</span></button>)}{positionView === 'details' && <TradeColumnPicker columns={tradeColumnSet} onChange={updateTradeColumns} />}</div>
-          {optionRisk && <OptionRiskStrip risk={optionRisk} />}
-          {positionView === 'visual' ? <div className="visual-positions">
+          {positionView !== 'gains' && <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['cash', '現金'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? portfolioTrades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : portfolioTrades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : mode === 'cash' ? isCashTrade(trade) : trade.type !== 'SDI' && !isCashTrade(trade)).length}</span></button>)}{positionView === 'details' && <TradeColumnPicker columns={tradeColumnSet} onChange={updateTradeColumns} />}{positionView === 'visual' && <VisualFieldPicker fields={visualFieldSet} onChange={updateVisualFields} />}</div>}
+          {optionRisk && positionView !== 'gains' && <OptionRiskStrip risk={optionRisk} premium={yearPremium} />}
+          {positionView === 'gains' ? <Suspense fallback={<div className="visual-empty">正在整理益損…</div>}><GainsLedger trades={portfolioTrades} usdJpyRate={usdJpyRate} today={todayKey} query={query} /></Suspense> : positionView === 'visual' ? <div className="visual-positions">
             <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>成本均價／現價</span><span>標的價格波動／今日漲跌</span><span>損益／報酬率</span><span>組合占比</span></div>
             {!loading && !visualPositions.length && <div className="visual-empty">沒有符合目前篩選條件的持倉。</div>}
             {loading && <div className="visual-empty">正在整理圖形化持倉…</div>}
@@ -3196,14 +3421,25 @@ export default function Home() {
                 : autoPosition ? snapshot ? `API · ${quoteSessionLabel(snapshot.session)}` : failedQuoteTickers.has(position.ticker) ? 'API 無法取得' : 'API 待更新'
                   : position.items.some((item) => item.trade.type === 'SDI') ? '手動價格' : '權利金手動';
               const positionStatusClass = cashPosition ? 'cash' : autoPosition ? snapshot ? 'live' : failedQuoteTickers.has(position.ticker) ? 'error' : 'pending' : 'manual';
+              const firstOpen = openPositionItems[0]?.trade ?? position.items[0]?.trade;
+              const optionRight = firstOpen ? optionRightOf(firstOpen) : null;
+              const hankoKind = cashPosition ? 'cash' : optionRight && position.stockQuantity === 0 ? 'option' : 'stock';
+              const hanko = <HankoTile
+                rank={index + 1}
+                ticker={position.ticker}
+                kind={hankoKind}
+                market={cashPosition ? '現' : hankoKind === 'option' ? (optionRight === 'put' ? 'P' : 'C') : isJapaneseTicker(position.ticker) ? 'JP' : 'US'}
+                label={cashPosition ? '現金' : hankoKind === 'option' ? `${(optionRight ?? '').toUpperCase()} ${firstOpen?.strike ?? ''}`.trim() : isJapaneseTicker(position.ticker) ? '日股' : '股票'}
+              />;
               return <article className="visual-position-row" key={position.ticker}>
                 <span className="position-rank">{String(index + 1).padStart(2, '0')}</span>
-                {cashPosition ? <div className="visual-asset"><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · 持倉數量 {nativeMoney(position.ticker, position.cashQuantity)}</small><em className={`position-data-status ${positionStatusClass}`}><i />{positionStatus}</em></span></div> : <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}><CompanyLogo ticker={position.ticker} /><span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · 持倉數量 {quantityParts.join(' · ') || '0'} · {position.strategy}</small><em className={`position-data-status ${positionStatusClass}`}><i />{positionStatus}</em></span></button>}
+                {cashPosition ? <div className="visual-asset">{hanko}<span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · 持倉數量 {nativeMoney(position.ticker, position.cashQuantity)}</small><em className={`position-data-status ${positionStatusClass}`}><i />{positionStatus}</em></span></div> : <button type="button" className="visual-asset visual-asset-button" onClick={() => openTickerDetails(position.ticker)}>{hanko}<span className="visual-asset-copy"><strong>{position.ticker}</strong><span>{position.company}</span><small>{position.items.length} 筆 · 持倉數量 {quantityParts.join(' · ') || '0'} · {position.strategy}</small><em className={`position-data-status ${positionStatusClass}`}><i />{positionStatus}</em></span></button>}
                 <div className="visual-value"><span>持倉市值</span><strong>{money.format(position.marketValue)}</strong></div>
                 {cashPosition ? <div className="visual-price-flow cash-price-flow"><div><span>原幣現金</span><strong>{nativeMoney(position.ticker, position.cashQuantity)}</strong></div><div><span>組合換算</span><strong>{money.format(position.marketValue)}</strong></div></div> : <div className="visual-price-flow"><div><span>{position.items.every((item) => item.trade.type === 'SDI' || item.trade.event === 'STOCK') ? '股票均價' : '成交均價'}</span><strong>{nativeMoney(position.ticker, position.entryPrice)}</strong></div><div><span>{currentPriceLabel}</span><strong>{nativeMoney(position.ticker, regularDisplayPrice)}</strong>{extendedDisplayPrice !== null && <small className={`after-hours-price ${extendedDisplayPrice >= regularDisplayPrice ? 'is-up' : 'is-down'}`}><em>{extendedSession === 'pre' ? '盤前' : '盤後'}</em>{nativeMoney(position.ticker, extendedDisplayPrice)}</small>}</div></div>}
                 {cashPosition ? <div className="visual-market-move neutral cash-market-move"><span className="cash-balance-icon">◎</span><div><span>資料來源</span><strong>不需報價</strong><small>{position.items.some((item) => item.trade.derived) ? '含稅後股息自動現金' : '手動現金餘額'}</small></div></div> : <div className={`visual-market-move ${marketChangePercent === null ? 'neutral' : marketChangePercent >= 0 ? 'positive' : 'negative'}`}><PriceSparkline ticker={position.ticker} values={snapshot?.sparkline ?? []} changePercent={marketChangePercent} /><div><span>{marketMoveLabel}</span><strong>{marketChangePercent === null ? '等待報價' : `${marketChangePercent >= 0 ? '+' : ''}${precisePercent.format(marketChangePercent)}`}</strong><small>{marketChange === null ? '—' : `${nativeMoney(position.ticker, marketDisplayPrice)} · ${marketChange >= 0 ? '+' : ''}${nativeMoney(position.ticker, marketChange)}`}</small></div></div>}
                 <div className={`visual-gain ${cashPosition ? 'neutral' : position.pnl >= 0 ? 'positive' : 'negative'}`}><strong>{cashPosition ? money.format(0) : `${position.pnl >= 0 ? '+' : ''}${money.format(position.pnl)}`}</strong><span>{cashPosition ? '現金部位' : `${position.roc >= 0 ? '▲' : '▼'} ${percent.format(Math.abs(position.roc))}`}</span></div>
                 <div className="visual-weight"><div><span>組合占比</span><strong>{percent.format(position.share)}</strong></div><b><i style={{ width: `${Math.max(2, Math.min(100, position.share * 100))}%` }} /></b></div>
+                {!cashPosition && visualFieldSet.length > 0 && <VisualFieldStrip fields={visualFieldSet} values={visualFieldValues(position, openPositionItems, snapshot, regularDisplayPrice)} />}
               </article>;
             })}
           </div> : <div className="table-wrap">
@@ -3216,7 +3452,7 @@ export default function Home() {
               </tbody>
             </table>
           </div>}
-          <footer className="table-footer"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span><p>現金不呼叫股票報價；股息依持有期間、除息事件與設定的外國投資人預扣稅率試算。</p></footer>
+          {positionView !== 'gains' && <footer className="table-footer"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span><p>現金不呼叫股票報價；股息依持有期間、除息事件與設定的外國投資人預扣稅率試算。</p></footer>}
         </section>
         </div>
       </div>
@@ -3239,10 +3475,34 @@ export default function Home() {
 
       {settingsOpen && <div className="settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
         <aside className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-          <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title">設定</h2><span>選擇要啟用的擴充工作區。</span></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
-          <div className="settings-body">
+          <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title"><HaloIcon theme={wafuTheme} size={26} minStrokePx={1} />設定</h2></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
+          <div className="settings-tabs" role="tablist" aria-label="設定分類">
+            {settingsTabs.map(([tab, label]) => <button key={tab} type="button" role="tab" id={`settings-tab-${tab}`} aria-selected={settingsTab === tab} aria-controls="settings-tabpanel" className={settingsTab === tab ? 'on' : ''} onClick={() => setSettingsTab(tab)}>{label}</button>)}
+          </div>
+          <div className="settings-body" id="settings-tabpanel" role="tabpanel" aria-labelledby={`settings-tab-${settingsTab}`} key={settingsTab}>
+            {settingsTab === 'look' && <>
             <WafuThemeCard preference={wafuPreference} onChange={updateWafuPreference} intro={wafuIntro} onIntroChange={updateWafuIntro} liteAuto={introLiteAuto} onLiteAutoChange={updateIntroLiteAuto} onPreviewIntro={previewIntro} />
+            <section className={`settings-feature-card home-bar-settings-card ${bottomNav !== 'off' ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帖</span><div><p>Bottom navigation</p><h3>底部導覽</h3></div><span className="settings-feature-status">{bottomNav === 'guide' ? '引導條' : bottomNav === 'menu' ? '選單列' : '已關閉'}</span></div>
+              <p>引導條：畫面下方一條細線，左右滑切換區塊、點一下回頂部、往上滑或長按開啟快捷面板（新增交易、匯入、AI、個股研究、通知、設定、音樂）；鍵盤可用 ← → 與 Enter。選單列：手機上把總覽、持倉、收益、AI、設定、更多放在底部，直接點選。</p>
+              <div className="wafu-intro-row bottom-nav-row">
+                <span id="bottom-nav-label">樣式</span>
+                <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="bottom-nav-label">
+                  {([['guide', '引導條（預設）'], ['menu', '選單列（手機）'], ['off', '關閉']] as const).map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={bottomNav === value} className={bottomNav === value ? 'active' : ''} onClick={() => updateBottomNav(value)}>{label}</button>)}
+                </div>
+              </div>
+              <div className="app-install-hint">
+                <b>安裝成手機 App</b>
+                <span>iPhone／iPad：用 Safari 開啟 → 分享 → 加入主畫面。Android：Chrome 選單 → 安裝應用程式（或加到主畫面）。安裝後全螢幕開啟，資料與網頁版相同。</span>
+                {installPrompt && <button type="button" onClick={() => { void installPrompt.prompt().finally(() => setInstallPrompt(null)); }}>安裝 App</button>}
+              </div>
+            </section>
+            </>}
+            {settingsTab === 'sound' && <>
             <WafuMediaCard theme={wafuTheme} />
+            </>}
+            {settingsTab === 'ai' && <>
+            <AiSettingsCard enabled={aiEnabled} onEnabledChange={updateAiEnabled} status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
             <section className={`settings-feature-card assistant-settings-card ${assistantPrefs.enabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">談</span><div><p>AI assistant</p><h3>AI 助理</h3></div><span className="settings-feature-status">{assistantPrefs.enabled ? '已開啟' : '已關閉'}</span></div>
               <p>側欄的「AI」可以問關於自己持倉的問題：到期、風險、損益。送出時附上持倉摘要（代號、數量、價格與總額，不含備註），使用「AI 設定」中的金鑰與模型；只提供分析，不會更動交易。</p>
@@ -3258,25 +3518,26 @@ export default function Home() {
                 <button type="button" className={`settings-toggle ${assistantPrefs.enabled ? 'is-on' : ''}`} role="switch" aria-checked={assistantPrefs.enabled} onClick={() => updateAssistantPrefs({ enabled: !assistantPrefs.enabled })}><i /><b>{assistantPrefs.enabled ? '開啟' : '關閉'}</b></button>
               </div>
             </section>
-            <section className={`settings-feature-card home-bar-settings-card ${homeBarEnabled ? 'is-enabled' : ''}`}>
-              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帖</span><div><p>Phone menu</p><h3>手機底部選單</h3></div><span className="settings-feature-status">{homeBarEnabled ? '已開啟' : '已關閉'}</span></div>
-              <p>手機上把主選單放到畫面底部（總覽、持倉、收益、AI、設定、更多），目前所在的項目浮著角色光環；估值與背景在「更多」裡。</p>
-              <div className="settings-feature-actions">
-                <span>關閉後改回頁面上方的選單列；電腦版不受影響。</span>
-                <button type="button" className={`settings-toggle ${homeBarEnabled ? 'is-on' : ''}`} role="switch" aria-checked={homeBarEnabled} onClick={toggleHomeBar}><i /><b>{homeBarEnabled ? '開啟' : '關閉'}</b></button>
-              </div>
-              <div className="app-install-hint">
-                <b>安裝成手機 App</b>
-                <span>iPhone／iPad：用 Safari 開啟 → 分享 → 加入主畫面。Android：Chrome 選單 → 安裝應用程式（或加到主畫面）。安裝後全螢幕開啟，資料與網頁版相同。</span>
-                {installPrompt && <button type="button" onClick={() => { void installPrompt.prompt().finally(() => setInstallPrompt(null)); }}>安裝 App</button>}
-              </div>
-            </section>
+            </>}
+            {settingsTab === 'modules' && <>
             <section className={`settings-feature-card notify-settings-card ${notifyEnabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">報</span><div><p>Notifications</p><h3>通知中心</h3></div><span className="settings-feature-status">{notifyEnabled ? '已開啟' : '已關閉'}</span></div>
               <p>頂欄的通知集中顯示財報公布、財報日、美日休市、7 天內到期的選擇權與股息入帳，可逐則關閉或全部標為已讀。</p>
               <div className="settings-feature-actions">
                 <span>關閉後改回頁首的提示列，不另外計算通知。</span>
                 <button type="button" className={`settings-toggle ${notifyEnabled ? 'is-on' : ''}`} role="switch" aria-checked={notifyEnabled} onClick={toggleNotifyCenter}><i /><b>{notifyEnabled ? '開啟' : '關閉'}</b></button>
+              </div>
+              {notifyEnabled && <div className="settings-feature-actions">
+                <span>頂欄中央的通知條（寬螢幕）；關閉後只留右側的鈴鐺。</span>
+                <button type="button" className={`settings-toggle ${notifyBar ? 'is-on' : ''}`} role="switch" aria-checked={notifyBar} aria-label="頂欄通知條" onClick={toggleNotifyBar}><i /><b>{notifyBar ? '開啟' : '關閉'}</b></button>
+              </div>}
+            </section>
+            <section className={`settings-feature-card ${gainsTab ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">益</span><div><p>Gains &amp; losses</p><h3>益損分頁</h3></div><span className="settings-feature-status">{gainsTab ? '已開啟' : '已關閉'}</span></div>
+              <p>在「交易與持倉」加上益損分頁：今年、去年的已實現損益與未實現損益，分短期與長期，可展開到每檔與每筆交易，並可列印或下載 CSV。</p>
+              <div className="settings-feature-actions">
+                <span>關閉後只隱藏分頁，不影響其他計算。</span>
+                <button type="button" className={`settings-toggle ${gainsTab ? 'is-on' : ''}`} role="switch" aria-checked={gainsTab} aria-label="益損分頁" onClick={toggleGainsTab}><i /><b>{gainsTab ? '開啟' : '關閉'}</b></button>
               </div>
             </section>
             <section className={`settings-feature-card ${brokerHubEnabled ? 'is-enabled' : ''}`}>
@@ -3341,7 +3602,7 @@ export default function Home() {
                       <input type="date" min={today} value={manualEarnings[symbol] ?? ''} aria-label={`手動財報日 ${symbol}`} onChange={(event) => setManualEarningsDate(symbol, event.target.value || null)} />
                       {manualEarnings[symbol] && <button type="button" onClick={() => setManualEarningsDate(symbol, null)} aria-label={`清除手動財報日 ${symbol}`}>×</button>}
                     </span>
-                    {(filingsFor(symbol) || (aiStatus?.state === 'ok' && (aiProviderReady('anthropic') || aiProviderReady('openai')))) && <span role="cell" className="earnings-ai-actions">
+                    {aiEnabled && (filingsFor(symbol) || (aiStatus?.state === 'ok' && (aiProviderReady('anthropic') || aiProviderReady('openai')))) && <span role="cell" className="earnings-ai-actions">
                       {filingsFor(symbol) && <button type="button" className="is-filing" onClick={() => setFilingDialogSymbol(symbol)} aria-label={`財報解讀 ${symbol}`}>財報解讀</button>}
                       {aiStatus?.state === 'ok' && (['openai', 'anthropic'] as const).filter((provider) => aiProviderReady(provider)).map((provider) => {
                         const lookup = aiLookups[`${provider}:${symbol}`];
@@ -3375,12 +3636,23 @@ export default function Home() {
                 <button type="button" className={`settings-toggle ${earningsEnabled ? 'is-on' : ''}`} role="switch" aria-checked={earningsEnabled} aria-label="持倉財報日曆與提醒" onClick={toggleEarnings}><i /><b>{earningsEnabled ? '開啟' : '關閉'}</b></button>
               </div>
             </section>
-            <AiSettingsCard status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} />
+            </>}
+            {settingsTab === 'data' && <>
+            <section className="settings-feature-card data-settings-card is-enabled">
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帳</span><div><p>Trades data</p><h3>匯入與匯出</h3></div><span className="settings-feature-status">{trades.length} 筆</span></div>
+              <p>讀取 CSV（券商成交紀錄或自製表格），或用 AI 辨識券商 App 的截圖與一句話紀錄後匯入；也可把全部交易匯出成 CSV 備份。交易資料存在本站的資料庫。</p>
+              <div className="settings-data-actions">
+                <button type="button" className="primary-button" onClick={() => { setSettingsOpen(false); void loadTradeImportDialog(); setImportOpen(true); }}>⇪ 匯入 CSV／截圖</button>
+                <button type="button" className="secondary-button" onClick={exportTradesCsv}>匯出 CSV</button>
+              </div>
+            </section>
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
+            </>}
           </div>
         </aside>
       </div>}
 
+      {manualQuotesOpen && <ManualQuotes rows={manualQuoteRows} onSave={saveManualQuotes} onClose={() => setManualQuotesOpen(false)} />}
       {editor && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditor(null); }}>
         <section className="trade-modal" role="dialog" aria-modal="true" aria-labelledby="trade-editor-title">
           <header><div><p className="eyebrow">Trade workspace</p><div className="editor-title-row"><h2 id="trade-editor-title">{editor.id ? '編輯交易' : '新增交易'}</h2><span>{editor.id ? `#${editor.id}` : 'New position'}</span></div></div><button className="close-button" onClick={() => setEditor(null)} aria-label="關閉">×</button></header>
@@ -3524,7 +3796,7 @@ export default function Home() {
         </section>
       </div>}
       {rocBreakdownOpen && <RocBreakdownDialog summary={annualRocSummary} onClose={closeRocBreakdown} />}
-      {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} onClose={closeImport} onImported={handleImported} ai={importAi} /></Suspense>}
+      {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} onClose={closeImport} onImported={handleImported} ai={aiEnabled ? importAi : undefined} /></Suspense>}
       {dividendAdjustmentCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!dividendAdjusting && event.target === event.currentTarget) setDividendAdjustmentCandidate(null); }}>
         <section className="dividend-adjustment-modal" role="dialog" aria-modal="true" aria-labelledby="dividend-adjustment-title">
           <header><div><p className="eyebrow">Dividend cash</p><h2 id="dividend-adjustment-title">調減股息入帳</h2></div><button type="button" className="close-button" disabled={dividendAdjusting} onClick={() => setDividendAdjustmentCandidate(null)} aria-label="關閉">×</button></header>
@@ -3549,18 +3821,32 @@ export default function Home() {
       </div>}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
       <WafuBackdrop theme={wafuTheme} paused={Boolean(intro)} />
+      {bottomNav === 'guide' && <GuideBar
+        theme={wafuTheme}
+        sections={guideSections}
+        current={activeSection}
+        onGo={(id) => { if (id === 'valuation') openValuation(drilledTicker ?? undefined); else if (id === 'overview' || id === 'positions' || id === 'returns') goToSection(id); }}
+        actions={[
+          { id: 'add', label: '新增交易', icon: '＋', run: () => setEditor(blankTrade()) },
+          { id: 'import', label: '匯入 CSV／截圖', icon: '⇪', run: () => { void loadTradeImportDialog(); setImportOpen(true); } },
+          ...(assistantOn ? [{ id: 'ai', label: 'AI 助手', icon: '✦', run: () => setAssistantOpen(true) }] : []),
+          ...(researchTicker ? [{ id: 'research', label: '個股研究', icon: '◎', run: () => openTickerDetails(researchTicker) }] : []),
+          ...(notifyEnabled ? [{ id: 'notify', label: '通知與休市', icon: '◔', run: () => setNotifySignal((value) => value + 1) }] : []),
+          { id: 'settings', label: '設定', icon: '⚙', run: () => setSettingsOpen(true) },
+        ]}
+      />}
       {homeBarEnabled && <HomeBar
         theme={wafuTheme}
         active={activeSection}
         settingsOpen={settingsOpen}
-        assistant={assistantPrefs.enabled ? { open: assistantOpen, toggle: () => setAssistantOpen((open) => !open) } : null}
+        assistant={assistantOn ? { open: assistantOpen, toggle: () => setAssistantOpen((open) => !open) } : null}
         onSection={goToSection}
         onSettings={() => setSettingsOpen(true)}
-        onValuation={() => openValuation(drilledTicker ?? valuationTicker)}
+        onValuation={() => openValuation(drilledTicker ?? undefined)}
         background={{ label: backgroundSaving ? '保存中' : backgroundImage ? '換背景圖片' : '背景圖片', busy: backgroundSaving, pick: () => backgroundInputRef.current?.click() }}
       />}
-      {assistantOpen && assistantPrefs.enabled && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={importAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}
-      {intro && createPortal(<Suspense fallback={null}><WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} /></Suspense>, document.body)}
+      {assistantOpen && assistantOn && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={importAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}
+      {intro && <WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} />}
     </main>
   );
 }

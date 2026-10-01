@@ -8,7 +8,7 @@
 export type WafuAssetKind = 'bg' | 'sil' | 'bgm' | 'icon';
 type WafuAssetTheme = 'kikyo' | 'shigure';
 /** How many files of each kind a theme can hold. */
-export const assetSlotCount: Record<WafuAssetKind, number> = { bg: 5, sil: 3, bgm: 8, icon: 1 };
+export const assetSlotCount: Record<WafuAssetKind, number> = { bg: 5, sil: 3, bgm: 20, icon: 1 };
 export type WafuAssetSlot = `${WafuAssetKind}-${WafuAssetTheme}` | `${WafuAssetKind}-${WafuAssetTheme}-${number}`;
 /** The slots of one kind and theme, in order. */
 export const themeSlots = (kind: WafuAssetKind, theme: WafuAssetTheme): WafuAssetSlot[] =>
@@ -20,7 +20,7 @@ export const assetKind = (slot: WafuAssetSlot) => slot.slice(0, slot.indexOf('-'
 export const assetSlot = (kind: WafuAssetKind, theme: 'kikyo' | 'shigure') => `${kind}-${theme}` as WafuAssetSlot;
 
 /** Largest upload per kind. Backdrops are re-encoded as JPEG and silhouettes as PNG masks in the browser first. */
-export const maxAssetBytes: Record<WafuAssetKind, number> = { bg: 6 * 1024 * 1024, sil: 3 * 1024 * 1024, bgm: 25 * 1024 * 1024, icon: 3 * 1024 * 1024 };
+export const maxAssetBytes: Record<WafuAssetKind, number> = { bg: 6 * 1024 * 1024, sil: 3 * 1024 * 1024, bgm: 40 * 1024 * 1024, icon: 3 * 1024 * 1024 };
 
 export type WafuAsset = { slot: WafuAssetSlot; version: string; type: string; size: number; name: string; updatedAt: string; url: string };
 export type WafuAssets = Partial<Record<WafuAssetSlot, WafuAsset>>;

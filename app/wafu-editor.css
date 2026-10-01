@@ -75,3 +75,14 @@
 :root[data-perf='lite'] .trade-modal .editor-actions { background: var(--wa-panel-solid); backdrop-filter: none; -webkit-backdrop-filter: none; }
 :root[data-wafu] .trade-modal .editor-actions p { font-size: 12px; }
 :root[data-wafu] .trade-modal .editor-fields { padding-bottom: 28px; }
+
+/* ---- 匯入: paste box, sheet choice, PDF lines ---- */
+.import-paste { display: grid; gap: 10px; }
+.import-paste .import-hint { margin: 0; color: var(--wa-muted); font-size: 12.5px; line-height: 1.6; }
+.import-paste-text { width: 100%; min-height: 200px; padding: 10px 12px; color: var(--wa-ink); background: rgb(var(--wa-raise-rgb) / .04); border: 1px solid var(--wa-line-2); border-radius: 8px; font: 13px/1.6 var(--wa-f-mono, ui-monospace, monospace); tab-size: 14; white-space: pre; overflow: auto; resize: vertical; }
+.import-paste-text:focus { outline: 0; border-color: var(--wa-accent); box-shadow: 0 0 0 3px rgb(var(--wa-accent-rgb) / .12); }
+.import-paste-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.import-pdf-all { display: inline-flex; align-items: center; gap: 6px; color: var(--wa-ink-2); font-size: 12.5px; }
+.import-sheet-pick { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--wa-ink-2); font-size: 12.5px; }
+.import-sheet-pick select { padding: 5px 8px; color: var(--wa-ink); background: var(--wa-panel-solid); border: 1px solid var(--wa-line-2); border-radius: 6px; }
+.import-mode-tabs { flex-wrap: wrap; }

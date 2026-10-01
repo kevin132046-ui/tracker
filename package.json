@@ -16,6 +16,7 @@
     "@anthropic-ai/sdk": "^0.128.0",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
+    "pdfjs-dist": "4.10.38",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },

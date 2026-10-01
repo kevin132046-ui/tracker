@@ -243,9 +243,11 @@ function pairsFor(from: Language, to: Language) {
     const source = entry[column[from]];
     const target = entry[column[to]];
     if (!source || !target || source === target || seen.has(source)) return [];
-    // Japanese → Chinese only cleans up stray Japanese: a short all-kanji word (列, 現在) is also
-    // ordinary Chinese and is left alone.
-    if (from === 'ja-JP' && source.length <= 2 && !/[\u3040-\u30ff]/.test(source)) return [];
+    // Japanese → Chinese only cleans up stray Japanese. Japanese with no kana (列, 未設定) is also
+    // ordinary Chinese and is left alone; and a pair whose result contains its own source would match
+    // again on every pass (未設定 → 尚未設定 → …) and make the text flicker.
+    if (from === 'ja-JP' && !/[\u3040-\u30ff]/.test(source)) return [];
+    if (target.includes(source)) return [];
     seen.add(source);
     return [[source, target] as const];
   }).sort((a, b) => b[0].length - a[0].length);

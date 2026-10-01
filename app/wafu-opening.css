@@ -228,7 +228,7 @@
 .brew-gauge { display: grid; justify-items: center; gap: 2px; opacity: calc(.45 + .55 * var(--on, 0)); transition: opacity .35s; }
 .brew-gauge svg { width: 34px; height: 22px; overflow: visible; }
 .brew-gauge .track { fill: none; stroke: rgba(238, 252, 251, .25); stroke-width: 1.6; }
-.brew-gauge .needle { stroke: #62d4d2; stroke-width: 1.4; stroke-linecap: round; transform-box: view-box; transform-origin: 50% 75%; rotate: calc(160deg * var(--on, 0)); transition: rotate .6s cubic-bezier(.3, 1.5, .5, 1); }
+.brew-gauge .needle { stroke: #62d4d2; stroke-width: 1.4; stroke-linecap: round; transform-box: fill-box; transform-origin: 100% 50%; rotate: calc(160deg * var(--on, 0)); transition: rotate .6s cubic-bezier(.3, 1.5, .5, 1); }
 .brew-gauge circle { fill: #eefcfb; }
 .brew-gauge span { font-size: 9.5px; letter-spacing: .2em; opacity: .8; }
 

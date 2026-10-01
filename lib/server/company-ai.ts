@@ -182,7 +182,8 @@ async function askClaude(apiKey: string, model: string, symbol: string, today: s
   if (!response) throw new Error('Claude 沒有回覆。');
   if (response.stop_reason === 'refusal') throw new Error('Claude 拒絕了這次查詢。');
   if (response.stop_reason === 'pause_turn') throw new Error('搜尋時間過長，請稍後再試。');
-  const text = response.content.flatMap((block) => block.type === 'text' ? [block.text] : []).join('\n');
+  // Claude splits text at each citation, sometimes inside a JSON string: join without separators.
+  const text = response.content.flatMap((block) => block.type === 'text' ? [block.text] : []).join('');
   const sources = response.content.flatMap((block) => {
     if (block.type === 'text') return (block.citations ?? []).flatMap((citation) => citation.type === 'web_search_result_location' ? [{ url: citation.url, title: citation.title }] : []);
     if (block.type === 'web_search_tool_result' && Array.isArray(block.content)) return block.content.map((result) => ({ url: result.url, title: result.title }));

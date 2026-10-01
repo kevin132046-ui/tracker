@@ -87,7 +87,9 @@ function bucketKey(date: Date, mode: Mode) {
 function yahooConfig(mode: Mode) {
   if (mode === 'day') return 'range=6mo&interval=1d';
   if (mode === 'week') return 'range=2y&interval=1d';
-  if (mode === 'month') return 'range=5y&interval=1wk';
+  // Daily bars: weekly ones are stamped with the week's Monday (a week across a month end would
+  // land in the earlier month) and make the change read week-on-week.
+  if (mode === 'month') return 'range=5y&interval=1d';
   return 'range=10y&interval=1mo';
 }
 

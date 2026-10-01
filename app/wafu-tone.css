@@ -107,3 +107,7 @@
 :root[data-tone='washi'] .hero-sub, :root[data-tone='washi'] .wafu-hero-sub { color: var(--wa-ink-2); text-shadow: 0 1px 0 rgb(255 255 255 / .6); }
 /* Jumps (cards, rail) land below the sticky top bar. */
 :root[data-wafu] #positions, :root[data-wafu] #allocation, :root[data-wafu] #returns, :root[data-wafu] #overview { scroll-margin-top: 96px; }
+
+/* Placeholder while a settings card's code loads (first open only). */
+.settings-card-loading { min-height: 140px; border-radius: var(--wa-r-lg, 14px); background: linear-gradient(90deg, var(--wa-raise), rgb(var(--wa-raise-rgb) / .09), var(--wa-raise)) 0 0 / 200% 100%; animation: settings-card-shimmer 1.2s linear infinite; }
+@keyframes settings-card-shimmer { to { background-position: -200% 0; } }

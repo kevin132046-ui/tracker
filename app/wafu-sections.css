@@ -487,3 +487,41 @@
   :root[data-print='gains'] .wafu-gains-table td.positive { color: #0a7a3a !important; }
   :root[data-print='gains'] .wafu-gains-table td.negative { color: #b3261e !important; }
 }
+
+/* ---- 收益分析 chart refinements: lighter grid, end tags, colour pickers, paper tooltip ---- */
+.wafu-perf-chart .grid { stroke: rgb(var(--wa-line-2-rgb) / .45); stroke-dasharray: 1 5; stroke-linecap: round; }
+.wafu-perf-chart .grid.zero { stroke: var(--wa-line-2); stroke-dasharray: none; opacity: 1; }
+.wafu-perf-tag .value { font: 600 12px/1 var(--wa-f-mono, monospace); font-variant-numeric: tabular-nums; }
+.wafu-perf-tag .name { fill: var(--wa-muted); font-size: 10px; letter-spacing: .04em; }
+.wafu-perf-tip { padding: 9px 12px 10px; background: var(--wa-panel-solid); border: 1px solid var(--wa-line-2); border-radius: 6px; outline: 1px solid var(--wa-line); outline-offset: -4px; box-shadow: 0 12px 28px -18px rgb(0 0 0 / .6); }
+.wafu-perf-tip b { font-family: var(--wa-f-display, serif); letter-spacing: .06em; padding-bottom: 4px; margin-bottom: 3px; border-bottom: 1px dotted var(--wa-line-2); }
+.wafu-perf-legend-item { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 6px; border: 1px solid var(--wa-line); border-radius: 999px; }
+.wafu-perf-legend-item > button { padding: 0; color: var(--wa-ink-2); background: none; border: 0; font-size: 12px; cursor: pointer; }
+.wafu-perf-legend-item.is-off > button { opacity: .45; text-decoration: line-through; }
+.wafu-perf-legend-item.is-off .wafu-color-dot { opacity: .45; }
+
+.wafu-color-pick { position: relative; display: inline-flex; }
+.wafu-color-dot { width: 16px; height: 16px; padding: 0; border: 2px solid var(--wa-panel-solid); border-radius: 50%; box-shadow: 0 0 0 1px var(--wa-line-2); cursor: pointer; }
+.wafu-color-dot:hover, .wafu-color-dot[aria-expanded='true'] { box-shadow: 0 0 0 1px var(--wa-accent), 0 0 0 4px rgb(var(--wa-accent-rgb) / .15); }
+.wafu-color-menu { position: absolute; top: calc(100% + 8px); z-index: 30; display: grid; gap: 8px; width: 186px; padding: 10px 12px 12px; background: var(--wa-panel-solid); border: 1px solid var(--wa-line-2); border-radius: 8px; outline: 1px solid var(--wa-line); outline-offset: -4px; box-shadow: 0 16px 36px -18px rgb(0 0 0 / .65); }
+.wafu-color-menu.is-end { right: -8px; }
+.wafu-color-menu.is-start { left: -8px; }
+.wafu-color-menu > b { color: var(--wa-ink-2); font-size: 11.5px; font-weight: 600; letter-spacing: .08em; }
+.wafu-color-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.wafu-color-grid button { aspect-ratio: 1; padding: 0; border: 2px solid var(--wa-panel-solid); border-radius: 50%; box-shadow: 0 0 0 1px var(--wa-line); cursor: pointer; }
+.wafu-color-grid button:hover { scale: 1.1; }
+.wafu-color-grid button.on { box-shadow: 0 0 0 2px var(--wa-ink); }
+.wafu-color-auto { display: flex; align-items: center; gap: 7px; padding: 6px 8px; color: var(--wa-ink-2); background: transparent; border: 1px solid var(--wa-line); border-radius: 5px; font-size: 12px; cursor: pointer; }
+.wafu-color-auto i { width: 12px; height: 12px; border-radius: 50%; }
+.wafu-color-auto.on { color: var(--wa-accent); border-color: var(--wa-accent); }
+.wafu-chart-color-rows { display: grid; gap: 10px; margin-top: 12px; }
+.wafu-chart-color-row { display: flex; align-items: center; gap: 10px; color: var(--wa-ink); font-size: 14px; }
+.wafu-chart-color-row small { margin-left: auto; color: var(--wa-muted); font-size: 12px; }
+.wafu-chart-color-reset { justify-self: start; padding: 6px 12px; color: var(--wa-ink-2); background: transparent; border: 1px solid var(--wa-line-2); border-radius: 6px; font-size: 12px; cursor: pointer; }
+.wafu-chart-color-reset:disabled { opacity: .45; cursor: default; }
+/* The open palette sits above the chart and the figures below the legend. */
+.wafu-perf-panel .panel-heading:has(.wafu-color-menu), .wafu-perf-panel :has(> .wafu-perf-legend .wafu-color-menu) { position: relative; z-index: 20; }
+.wafu-color-pick:has(.wafu-color-menu) { z-index: 30; }
+.wafu-perf-legend .wafu-color-dot, .wafu-chart-color-row .wafu-color-dot { flex: 0 0 16px; width: 16px; min-width: 0; height: 16px; min-height: 0; padding: 0; }
+.wafu-perf-legend .wafu-color-auto i, .wafu-color-auto i { width: 12px; height: 12px; border-radius: 50%; }
+.wafu-perf-legend .wafu-color-grid button { width: auto; min-width: 0; min-height: 0; height: auto; padding: 0; }

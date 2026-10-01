@@ -634,7 +634,7 @@ const OptionRiskStrip = memo(function OptionRiskStrip({ risk, premium }: { risk:
   </section>;
 });
 
-const LiveMarketClocks = memo(function LiveMarketClocks({ lastQuoteAt }: { lastQuoteAt: string | null }) {
+const LiveMarketClocks = memo(function LiveMarketClocks() {
   const [clockNow, setClockNow] = useState<number | null>(null);
   const [activeZone, setActiveZone] = useState<'eastern' | 'japan'>('eastern');
   useEffect(() => {
@@ -646,7 +646,6 @@ const LiveMarketClocks = memo(function LiveMarketClocks({ lastQuoteAt }: { lastQ
   const easternTimeLabel = clockNow === null ? '--:--:--' : easternClockFormatter.format(new Date(clockNow));
   const japanTimeLabel = clockNow === null ? '--:--:--' : japanClockFormatter.format(new Date(clockNow));
   const easternZoneLabel = clockNow === null ? 'ET' : easternZoneName(clockNow);
-  const lastQuoteLabel = lastQuoteAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(lastQuoteAt)) : '等待首次更新';
   const clocks = [
     { id: 'eastern' as const, label: '美東', time: easternTimeLabel, zone: easternZoneLabel },
     { id: 'japan' as const, label: '日本', time: japanTimeLabel, zone: 'JST' },
@@ -654,7 +653,6 @@ const LiveMarketClocks = memo(function LiveMarketClocks({ lastQuoteAt }: { lastQ
   return <div className="as-of">
     <div className="clock-stack-heading"><span>即時市場時間</span><div className="clock-zone-switch" role="group" aria-label="切換即時時區">{clocks.map((clock) => <button type="button" key={clock.id} className={activeZone === clock.id ? 'active' : ''} aria-pressed={activeZone === clock.id} onClick={() => setActiveZone(clock.id)}>{clock.label}</button>)}</div></div>
     <div className="stacked-clock-deck" aria-live="polite">{clocks.map((clock) => <div key={clock.id} className={`stacked-clock-card ${activeZone === clock.id ? 'is-active' : 'is-behind'}`} aria-hidden={activeZone !== clock.id}><span>{clock.label}</span><strong>{clock.time}</strong><b>{clock.zone}</b>{clockNow !== null && <em className="clock-jikan">{jikanOf(clockNow)}</em>}</div>)}</div>
-    <p>報價每 60 秒更新 · 上次 {lastQuoteLabel}</p>
   </div>;
 });
 
@@ -1127,7 +1125,6 @@ export default function Home() {
   const [priceEditId, setPriceEditId] = useState<number | null>(null);
   const [priceInput, setPriceInput] = useState('');
   const [toast, setToast] = useState('');
-  const [lastQuoteAt, setLastQuoteAt] = useState<string | null>(null);
   const [marketSnapshots, setMarketSnapshots] = useState<Record<string, LiveQuote>>({});
   const [failedQuoteTickers, setFailedQuoteTickers] = useState<Set<string>>(new Set());
   const [underlyingQuotes, setUnderlyingQuotes] = useState<Record<string, UnderlyingQuote>>({});
@@ -1833,10 +1830,8 @@ export default function Home() {
       const payload = await response.json() as { quotes?: LiveQuote[]; failed?: number; failedTickers?: string[]; updatedAt?: string; error?: string };
       if (!response.ok) throw new Error(payload.error ?? '報價更新失敗');
       const quotes = payload.quotes ?? [];
-      const marketTimes = quotes.flatMap((quote) => typeof quote.marketTime === 'number' ? [quote.marketTime] : []);
       setMarketSnapshots((current) => ({ ...current, ...Object.fromEntries(quotes.map((quote) => [quote.ticker, quote])) }));
       setFailedQuoteTickers(new Set(payload.failedTickers ?? []));
-      setLastQuoteAt(marketTimes.length ? new Date(Math.max(...marketTimes) * 1000).toISOString() : payload.updatedAt ?? new Date().toISOString());
       if (quotes.length) {
         const quotesByTicker = new Map(quotes.map((quote) => [quote.ticker.toUpperCase(), quote]));
         setTrades((current) => current.map((trade) => {
@@ -2450,7 +2445,6 @@ export default function Home() {
         setEditorQuote(cached.quote);
         setEditorQuoteError('');
         setEditorQuoteLoading(false);
-        if (cached.quote.marketTime) setLastQuoteAt(new Date(cached.quote.marketTime * 1000).toISOString());
         return;
       }
 
@@ -2469,7 +2463,6 @@ export default function Home() {
           ? { ...current, currentPrice: quote.price }
           : current);
         setEditorQuote(quote);
-        if (quote.marketTime) setLastQuoteAt(new Date(quote.marketTime * 1000).toISOString());
       } catch (error) {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
           setEditorQuoteError(error instanceof Error ? error.message : '暫時無法取得最新報價');
@@ -3313,7 +3306,7 @@ export default function Home() {
         <div className="dashboard">
         <section className="hero" id="overview">
           <div className="wafu-hero-title"><EditableHeroTitle onNotify={notify} theme={wafuTheme} /><p className="wafu-hero-sub">{wafuTheme === 'shigure' ? '赤冬 · 雪夜的自家調配帳' : '作戰參謀的帳簿 · 百花繚亂'}</p></div>
-          <LiveMarketClocks lastQuoteAt={lastQuoteAt} />
+          <LiveMarketClocks />
         </section>
 
         <section className="metric-grid" aria-label="投資組合摘要">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import HaloIcon from '@/components/wafu/HaloIcon';
+import HandHalo from '@/components/wafu/HandHalo';
 import NavIcon from '@/components/wafu/NavIcon';
 import type { WafuTheme } from '@/lib/wafu/theme';
 
@@ -36,7 +36,7 @@ export default function HomeBar({ theme, active, settingsOpen, assistant, onSect
   }, [moreOpen]);
 
   const current = settingsOpen ? 'settings' : assistant?.open ? 'ai' : active === 'valuation' ? 'more' : active;
-  const halo = <span className="wafu-homebar-halo" aria-hidden="true"><HaloIcon theme={theme} size={30} tilt={64} /></span>;
+  const halo = <span className="wafu-homebar-halo" aria-hidden="true"><HandHalo theme={theme} size={30} tilt={64} /></span>;
   const item = (id: string, label: string, icon: React.ReactNode, onClick: () => void, extra: Record<string, unknown> = {}) => (
     <button key={id} type="button" className={`wafu-homebar-item${current === id ? ' is-current' : ''}`} aria-current={current === id ? 'page' : undefined} onClick={onClick} {...extra}>
       <span className="wafu-homebar-icon">{icon}{current === id && id !== 'ai' && halo}</span>
@@ -48,7 +48,7 @@ export default function HomeBar({ theme, active, settingsOpen, assistant, onSect
     {item('overview', '總覽', <NavIcon name="overview" />, () => onSection('overview'))}
     {item('positions', '持倉', <NavIcon name="positions" />, () => onSection('positions'))}
     {item('returns', '收益', <NavIcon name="returns" />, () => onSection('returns'))}
-    {assistant && item('ai', 'AI', <HaloIcon theme={theme} size={24} spin={assistant.open} minStrokePx={1} />, assistant.toggle, { 'aria-haspopup': 'dialog', 'aria-expanded': assistant.open })}
+    {assistant && item('ai', 'AI', <HandHalo theme={theme} size={24} spin={assistant.open} />, assistant.toggle, { 'aria-haspopup': 'dialog', 'aria-expanded': assistant.open })}
     {item('settings', '設定', <NavIcon name="settings" />, onSettings, { 'aria-haspopup': 'dialog' })}
     <div className="wafu-homebar-more" ref={moreRef}>
       {item('more', '更多', more, () => setMoreOpen((open) => !open), { 'aria-haspopup': 'menu', 'aria-expanded': moreOpen })}

@@ -15,7 +15,7 @@
   --wa-up: #6cc4a1; --wa-up-rgb: 108 196 161; --wa-up-soft: rgb(108 196 161 / .13);
   --wa-down: #ec7a72; --wa-down-rgb: 236 122 114; --wa-down-soft: rgb(236 122 114 / .13);
   --wa-seal: #d9483b;
-  --wa-r: 2px; --wa-r-lg: 3px;
+  --wa-r: 10px; --wa-r-lg: 16px;
   --wa-f-display: 'Source Serif 4', 'Shippori Mincho B1', 'Noto Serif TC', 'Songti TC', serif;
   --wa-f-title: 'Shippori Mincho B1', 'Noto Serif TC', serif;
   --wa-f-body: 'Noto Sans TC', 'Hiragino Sans', system-ui, sans-serif;
@@ -286,3 +286,15 @@
 .halo-kikyo.tone-paper .h-shine path { opacity: .35; }
 .halo-ico .h-shadow { color: #000; }
 .halo-ico.tone-paper .h-shadow { color: #3a2a14; opacity: .6; }
+
+/* Hand-drawn halo (HandHalo): brush strokes are filled bands; a fainter pencil line sits under them. */
+.hand-halo .hh-sketch { opacity: .4; fill: none !important; }
+.hand-halo.halo-kikyo .h-eye.hh-sketch, .hand-halo.halo-kikyo .h-pupil.hh-sketch { display: none; }
+.hand-halo .hh-brush { stroke: none !important; }
+.hand-halo.halo-kikyo .hh-brush.h-glint { fill: #4f86f0 !important; }
+.hand-halo.halo-kikyo .hh-brush.h-ring { fill: #c9d1df !important; }
+:root[data-tone='washi'] .hand-halo.halo-kikyo .hh-brush.h-ring, .hand-halo.halo-kikyo.tone-paper .hh-brush.h-ring { fill: #1d2230 !important; }
+:root[data-tone='washi'] .hand-halo.halo-kikyo .h-ring, :root[data-tone='washi'] .hand-halo.halo-kikyo .h-eye { stroke: #1d2230; }
+:root[data-tone='washi'] .hand-halo.halo-kikyo .h-eye { fill: #1d2230; }
+:root[data-tone='washi'] .hand-halo.halo-kikyo .hh-brush.h-glint { fill: #2f63c8 !important; }
+:root[data-tone='washi'] .hand-halo.halo-shigure { filter: drop-shadow(0 0 1px rgb(20 90 130 / .5)); }

@@ -4,7 +4,7 @@ import ChatText from '@/components/wafu/ChatText';
 import { useEffect, useRef, useState } from 'react';
 import type { AiEntryContext } from '@/components/AiTradeEntry';
 import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
-import HaloIcon from '@/components/wafu/HaloIcon';
+import HandHalo from '@/components/wafu/HandHalo';
 import type { AssistantMessage, AssistantPersona, PortfolioSnapshot } from '@/lib/ai-assistant';
 import { assistantGreeting, assistantPresets, currentAssistantSession, loadAssistantChat, maxAssistantQuestion, maxAssistantTurns, saveAssistantChat } from '@/lib/ai-assistant';
 import { claudeModelLabel, requestModel } from '@/lib/ai-models';
@@ -123,7 +123,7 @@ export default function AssistantPanel({ theme, voice, ai, snapshot, onClose }: 
   return <div className="wafu-assistant-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <aside className={`wafu-assistant is-${theme}`} role="dialog" aria-modal="true" aria-labelledby="wafu-assistant-title">
       <header>
-        <span className="wafu-assistant-halo" aria-hidden="true"><HaloIcon theme={theme} size={34} tilt={58} minStrokePx={1} /></span>
+        <span className="wafu-assistant-halo" aria-hidden="true"><HandHalo theme={theme} size={34} tilt={58} /></span>
         <div><h2 id="wafu-assistant-title">{title}</h2><small>只提供分析，不會更動任何交易；不是投資建議。</small></div>
         <button type="button" className="wafu-assistant-close" onClick={onClose} aria-label="關閉 AI 助理">×</button>
       </header>

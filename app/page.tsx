@@ -44,7 +44,7 @@ import { applyTone, loadToneSetting, resolveTone, saveToneSetting, toneChoices }
 import EditableHeroTitle from '@/components/EditableHeroTitle';
 import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
-import HaloIcon from '@/components/wafu/HaloIcon';
+import HandHalo from '@/components/wafu/HandHalo';
 // The opening's controller (its markup ships with the layout: StaticOpening).
 import WafuOpening from '@/components/wafu/opening/Opening';
 import NavIcon from '@/components/wafu/NavIcon';
@@ -3590,7 +3590,7 @@ export default function Home() {
 
       {settingsOpen && <div className="settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
         <aside className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-          <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title"><HaloIcon theme={wafuTheme} size={26} minStrokePx={1} />設定</h2></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
+          <header><div><p className="eyebrow">Workspace controls</p><h2 id="settings-title"><HandHalo theme={wafuTheme} size={26} />設定</h2></div><button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></header>
           <div className="settings-tabs" role="tablist" aria-label="設定分類">
             {settingsTabs.map(([tab, label]) => <button key={tab} type="button" role="tab" id={`settings-tab-${tab}`} aria-selected={settingsTab === tab} aria-controls="settings-tabpanel" className={settingsTab === tab ? 'on' : ''} onClick={() => setSettingsTab(tab)}>{label}</button>)}
           </div>

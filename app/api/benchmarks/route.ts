@@ -53,25 +53,25 @@ function bucketKeys(mode: Mode) {
   const now = new Date();
   const keys: string[] = [];
   if (mode === 'day') {
-    const current = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    for (let offset = 29; offset >= 0; offset -= 1) {
-      const date = new Date(current);
-      date.setUTCDate(current.getUTCDate() - offset);
-      keys.push(date.toISOString().slice(0, 10));
+    // The last 60 weekdays (weekends carry no prices).
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    while (keys.length < 60) {
+      if (date.getUTCDay() !== 0 && date.getUTCDay() !== 6) keys.unshift(date.toISOString().slice(0, 10));
+      date.setUTCDate(date.getUTCDate() - 1);
     }
   } else if (mode === 'week') {
     const current = startOfWeek(now);
-    for (let offset = 11; offset >= 0; offset -= 1) {
+    for (let offset = 51; offset >= 0; offset -= 1) {
       const date = new Date(current);
       date.setUTCDate(current.getUTCDate() - offset * 7);
       keys.push(date.toISOString().slice(0, 10));
     }
   } else if (mode === 'month') {
-    for (let offset = 11; offset >= 0; offset -= 1) {
+    for (let offset = 35; offset >= 0; offset -= 1) {
       keys.push(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1)).toISOString().slice(0, 7));
     }
   } else {
-    for (let offset = 4; offset >= 0; offset -= 1) keys.push(String(now.getUTCFullYear() - offset));
+    for (let offset = 5; offset >= 0; offset -= 1) keys.push(String(now.getUTCFullYear() - offset));
   }
   return keys;
 }
@@ -85,8 +85,9 @@ function bucketKey(date: Date, mode: Mode) {
 
 // Each range reaches back past the first bucket so chain-linked returns have a prior close.
 function yahooConfig(mode: Mode) {
-  if (mode === 'day' || mode === 'week') return 'range=6mo&interval=1d';
-  if (mode === 'month') return 'range=2y&interval=1d';
+  if (mode === 'day') return 'range=6mo&interval=1d';
+  if (mode === 'week') return 'range=2y&interval=1d';
+  if (mode === 'month') return 'range=5y&interval=1wk';
   return 'range=10y&interval=1mo';
 }
 
@@ -212,8 +213,10 @@ export async function GET(request: Request) {
   }
   const modeParam = params.get('mode');
   const scope = params.get('scope') === 'markets' ? 'markets' : params.get('scope') === 'benchmarks' ? 'benchmarks' : 'all';
-  const marketGroup = params.get('group') === 'commodities' ? 'commodities' : 'rates';
-  const activeMarketConfigs = marketGroup === 'commodities'
+  const groupParam = params.get('group');
+  const marketGroup = groupParam === 'commodities' ? 'commodities' : groupParam === 'all' ? 'all' : 'rates';
+  const activeMarketConfigs = marketGroup === 'all' ? marketConfigs.filter((config) => ['USDJPY', 'US10Y', 'US30Y', 'GOLD', 'OIL'].includes(config.id))
+    : marketGroup === 'commodities'
     ? marketConfigs.filter((config) => config.id === 'USDJPY' || config.id === 'GOLD' || config.id === 'OIL')
     : marketConfigs.filter((config) => config.id === 'USDJPY' || config.id === 'US10Y' || config.id === 'US30Y');
   const force = params.has('refresh');

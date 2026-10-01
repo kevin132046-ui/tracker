@@ -57,9 +57,10 @@ import { MetricsGrid, MonthlyHeatmap } from '@/components/wafu/PerfMetrics';
 import { VisualFieldPicker, defaultVisualFields, loadVisualFields, saveVisualFields, visualFields as visualFieldList } from '@/components/wafu/VisualFields';
 import type { VisualFieldId } from '@/components/wafu/VisualFields';
 import ManualQuotes from '@/components/wafu/ManualQuotes';
-import YieldCurve from '@/components/wafu/YieldCurve';
+import SpreadCard from '@/components/wafu/SpreadCard';
+import PerfChart from '@/components/wafu/PerfChart';
 import type { ManualQuoteRow } from '@/components/wafu/ManualQuotes';
-import { computeRiskMetrics, cumulativeOf, drawdownOf, monthlyGrid } from '@/lib/wafu/metrics';
+import { computeRiskMetrics, monthlyGrid } from '@/lib/wafu/metrics';
 import HankoTile from '@/components/wafu/HankoTile';
 import ResearchDrawer from '@/components/wafu/ResearchDrawer';
 import type { ResearchTab } from '@/components/wafu/ResearchDrawer';
@@ -108,7 +109,6 @@ type Trade = {
   dividendAdjustment?: number;
 };
 
-type MacroMarketGroup = 'rates' | 'commodities';
 type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock' | 'cash';
 type PositionViewMode = 'visual' | 'details';
 type AllocationChartMode = 'donut' | 'bars';
@@ -230,7 +230,6 @@ const companyNames: Record<string, string> = {
   '7203.T': 'Toyota Motor', '6758.T': 'Sony Group', '9984.T': 'SoftBank Group', '6861.T': 'Keyence',
   '8306.T': 'Mitsubishi UFJ Financial Group', '8035.T': 'Tokyo Electron', '9983.T': 'Fast Retailing', '7974.T': 'Nintendo',
 };
-const panelRatioKey = 'optionflow-analytics-panel-ratio';
 const backgroundImageKey = 'optionflow-custom-background';
 const backgroundModeKey = 'optionflow-background-mode';
 const backgroundPendingKey = 'optionflow-pending-background';
@@ -256,13 +255,9 @@ const localBackgroundPattern = /^data:image\/jpeg;base64,/i;
 const serverBackgroundPattern = /^\/api\/background\?image=1&version=\d{10,16}-[0-9a-f-]{36}$/i;
 const isLocalBackground = (value: string) => localBackgroundPattern.test(value);
 const isServerBackground = (value: string) => serverBackgroundPattern.test(value);
+const perfColors = { mine: 'var(--wa-accent)', spy: 'var(--wa-ink-2)', boxx: 'var(--wa-gold)' };
+const perfNames = { mine: '我的組合', spy: 'SPY', boxx: 'BOXX' };
 const isStoredBackground = (value: string) => isLocalBackground(value) || isServerBackground(value);
-const clampPanelRatio = (value: number) => Math.min(72, Math.max(46, value));
-const initialPanelRatio = () => {
-  if (typeof window === 'undefined') return 60;
-  const savedRatio = Number(window.localStorage.getItem(panelRatioKey));
-  return Number.isFinite(savedRatio) && savedRatio > 0 ? clampPanelRatio(savedRatio) : 60;
-};
 const initialUsdJpyRate = () => {
   if (typeof window === 'undefined') return 150;
   const savedRate = Number(window.localStorage.getItem(usdJpyRateKey));
@@ -1024,15 +1019,13 @@ export default function Home() {
   const [lotSavingId, setLotSavingId] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [rangeMode, setRangeMode] = useState<RangeMode>('month');
-  const [returnHoverIndex, setReturnHoverIndex] = useState<number | null>(null);
   const [manualQuotesOpen, setManualQuotesOpen] = useState(false);
-  const [returnView, setReturnView] = useState<'period' | 'cum' | 'dd' | 'heat'>('period');
+  const [returnView, setReturnView] = useState<'period' | 'cum' | 'dd' | 'heat'>('cum');
+  const [perfVisible, setPerfVisible] = useState({ mine: true, spy: true, boxx: true });
   const [visualFieldSet, setVisualFieldSet] = useState<VisualFieldId[]>(defaultVisualFields);
   useEffect(() => { setVisualFieldSet(loadVisualFields()); }, []);
   const updateVisualFields = useCallback((next: VisualFieldId[]) => { setVisualFieldSet(next); saveVisualFields(next); }, []);
   const [macroRangeMode, setMacroRangeMode] = useState<RangeMode>('month');
-  const [macroMarketGroup, setMacroMarketGroup] = useState<MacroMarketGroup>('rates');
-  const [macroDeckDirection, setMacroDeckDirection] = useState<'up' | 'down'>('up');
   const [allocationChartMode, setAllocationChartMode] = useState<AllocationChartMode>('donut');
   const [allocationGroupSelection, setAllocationGroupSelection] = useState<{ label: string; members: string[] } | null>(null);
   const [allocationHoveredLabel, setAllocationHoveredLabel] = useState<string | null>(null);
@@ -1136,8 +1129,6 @@ export default function Home() {
   const [editorQuoteError, setEditorQuoteError] = useState('');
   const [editorQuote, setEditorQuote] = useState<LiveQuote | null>(null);
   const [editorQuoteRetry, setEditorQuoteRetry] = useState(0);
-  const [panelRatio, setPanelRatio] = useState(initialPanelRatio);
-  const [resizingPanels, setResizingPanels] = useState(false);
   const [backgroundImage, setBackgroundImage] = useState('');
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>('default');
   const [backgroundSaving, setBackgroundSaving] = useState(false);
@@ -1151,8 +1142,6 @@ export default function Home() {
   const [allocationDate, setAllocationDate] = useState(today);
   const [allocationHistory, setAllocationHistory] = useState<AllocationHistory | null>(null);
   const [allocationLoading, setAllocationLoading] = useState(false);
-  const contentGridRef = useRef<HTMLElement>(null);
-  const panelRatioRef = useRef(panelRatio);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const backgroundOperationRef = useRef(false);
   const backgroundGenerationRef = useRef(0);
@@ -1162,7 +1151,6 @@ export default function Home() {
   const rocTriggerRef = useRef<HTMLButtonElement>(null);
   const macroCacheRef = useRef(new Map<string, MacroCacheEntry>());
   const macroRefreshRequestedRef = useRef(false);
-  const macroDeckSwipeStartRef = useRef<number | null>(null);
   const technicalCacheRef = useRef(new Map<string, TechnicalCacheEntry>());
   const allocationHistoryCacheRef = useRef(new Map<string, AllocationHistory>());
   const quoteRefreshInFlightRef = useRef(false);
@@ -1258,11 +1246,6 @@ export default function Home() {
       setDividendSaving(false);
     }
   }, [dividendAdjustmentCount, dividendSaving, notify, refreshDividendCash]);
-
-  const showMacroMarketGroup = useCallback((group: MacroMarketGroup, direction: 'up' | 'down') => {
-    setMacroDeckDirection(direction);
-    setMacroMarketGroup(group);
-  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2058,7 +2041,7 @@ export default function Home() {
   useEffect(() => {
     const controller = new AbortController();
     let inFlight = false;
-    const cacheKey = `${macroRangeMode}:${macroMarketGroup}`;
+    const cacheKey = `${macroRangeMode}:all`;
     const cached = macroCacheRef.current.get(cacheKey) ?? readStoredMacroMarket(cacheKey);
     const mergeMarketState = (current: MacroMarketData, markets: BenchmarkMarket[], updatedAt: string) => {
       const incomingIds = new Set(markets.map((market) => market.id));
@@ -2078,7 +2061,7 @@ export default function Home() {
       if (!quiet) setMacroLoading(true);
       try {
         const refreshParam = force ? '&refresh=1' : '';
-        const response = await fetch(`/api/benchmarks?mode=${macroRangeMode}&scope=markets&group=${macroMarketGroup}${refreshParam}`, { signal: controller.signal });
+        const response = await fetch(`/api/benchmarks?mode=${macroRangeMode}&scope=markets&group=all${refreshParam}`, { signal: controller.signal });
         const payload = await response.json() as { markets?: BenchmarkMarket[]; updatedAt?: string; warnings?: string[]; error?: string };
         if (!response.ok) throw new Error(payload.error ?? '宏觀行情暫時無法取得');
         if (controller.signal.aborted) return;
@@ -2118,7 +2101,7 @@ export default function Home() {
     void loadMarkets(Boolean(cached), forceRefresh);
     const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void loadMarkets(true, false); }, 60_000);
     return () => { controller.abort(); window.clearInterval(timer); };
-  }, [macroMarketGroup, macroRangeMode, macroRefreshKey]);
+  }, [macroRangeMode, macroRefreshKey]);
 
   useEffect(() => {
     const currentDate = today();
@@ -2293,41 +2276,6 @@ export default function Home() {
     void restoreBackground();
     return () => controller.abort();
   }, []);
-
-  const updatePanelRatio = useCallback((clientX: number) => {
-    const bounds = contentGridRef.current?.getBoundingClientRect();
-    if (!bounds || bounds.width <= 0) return;
-    const nextRatio = clampPanelRatio(((clientX - bounds.left) / bounds.width) * 100);
-    panelRatioRef.current = nextRatio;
-    contentGridRef.current?.style.setProperty('--return-panel-ratio', `${nextRatio}%`);
-  }, []);
-
-  const adjustPanelRatio = useCallback((delta: number) => {
-    const nextRatio = clampPanelRatio(panelRatioRef.current + delta);
-    panelRatioRef.current = nextRatio;
-    setPanelRatio(nextRatio);
-    window.localStorage.setItem(panelRatioKey, String(nextRatio));
-  }, []);
-
-  useEffect(() => {
-    if (!resizingPanels) return;
-    const move = (event: PointerEvent) => updatePanelRatio(event.clientX);
-    const finish = () => {
-      setPanelRatio(panelRatioRef.current);
-      window.localStorage.setItem(panelRatioKey, String(panelRatioRef.current));
-      setResizingPanels(false);
-    };
-    document.body.classList.add('is-resizing-panels');
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', finish, { once: true });
-    window.addEventListener('pointercancel', finish, { once: true });
-    return () => {
-      document.body.classList.remove('is-resizing-panels');
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', finish);
-      window.removeEventListener('pointercancel', finish);
-    };
-  }, [resizingPanels, updatePanelRatio]);
 
   const todayKey = today();
   const editorMarket: 'US' | 'JP' = editor?.market ?? (editor?.ticker === 'JPY' || isJapaneseTicker(editor?.ticker) ? 'JP' : 'US');
@@ -2662,18 +2610,15 @@ export default function Home() {
     : estimatedReturnTickers.length
       ? `（估算：${estimatedReturnTickers.slice(0, 6).join('、')}${estimatedReturnTickers.length > 6 ? ` 等 ${estimatedReturnTickers.length} 檔` : ''}）`
       : '';
-  // 單期 / 累積 / 回撤 views of the same buckets; 回撤 has no BOXX line.
-  const viewValues = useMemo(() => {
-    const mine = returnSeries.map((item) => item.value);
-    if (returnView === 'cum') return { mine: cumulativeOf(mine), SPY: cumulativeOf(activeBenchmarks.SPY), BOXX: cumulativeOf(activeBenchmarks.BOXX) };
-    if (returnView === 'dd') return { mine: drawdownOf(mine), SPY: drawdownOf(activeBenchmarks.SPY), BOXX: [] as number[] };
-    return { mine, SPY: activeBenchmarks.SPY, BOXX: activeBenchmarks.BOXX };
-  }, [activeBenchmarks, returnSeries, returnView]);
-  // Metrics use trading periods only: weekends and the stretch before the first position are left out.
+  // 36 months span three years, so month labels carry the year (2025/9).
+  const perfLabels = useMemo(() => returnSeries.map((item) => rangeMode === 'month' ? `${item.key.slice(0, 4)}/${Number(item.key.slice(5, 7))}` : item.label), [rangeMode, returnSeries]);
+  const perfSeries = useMemo(() => ({ mine: returnSeries.map((item) => item.value), spy: activeBenchmarks.SPY, boxx: activeBenchmarks.BOXX }), [activeBenchmarks, returnSeries]);
+  const returnWindowLabel = rangeMode === 'day' ? '近 60 個交易日' : rangeMode === 'week' ? '近 52 週' : rangeMode === 'month' ? '近 36 個月' : '近 6 年';
+  // Metrics leave out the stretch before the first position.
   const riskMetrics = useMemo(() => {
     const first = returnSeries.findIndex((item) => item.capital > 0);
     if (first < 0) return null;
-    const rows = returnSeries.map((item, index) => ({ item, index })).filter(({ item, index }) => index >= first && (rangeMode !== 'day' || ![0, 6].includes(new Date(`${item.key}T00:00:00Z`).getUTCDay())));
+    const rows = returnSeries.map((item, index) => ({ item, index })).filter(({ index }) => index >= first);
     if (rows.length < 2) return null;
     return computeRiskMetrics({
       labels: rows.map(({ item }) => item.label),
@@ -2690,35 +2635,16 @@ export default function Home() {
     const daily = dailyTimeWeightedReturns(trades, { startDate: from, endDate: today(), usdJpyRate, prices: activePriceHistory?.series ?? null });
     return monthlyGrid(daily.days);
   }, [activePriceHistory, returnView, trades, usdJpyRate]);
-  const chartValues = [...viewValues.mine, ...viewValues.SPY, ...viewValues.BOXX].filter(Number.isFinite);
-  const chartPeak = Math.max(0, ...chartValues.map(Math.abs));
-  // Ticks stay at whole percents, at most five a side; 回撤 only draws the side below zero.
-  const chartStep = [.01, .02, .05, .1, .2, .5, 1].find((step) => chartPeak / step <= 5) ?? 1;
-  const chartStepCount = Math.max(1, Math.ceil(chartPeak / chartStep));
-  const maxAbsReturn = chartStepCount * chartStep;
-  const chartTop = returnView === 'dd' ? 0 : maxAbsReturn;
-  const chartY = (value: number) => ((chartTop - value) / (chartTop + maxAbsReturn)) * 100;
-  const chartTicks = Array.from({ length: (returnView === 'dd' ? 0 : chartStepCount) + chartStepCount + 1 }, (_, index) => chartTop - index * chartStep);
-  const pointsFor = (values: number[]) => values.map((value, index) => {
-    const x = values.length === 1 ? 50 : (index / (values.length - 1)) * 100;
-    const y = chartY(value);
-    return `${x},${y}`;
-  }).join(' ');
-  const chartPoints = pointsFor(viewValues.mine);
-  const spyPoints = pointsFor(viewValues.SPY);
-  const boxxPoints = pointsFor(viewValues.BOXX);
   const rangeModeLabel = rangeMode === 'day' ? '日' : rangeMode === 'week' ? '週' : rangeMode === 'month' ? '月' : '年';
   const macroRangeModeLabel = macroRangeMode === 'day' ? '日' : macroRangeMode === 'week' ? '週' : macroRangeMode === 'month' ? '月' : '年';
   const macroTimeline = useMemo(() => rangeBuckets(macroRangeMode, today()), [macroRangeMode]);
-  const activeMacroIds: BenchmarkMarket['id'][] = macroMarketGroup === 'rates' ? ['USDJPY', 'US10Y', 'US30Y'] : ['GOLD', 'OIL'];
+  const activeMacroIds: BenchmarkMarket['id'][] = ['USDJPY', 'US10Y', 'US30Y', 'GOLD', 'OIL'];
   const activeMacroMarkets = macroMarkets.mode === macroRangeMode ? activeMacroIds.flatMap((id) => {
     const market = macroMarkets.markets.find((candidate) => candidate.id === id);
     return market ? [market] : [];
   }) : [];
   const usdJpyEstimated = !(usdJpyRate > 50 && usdJpyUpdatedAt);
   const macroUpdatedLabel = macroMarkets.updatedAt ? new Intl.DateTimeFormat('zh-TW', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(macroMarkets.updatedAt)) : '等待更新';
-  const chartDateStep = Math.max(1, Math.ceil((returnSeries.length - 1) / 5));
-  const activeReturnHoverIndex = returnHoverIndex !== null && returnSeries[returnHoverIndex] ? returnHoverIndex : null;
 
   const currentAllocationDate = today();
   const allocationPresets = [
@@ -2838,6 +2764,8 @@ export default function Home() {
     }));
   }, [filteredTrades, usdJpyRate]);
   // The research drawer's header: holding, average cost and unrealised P&L of the ticker in view.
+  // Every held ticker (the list itself is filtered to the open one while the drawer is up).
+  const researchSymbols = useMemo(() => [...new Set(openTrades.filter((item) => !isCashTrade(item.trade)).map((item) => item.trade.ticker).filter((ticker): ticker is string => Boolean(ticker) && ticker !== 'USD' && ticker !== 'JPY'))].sort(), [openTrades]);
   const researchPosition = drilledTicker ? visualPositions.find((position) => position.ticker === drilledTicker) ?? null : null;
   const researchSummary = useMemo(() => {
     if (!drilledTicker || !researchPosition) return [];
@@ -3221,7 +3149,6 @@ export default function Home() {
     const timer = window.setInterval(update, 30_000);
     return () => window.clearInterval(timer);
   }, []);
-  const contentGridStyle = useMemo(() => ({ '--return-panel-ratio': `${panelRatio}%` }) as CSSProperties, [panelRatio]);
   const imageBackgroundActive = backgroundMode === 'image' && Boolean(backgroundImage);
   const shellStyle = useMemo(() => imageBackgroundActive ? { '--custom-background': `url("${backgroundImage}")` } as CSSProperties : undefined, [backgroundImage, imageBackgroundActive]);
   const selectedStockTrades = useMemo(() => drilledTicker ? trades.filter((trade) => trade.ticker === drilledTicker && (trade.type === 'SDI' || trade.event === 'STOCK')) : [], [drilledTicker, trades]);
@@ -3300,92 +3227,42 @@ export default function Home() {
           <BrokerHub initialWorkspace={brokerWorkspaceSeed} usdJpyRate={usdJpyRate} usdJpyEstimated={usdJpyEstimated} usdJpyUpdatedAt={usdJpyEstimated ? null : usdJpyUpdatedAt} onNotify={notify} />
         </Suspense>}
 
-        <section ref={contentGridRef} className={`content-grid ${resizingPanels ? 'is-resizing' : ''}`} style={contentGridStyle}>
-          <article className="panel return-panel" id="returns" aria-busy={benchmarkLoading}>
-            <div className="panel-heading">
-              <div><p className="eyebrow">Return analytics</p><h2>{rangeModeLabel}收益率</h2></div>
+        <article className="panel return-panel wafu-perf-panel" id="returns" aria-busy={benchmarkLoading}>
+          <div className="panel-heading">
+            <div><p className="eyebrow">Return analytics</p><h2>收益分析</h2></div>
+            <div className="wafu-perf-controls">
+              <div className="segmented wafu-return-views" role="group" aria-label="收益圖表檢視">
+                {([['cum', '累積'], ['period', '單期'], ['dd', '回撤'], ['heat', '月曆']] as const).map(([view, label]) => <button type="button" key={view} className={returnView === view ? 'selected' : ''} aria-pressed={returnView === view} onClick={() => setReturnView(view)}>{label}</button>)}
+              </div>
               <div className="segmented" role="group" aria-label="收益率期間">
                 {([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={rangeMode === mode ? 'selected' : ''} aria-pressed={rangeMode === mode} onClick={() => setRangeMode(mode)}>{label}</button>)}
               </div>
             </div>
-            <div className="return-summary"><strong>{percent.format(returnSeries.at(-1)?.value ?? 0)}</strong><span>最近一期報酬率</span><span className="return-cumulative">區間累積 <b className={returnAnalytics.cumulative >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(returnAnalytics.cumulative)}</b>（SPY {spyCumulative === null ? '—' : signedPrecisePercent(spyCumulative)}）</span><div className="benchmark-legend"><span><i className="portfolio-key" />我的組合</span><span><i className="spy-key" />SPY</span>{returnView !== 'dd' && <span><i className="boxx-key" />BOXX</span>}</div></div>
-            <div className="segmented wafu-return-views" role="group" aria-label="收益圖表檢視">
-              {([['period', '單期'], ['cum', '累積'], ['dd', '回撤'], ['heat', '月曆']] as const).map(([view, label]) => <button type="button" key={view} className={returnView === view ? 'selected' : ''} aria-pressed={returnView === view} onClick={() => { setReturnView(view); setReturnHoverIndex(null); }}>{label}</button>)}
+          </div>
+          <div className="wafu-perf-summary">
+            <div className="wafu-perf-big"><strong className={returnAnalytics.cumulative >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(returnAnalytics.cumulative)}</strong><span>{returnWindowLabel}累積報酬</span></div>
+            <dl>
+              <div><dt>相對 SPY</dt><dd className={spyCumulative === null ? '' : returnAnalytics.cumulative - spyCumulative >= 0 ? 'positive' : 'negative'}>{spyCumulative === null ? '—' : `${signedPrecisePercent(returnAnalytics.cumulative - spyCumulative)}`}</dd></div>
+              <div><dt>最新一{rangeModeLabel}</dt><dd className={(returnSeries.at(-1)?.value ?? 0) >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(returnSeries.at(-1)?.value ?? 0)}</dd></div>
+              <div><dt>最大回撤</dt><dd className={riskMetrics && riskMetrics.mdd < 0 ? 'negative' : ''}>{riskMetrics ? signedPrecisePercent(riskMetrics.mdd) : '—'}{riskMetrics?.mddAt && <small>{riskMetrics.mddAt}</small>}</dd></div>
+            </dl>
+            {returnView !== 'heat' && <div className="wafu-perf-legend" role="group" aria-label="顯示的序列">
+              {(['mine', 'spy', 'boxx'] as const).filter((key) => returnView !== 'dd' || key !== 'boxx').map((key) => <button type="button" key={key} className={perfVisible[key] ? '' : 'is-off'} aria-pressed={perfVisible[key]} onClick={() => setPerfVisible((current) => ({ ...current, [key]: !current[key] }))}><i className={key === 'mine' ? 'portfolio-key' : key === 'spy' ? 'spy-key' : 'boxx-key'} />{perfNames[key]}</button>)}
+            </div>}
+          </div>
+          <div className="wafu-perf-body">
+            <div className="wafu-perf-main">
+              {returnView === 'heat' ? <MonthlyHeatmap grid={heatGrid} loading={priceHistoryPending} />
+                : <PerfChart mode={returnView} labels={perfLabels} series={perfSeries} visible={perfVisible} colors={perfColors} names={perfNames} />}
+              <p className="return-method-note">時間加權報酬：每日損益 ÷ 當日占用資本；股票用 Yahoo 含息調整收盤，選擇權以進出場價線性估算{returnEstimateNote}</p>
             </div>
-            {returnView === 'heat' ? <MonthlyHeatmap grid={heatGrid} loading={priceHistoryPending} /> : <>
-            <div className="chart-shell">
-              {chartTicks.map((tick) => <span key={`label-${tick.toFixed(4)}`} className="axis-label" style={{ top: `${chartY(tick)}%` }}>{tick > 0 ? '+' : ''}{Math.round(tick * 100)}%</span>)}
-              <svg className="return-chart" viewBox="0 0 100 100" role="img" aria-label="日週月年收益率折線圖" preserveAspectRatio="none">
-                <defs><linearGradient id="returnFade" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" style={{ stopColor: 'var(--wa-accent)' }} stopOpacity=".24"/><stop offset="100%" style={{ stopColor: 'var(--wa-accent)' }} stopOpacity="0"/></linearGradient></defs>
-                {chartTicks.map((tick) => <line key={`grid-${tick.toFixed(4)}`} x1="0" x2="100" y1={chartY(tick)} y2={chartY(tick)} className={Math.abs(tick) < .0001 ? 'zero-line' : 'chart-grid-line'} />)}
-                {chartPoints && <><polygon points={`0,${chartY(0)} ${chartPoints} 100,${chartY(0)}`} fill="url(#returnFade)" /><polyline points={chartPoints} className="return-line portfolio-line" /></>}
-                {spyPoints && <polyline points={spyPoints} className="return-line spy-line" />}
-                {boxxPoints && <polyline points={boxxPoints} className="return-line boxx-line" />}
-              </svg>
-              <div className="return-markers" aria-hidden="true">{returnSeries.map((item, index) => {
-                const x = returnSeries.length === 1 ? 50 : (index / (returnSeries.length - 1)) * 100;
-                const value = viewValues.mine[index] ?? 0;
-                const y = chartY(value);
-                return <span key={item.key} className={value >= 0 && returnView !== 'dd' ? 'point-positive' : 'point-negative'} style={{ left: `${x}%`, top: `${y}%` }} title={`${item.label}: ${percent.format(value)}`} />;
-              })}</div>
-              {activeReturnHoverIndex !== null && (() => {
-                const item = returnSeries[activeReturnHoverIndex];
-                const x = returnSeries.length === 1 ? 50 : activeReturnHoverIndex / (returnSeries.length - 1) * 100;
-                const mineValue = viewValues.mine[activeReturnHoverIndex] ?? 0;
-                const spyValue = viewValues.SPY[activeReturnHoverIndex] ?? 0;
-                const boxxValue = viewValues.BOXX[activeReturnHoverIndex];
-                return <><span className="return-hover-line" style={{ left: `${x}%` }} aria-hidden="true" /><div className={`return-chart-tooltip ${x < 18 ? 'align-left' : x > 82 ? 'align-right' : ''}`} style={{ left: `${x}%` }} role="status"><strong>{item.label}</strong><span><i className="portfolio-key" />我的組合 <b>{signedPrecisePercent(mineValue)}</b></span><span><i className="spy-key" />SPY <b>{signedPrecisePercent(spyValue)}</b></span>{boxxValue !== undefined && <span><i className="boxx-key" />BOXX <b>{signedPrecisePercent(boxxValue)}</b></span>}</div></>;
-              })()}
-              <div className="return-hover-zones" onMouseLeave={() => setReturnHoverIndex(null)}>{returnSeries.map((item, index) => {
-                const pointX = returnSeries.length === 1 ? 50 : index / (returnSeries.length - 1) * 100;
-                const previousX = index === 0 ? 0 : (index - 1) / (returnSeries.length - 1) * 100;
-                const nextX = index === returnSeries.length - 1 ? 100 : (index + 1) / (returnSeries.length - 1) * 100;
-                const left = index === 0 ? 0 : (previousX + pointX) / 2;
-                const right = index === returnSeries.length - 1 ? 100 : (pointX + nextX) / 2;
-                return <button type="button" key={`hover-${item.key}`} style={{ left: `${left}%`, width: `${right - left}%` }} aria-label={`${item.label}：我的組合 ${signedPrecisePercent(viewValues.mine[index] ?? 0)}，SPY ${signedPrecisePercent(viewValues.SPY[index] ?? 0)}${viewValues.BOXX[index] === undefined ? '' : `，BOXX ${signedPrecisePercent(viewValues.BOXX[index])}`}`} onMouseEnter={() => setReturnHoverIndex(index)} onFocus={() => setReturnHoverIndex(index)} onBlur={() => setReturnHoverIndex(null)} onClick={() => setReturnHoverIndex(index)} />;
-              })}</div>
-            </div>
-            <div className="chart-dates">{returnSeries.map((item, index) => <span key={item.key} className={index !== 0 && index !== returnSeries.length - 1 && index % chartDateStep !== 0 ? 'hide-small-label' : ''}>{item.label}</span>)}</div>
-            </>}
-            {riskMetrics && <MetricsGrid m={riskMetrics} mode={rangeMode} />}
-            <p className="return-method-note">時間加權報酬：每日損益 ÷ 當日占用資本；股票用 Yahoo 含息調整收盤，選擇權以進出場價線性估算{returnEstimateNote}</p>
-            <section className="macro-market-section" aria-labelledby="macro-market-title">
-              <div className="macro-market-heading"><div><p className="eyebrow">Macro price monitor</p><h3 id="macro-market-title">{macroMarketGroup === 'rates' ? '匯率與美債殖利率' : '黃金與原油期貨'}</h3></div><div className="macro-market-actions"><button type="button" className="macro-deck-toggle" onClick={() => showMacroMarketGroup(macroMarketGroup === 'rates' ? 'commodities' : 'rates', macroMarketGroup === 'rates' ? 'up' : 'down')} aria-label={macroMarketGroup === 'rates' ? '向上切換至黃金與原油期貨' : '向下切換至匯率與美債殖利率'}><span aria-hidden="true">{macroMarketGroup === 'rates' ? '↑' : '↓'}</span><b>{macroMarketGroup === 'rates' ? '黃金／原油' : '美元／美債'}</b><i aria-hidden="true"><em className={macroMarketGroup === 'rates' ? 'active' : ''} /><em className={macroMarketGroup === 'commodities' ? 'active' : ''} /></i></button><div className="segmented macro-range-switch" role="group" aria-label="宏觀歷史期間">{([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={macroRangeMode === mode ? 'selected' : ''} aria-pressed={macroRangeMode === mode} onClick={() => setMacroRangeMode(mode)}>{label}</button>)}</div><button type="button" className="macro-refresh-button" disabled={macroLoading} onClick={() => { macroRefreshRequestedRef.current = true; setMacroRefreshKey((current) => current + 1); }}>↻ 更新</button><span>美東 {macroUpdatedLabel} · 每 60 秒</span></div></div>
-              {macroError && <p className="macro-market-error" role="status">{macroError}</p>}
-              <div className={`macro-market-deck deck-${macroDeckDirection}`} onPointerDown={(event) => { if (event.pointerType === 'mouse' && event.button !== 0) return; macroDeckSwipeStartRef.current = event.clientY; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerUp={(event) => { const start = macroDeckSwipeStartRef.current; macroDeckSwipeStartRef.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); if (start === null) return; const distance = event.clientY - start; if (distance < -34 && macroMarketGroup === 'rates') showMacroMarketGroup('commodities', 'up'); if (distance > 34 && macroMarketGroup === 'commodities') showMacroMarketGroup('rates', 'down'); }} onPointerCancel={() => { macroDeckSwipeStartRef.current = null; }}>
-                <div key={`${macroMarketGroup}-${macroRangeMode}`} className={`macro-market-grid group-${macroMarketGroup} ${macroLoading ? 'is-loading' : ''}`} aria-busy={macroLoading}>
-                  {activeMacroMarkets.map((market) => <MacroMarketCard key={market.id} market={market} startLabel={macroTimeline[0]?.label ?? ''} endLabel={macroTimeline.at(-1)?.label ?? ''} rangeLabel={macroRangeModeLabel} />)}
-                  {!activeMacroMarkets.length && Array.from({ length: macroMarketGroup === 'rates' ? 3 : 2 }, (_, item) => <article className="macro-market-card macro-market-placeholder" key={item}><span /><b /><i /></article>)}
-                </div>
-              </div>
-              {macroMarketGroup === 'rates' && <YieldCurve />}
-              <p className="macro-market-note">{macroMarketGroup === 'rates' ? '美元／日圓顯示至小數點後 2 位；美國 10 年與 30 年公債顯示殖利率、變動點數與漲跌幅。' : '黃金與 WTI 原油採連續近月期貨價格；上下滑動卡片或使用推疊按鈕即可返回匯率與美債。'}</p>
-            </section>
-          </article>
+            <aside className="wafu-perf-side" aria-label="績效與風險指標">
+              {riskMetrics ? <MetricsGrid m={riskMetrics} mode={rangeMode} /> : <p className="wafu-perf-empty"><b>績效與風險指標</b>開始交易後就會計算報酬、波動與回撤。</p>}
+            </aside>
+          </div>
+        </article>
 
-          <div
-            className="panel-resizer"
-            role="separator"
-            aria-label="調整收益圖與持倉配置寬度"
-            aria-orientation="vertical"
-            aria-valuemin={46}
-            aria-valuemax={72}
-            aria-valuenow={Math.round(panelRatio)}
-            tabIndex={0}
-            onPointerDown={(event) => { event.preventDefault(); setResizingPanels(true); }}
-            onDoubleClick={() => {
-              panelRatioRef.current = 60;
-              setPanelRatio(60);
-              window.localStorage.setItem(panelRatioKey, '60');
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'ArrowLeft') { event.preventDefault(); adjustPanelRatio(-2); }
-              if (event.key === 'ArrowRight') { event.preventDefault(); adjustPanelRatio(2); }
-              if (event.key === 'Home') { event.preventDefault(); adjustPanelRatio(46 - panelRatioRef.current); }
-              if (event.key === 'End') { event.preventDefault(); adjustPanelRatio(72 - panelRatioRef.current); }
-            }}
-          ><span /></div>
-
+        <section className="content-grid wafu-pair-grid">
           <article className="panel allocation-panel">
             <div className="panel-heading"><div><p className="eyebrow">Holdings</p><h2>持倉配置</h2></div><div className="allocation-heading-actions"><div className="allocation-chart-switch" role="group" aria-label="持倉配置圖表類型"><button type="button" className={allocationChartMode === 'donut' ? 'active' : ''} aria-pressed={allocationChartMode === 'donut'} onClick={() => setAllocationChartMode('donut')}>圓餅圖</button><button type="button" className={allocationChartMode === 'bars' ? 'active' : ''} aria-pressed={allocationChartMode === 'bars'} onClick={() => setAllocationChartMode('bars')}>長條圖</button></div><span className="count-badge">{allocationSnapshot.tradeCount} positions</span></div></div>
             <div className="allocation-history-controls" aria-label="持倉配置歷史日期">
@@ -3413,6 +3290,19 @@ export default function Home() {
               ? '股票按目前價格、選擇權按擔保金、現金按原幣餘額計算；日圓部位會換算為 USD。'
               : `股票使用所選日期以前最近一個交易日的收盤價，選擇權按當時擔保金、現金按當時餘額計算${allocationSnapshot.estimatedTickers.length ? `；${allocationSnapshot.estimatedTickers.join('、')} 因缺少歷史報價而以成交價估算` : ''}。`}</p>
           </article>
+          <article className="panel macro-panel" aria-labelledby="macro-market-title">
+            <div className="panel-heading">
+              <div><p className="eyebrow">Macro monitor</p><h2 id="macro-market-title">宏觀行情</h2></div>
+              <div className="macro-market-actions"><div className="segmented macro-range-switch" role="group" aria-label="宏觀歷史期間">{([['day', '日'], ['week', '週'], ['month', '月'], ['year', '年']] as const).map(([mode, label]) => <button type="button" key={mode} className={macroRangeMode === mode ? 'selected' : ''} aria-pressed={macroRangeMode === mode} onClick={() => setMacroRangeMode(mode)}>{label}</button>)}</div><button type="button" className="macro-refresh-button" disabled={macroLoading} onClick={() => { macroRefreshRequestedRef.current = true; setMacroRefreshKey((current) => current + 1); }}>↻ 更新</button></div>
+            </div>
+            <p className="macro-panel-meta">美東 {macroUpdatedLabel} · 每 60 秒更新</p>
+            {macroError && <p className="macro-market-error" role="status">{macroError}</p>}
+            <div className={`macro-market-grid wafu-macro-grid ${macroLoading ? 'is-loading' : ''}`} aria-busy={macroLoading}>
+              {activeMacroMarkets.map((market) => <MacroMarketCard key={market.id} market={market} startLabel={macroTimeline[0]?.label ?? ''} endLabel={macroTimeline.at(-1)?.label ?? ''} rangeLabel={macroRangeModeLabel} />)}
+              {!activeMacroMarkets.length && Array.from({ length: 5 }, (_, item) => <article className="macro-market-card macro-market-placeholder" key={item}><span /><b /><i /></article>)}
+              <SpreadCard />
+            </div>
+          </article>
         </section>
 
         {drilledTicker && <ResearchDrawer
@@ -3422,6 +3312,8 @@ export default function Home() {
           tab={researchTab}
           onTab={setResearchTab}
           onClose={returnToPositionsOverview}
+          symbols={researchSymbols}
+          onSymbol={(symbol) => { const keep = researchTab; openTickerDetails(symbol); setResearchTab(keep); }}
         >
           {researchTab === 'dcf'
             ? <Suspense fallback={<div className="technical-state"><span className="technical-spinner" />正在開啟 DCF 估值…</div>}><DcfCalculator key={drilledTicker} initialTicker={drilledTicker} onClose={() => setResearchTab('technical')} /></Suspense>

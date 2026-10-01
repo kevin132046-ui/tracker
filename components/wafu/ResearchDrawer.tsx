@@ -11,7 +11,7 @@ const tabs: ReadonlyArray<readonly [ResearchTab, string]> = [['technical', '技�
  * purchase lots in a drawer from the right (full screen on phones), over the page. The content is
  * the site's own panels with live data; the drawer only frames and switches them.
  */
-export default function ResearchDrawer({ symbol, company, summary, tab, onTab, onClose, children }: {
+export default function ResearchDrawer({ symbol, company, summary, tab, onTab, onClose, symbols = [], onSymbol, children }: {
   symbol: string;
   company: string;
   /** One line under the title: holding, average cost, unrealised P&L (already formatted). */
@@ -19,6 +19,9 @@ export default function ResearchDrawer({ symbol, company, summary, tab, onTab, o
   tab: ResearchTab;
   onTab: (tab: ResearchTab) => void;
   onClose: () => void;
+  /** Held tickers for the switcher row (from the prototype); picking one keeps the open tab. */
+  symbols?: string[];
+  onSymbol?: (symbol: string) => void;
   children: ReactNode;
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -46,6 +49,9 @@ export default function ResearchDrawer({ symbol, company, summary, tab, onTab, o
         </div>
         <button type="button" ref={closeRef} className="wafu-research-close" onClick={onClose} aria-label="關閉個股研究">×</button>
       </header>
+      {onSymbol && symbols.length > 1 && <nav className="wafu-research-switch" aria-label="切換個股">
+        {symbols.map((item) => <button key={item} type="button" className={item === symbol ? 'on' : ''} aria-current={item === symbol ? 'true' : undefined} onClick={() => { if (item !== symbol) onSymbol(item); }}>{item}</button>)}
+      </nav>}
       <div className="wafu-research-tabs" role="tablist" aria-label="個股研究分頁">
         {tabs.map(([id, label]) => <button key={id} type="button" role="tab" id={`research-tab-${id}`} aria-selected={tab === id} aria-controls="research-panel" className={tab === id ? 'on' : ''} onClick={() => onTab(id)}>{label}</button>)}
       </div>

@@ -162,9 +162,11 @@ export function companyFromAnswer(symbol: string, text: string, info: Omit<AiCom
   };
 }
 
-async function askClaude(apiKey: string, model: string, symbol: string, today: string) {
+export type SearchAnswer = { text: string; sources: Array<{ url: string; title: string }>; model: string; usageTokens: number };
+
+async function askClaude(apiKey: string, model: string, question: string, maxSearches: number): Promise<SearchAnswer> {
   const client = new Anthropic({ apiKey, timeout: requestTimeoutMs, maxRetries: 1 });
-  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: prompt(symbol, today) }];
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: question }];
   let response: Anthropic.Beta.BetaMessage | null = null;
   // Web search runs server-side; a long search can pause and is resumed by sending the turn back.
   for (let attempt = 0; attempt <= maxPauseResumes; attempt += 1) {
@@ -173,7 +175,7 @@ async function askClaude(apiKey: string, model: string, symbol: string, today: s
       max_tokens: 16000,
       ...claudeExtras(model),
       output_config: { effort: 'medium' },
-      tools: [{ type: claudeWebSearch(model), name: 'web_search', max_uses: 6 }],
+      tools: [{ type: claudeWebSearch(model), name: 'web_search', max_uses: maxSearches }],
       messages,
     });
     if (response.stop_reason !== 'pause_turn') break;
@@ -189,20 +191,20 @@ async function askClaude(apiKey: string, model: string, symbol: string, today: s
     if (block.type === 'web_search_tool_result' && Array.isArray(block.content)) return block.content.map((result) => ({ url: result.url, title: result.title }));
     return [];
   });
-  return { company: companyFromAnswer(symbol, text, { provider: 'anthropic', model: response.model, sources: cleanSources(sources) }), usageTokens: 0 };
+  return { text, sources: cleanSources(sources), model: response.model, usageTokens: 0 };
 }
 
 type OpenAiContent = { type?: string; text?: string; annotations?: Array<{ type?: string; url?: string; title?: string }> };
 type OpenAiResponse = { model?: string; status?: string; output?: Array<{ type?: string; content?: OpenAiContent[] }>; usage?: { total_tokens?: number } | null; error?: { message?: string } | null };
 
-async function askChatGpt(apiKey: string, model: string, symbol: string, today: string) {
+async function askChatGpt(apiKey: string, model: string, question: string): Promise<SearchAnswer> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   try {
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, input: prompt(symbol, today), tools: [{ type: 'web_search', search_context_size: 'medium' }], ...openAiReasoning(model, 6000) }),
+      body: JSON.stringify({ model, input: question, tools: [{ type: 'web_search', search_context_size: 'medium' }], ...openAiReasoning(model, 6000) }),
       signal: controller.signal,
     });
     const payload = await response.json() as OpenAiResponse;
@@ -211,14 +213,20 @@ async function askChatGpt(apiKey: string, model: string, symbol: string, today: 
     const text = parts.map((part) => part.text ?? '').join('\n');
     if (!text.trim()) throw new Error(payload.status === 'incomplete' ? '回覆在完成前被截斷，請再試一次。' : 'ChatGPT 沒有回覆內容。');
     const sources = parts.flatMap((part) => (part.annotations ?? []).filter((annotation) => annotation.type === 'url_citation').map((annotation) => ({ url: annotation.url, title: annotation.title })));
-    return { company: companyFromAnswer(symbol, text, { provider: 'openai', model: payload.model ?? model, sources: cleanSources(sources) }), usageTokens: payload.usage?.total_tokens ?? 0 };
+    return { text, sources: cleanSources(sources), model: payload.model ?? model, usageTokens: payload.usage?.total_tokens ?? 0 };
   } finally {
     clearTimeout(timeout);
   }
 }
 
+/** A question answered by ChatGPT or Claude with web search: the reply text, its sources and the tokens used. */
+export function askWithSearch(provider: AiProvider, apiKey: string, model: string, question: string, maxSearches = 6) {
+  return provider === 'anthropic' ? askClaude(apiKey, model, question, maxSearches) : askChatGpt(apiKey, model, question);
+}
+
 /** The figures, plus the tokens a ChatGPT call used (for the free-quota record). */
 export async function findCompanyFigures(provider: AiProvider, apiKey: string, model: string, symbol: string): Promise<{ company: AiCompanyPayload; usageTokens: number }> {
   const today = exchangeTodayKey(symbol, Date.now());
-  return provider === 'anthropic' ? askClaude(apiKey, model, symbol, today) : askChatGpt(apiKey, model, symbol, today);
+  const answer = await askWithSearch(provider, apiKey, model, prompt(symbol, today));
+  return { company: companyFromAnswer(symbol, answer.text, { provider, model: answer.model, sources: answer.sources }), usageTokens: answer.usageTokens };
 }

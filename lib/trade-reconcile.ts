@@ -7,6 +7,8 @@
  * one per row they all look like open positions. Here:
  * - A closing fill uses up open lots of the same contract oldest first (several lots if needed; a lot
  *   closed only in part is split, the rest staying open).
+ * - A closing fill already shown by a closed record (same contract and side, closed that day at that
+ *   price: an earlier import or reconcile) is in the data already; it folds in without changing it.
  * - A closing fill whose position was already recorded as closed (the same round trip entered by
  *   hand) updates that record with the broker's close date and price instead.
  * - A closing fill with no open lot at all (opened before the data starts) becomes a closed record
@@ -68,16 +70,28 @@ const addDays = (key: string, days: number) => new Date(Date.parse(`${key}T00:00
 const appendNote = (notes: string, note: string) => (notes ? `${notes} · ${note}` : note).slice(0, 1000);
 const price = (value: number | null) => value === null ? '—' : String(round(value, 4));
 
-type Portion = { quantity: number; closeDate: string; price: number; fees: number; reason: ReconReason; note: string; related: number[] };
+type Portion = { quantity: number; closeDate: string; price: number; fees: number; reason: ReconReason; related: number[] };
 type Lot = { item: ReconItem; left: number; portions: Portion[] };
 
-export function reconcileTrades(items: readonly ReconItem[], options: { today: string; label: (ref: number) => string }): ReconResult {
+/**
+ * label names a record in the details shown before applying ("#12", "第 5 列"); noteLabel names it in
+ * the notes written into trades (defaults to label).
+ */
+export function reconcileTrades(items: readonly ReconItem[], options: { today: string; label: (ref: number) => string; noteLabel?: (ref: number) => string }): ReconResult {
   const { today, label } = options;
+  const noteLabel = options.noteLabel ?? label;
   const usable = items.filter((item) => item.trade.quantity > eps && item.trade.type.toUpperCase() !== 'CASH' && item.trade.ticker);
   const closedRecords = usable.filter((item) => item.trade.closeDate);
+  // Quantity of each closed record not yet claimed by a fill it already shows.
+  const shownLeft = new Map(closedRecords.map((item) => [item.ref, item.trade.quantity]));
   const lots = new Map<number, Lot>();
   const matched = new Map<number, { ref: number; date: string; price: number; fees: number }>();
-  const closings: Array<{ item: ReconItem; feeUnit: number; used: Array<{ ref: number; quantity: number }>; orphan: number; type: string }> = [];
+  const closings: Array<{ item: ReconItem; feeUnit: number; used: Array<{ ref: number; quantity: number; shown?: boolean }>; orphan: number; type: string }> = [];
+  // Closed records that already show this fill: same contract and side, closed on its date at its price.
+  const showing = (type: string, contract: string, fill: CsvTrade) => closedRecords
+    .filter((record) => (shownLeft.get(record.ref) ?? 0) > eps && !matched.has(record.ref) && record.trade.type === type && contractOf(record.trade) === contract
+      && record.trade.closeDate === fill.openDate && record.trade.currentPrice !== null && Math.abs(record.trade.currentPrice - fill.entryPrice) < 1e-6)
+    .sort((a, b) => a.trade.openDate.localeCompare(b.trade.openDate) || a.ref - b.ref);
 
   // Openings of a day come before its closings, so a same-day round trip pairs whatever the row order.
   const pending = usable.filter((item) => !item.trade.closeDate)
@@ -88,7 +102,7 @@ export function reconcileTrades(items: readonly ReconItem[], options: { today: s
     const openLots = (type: string) => [...lots.values()].filter((lot) => lot.left > eps && lot.item.trade.type === type && contractOf(lot.item.trade) === contract);
     let positionType = trade.type;
     let closing = item.closing === 'yes';
-    if (item.closing === 'maybe' && isOptionRecord(trade) && openLots(oppositeSide(trade.type)).length) {
+    if (item.closing === 'maybe' && isOptionRecord(trade) && (openLots(oppositeSide(trade.type)).length || showing(oppositeSide(trade.type), contract, trade).length)) {
       closing = true;
       positionType = oppositeSide(trade.type);
     }
@@ -98,23 +112,34 @@ export function reconcileTrades(items: readonly ReconItem[], options: { today: s
     }
     const feeUnit = trade.fees / trade.quantity;
     let need = trade.quantity;
-    const used: Array<{ ref: number; quantity: number }> = [];
+    const used: Array<{ ref: number; quantity: number; shown?: boolean }> = [];
+    // Already in the data (imported or reconciled before): nothing changes.
+    for (const record of showing(positionType, contract, trade)) {
+      if (need <= eps) break;
+      const take = Math.min(need, shownLeft.get(record.ref)!);
+      shownLeft.set(record.ref, shownLeft.get(record.ref)! - take);
+      need -= take;
+      used.push({ ref: record.ref, quantity: take, shown: true });
+    }
     for (const lot of openLots(positionType)) {
       if (need <= eps) break;
       const take = Math.min(need, lot.left);
       lot.left -= take;
       need -= take;
-      lot.portions.push({ quantity: take, closeDate: trade.openDate, price: trade.entryPrice, fees: feeUnit * take, reason: 'paired', note: `平倉成交見 ${label(item.ref)}`, related: [item.ref] });
+      lot.portions.push({ quantity: take, closeDate: trade.openDate, price: trade.entryPrice, fees: feeUnit * take, reason: 'paired', related: [item.ref] });
       used.push({ ref: lot.item.ref, quantity: take });
     }
     if (need > eps) {
-      // The same round trip already recorded as closed (entered by hand): the broker's fill wins.
+      // The same round trip already recorded as closed (entered by hand): the broker's fill wins. Records
+      // closed by an earlier pairing keep their fill.
       const done = closedRecords
-        .filter((record) => !matched.has(record.ref) && record.trade.type === positionType && contractOf(record.trade) === contract
+        .filter((record) => !matched.has(record.ref) && shownLeft.get(record.ref) === record.trade.quantity && !record.trade.notes.includes('平倉成交見')
+          && record.trade.type === positionType && contractOf(record.trade) === contract
           && record.trade.openDate <= trade.openDate && Math.abs(record.trade.quantity - need) < eps)
         .sort((a, b) => a.trade.openDate.localeCompare(b.trade.openDate) || a.ref - b.ref)[0];
       if (done) {
         matched.set(done.ref, { ref: item.ref, date: trade.openDate, price: trade.entryPrice, fees: feeUnit * need });
+        shownLeft.set(done.ref, 0);
         used.push({ ref: done.ref, quantity: need });
         need = 0;
       }
@@ -134,18 +159,17 @@ export function reconcileTrades(items: readonly ReconItem[], options: { today: s
         .sort((a, b) => a.trade.openDate.localeCompare(b.trade.openDate))[0]
       : undefined;
     const closeDate = assigned ? (assigned.trade.openDate < trade.expiryDate ? assigned.trade.openDate : trade.expiryDate) : trade.expiryDate;
-    lot.portions.push({
-      quantity: lot.left, closeDate, price: 0, fees: 0, reason: assigned ? 'assigned' : 'expired',
-      note: assigned ? `被指派（股票見 ${label(assigned.ref)}）` : '已過到期日，視為到期歸零', related: assigned ? [assigned.ref] : [],
-    });
+    lot.portions.push({ quantity: lot.left, closeDate, price: 0, fees: 0, reason: assigned ? 'assigned' : 'expired', related: assigned ? [assigned.ref] : [] });
     lot.left = 0;
   }
 
   const changes: ReconChange[] = [];
   const added: ReconAdded[] = [];
+  const noteOf = (portion: Portion) => portion.reason === 'paired' ? `平倉成交見 ${noteLabel(portion.related[0])}`
+    : portion.reason === 'assigned' ? `被指派（股票見 ${noteLabel(portion.related[0])}）` : '已過到期日，視為到期歸零';
   const describe = (portion: Portion) => portion.reason === 'paired'
-    ? `${portion.closeDate} 以 ${price(portion.price)} 平倉（${portion.note.replace('平倉成交見 ', '')}）`
-    : portion.reason === 'assigned' ? `${portion.closeDate} ${portion.note}，以 0 平倉` : `${portion.closeDate} 到期，以 0 平倉`;
+    ? `${portion.closeDate} 以 ${price(portion.price)} 平倉（${label(portion.related[0])}）`
+    : portion.reason === 'assigned' ? `${portion.closeDate} 被指派（股票見 ${label(portion.related[0])}），以 0 平倉` : `${portion.closeDate} 到期，以 0 平倉`;
   for (const lot of lots.values()) {
     if (!lot.portions.length) continue;
     const trade = lot.item.trade;
@@ -160,7 +184,7 @@ export function reconcileTrades(items: readonly ReconItem[], options: { today: s
       collateral: round(collateralUnit * portion.quantity, 2),
       status: 'closed',
       quoteMode: 'manual',
-      notes: appendNote(trade.notes, portion.note),
+      notes: appendNote(trade.notes, noteOf(portion)),
     });
     const split = lot.portions.length > 1 || lot.left > eps;
     const [first, ...rest] = lot.portions;
@@ -178,14 +202,19 @@ export function reconcileTrades(items: readonly ReconItem[], options: { today: s
     changes.push({
       ref, reason: 'matched', related: [fill.ref],
       detail: `與 ${label(fill.ref)} 的平倉成交是同一筆：平倉日 ${record.closeDate} → ${fill.date}，平倉價 ${price(record.currentPrice)} → ${price(fill.price)}`,
-      trade: { ...record, closeDate: fill.date < record.openDate ? record.openDate : fill.date, currentPrice: fill.price, fees: round(record.fees + fill.fees), status: 'closed', quoteMode: 'manual' },
+      trade: {
+        ...record, closeDate: fill.date < record.openDate ? record.openDate : fill.date, currentPrice: fill.price, fees: round(record.fees + fill.fees), status: 'closed', quoteMode: 'manual',
+        // A close inferred at expiry gives way to the real fill.
+        notes: appendNote(record.notes.replace(/( · )?已過到期日，視為到期歸零/, ''), `平倉成交見 ${noteLabel(fill.ref)}`),
+      },
     });
   }
   for (const closing of closings) {
     const trade = closing.item.trade;
     const into = closing.used.map((use) => label(use.ref)).join('、');
     if (closing.orphan <= eps) {
-      changes.push({ ref: closing.item.ref, reason: 'folded', trade: null, detail: `平倉成交，併入 ${into}`, related: closing.used.map((use) => use.ref) });
+      const detail = closing.used.every((use) => use.shown) ? `已記錄在 ${into}（同日同價的已平倉紀錄），不需變更` : `平倉成交，併入 ${into}`;
+      changes.push({ ref: closing.item.ref, reason: 'folded', trade: null, detail, related: closing.used.map((use) => use.ref) });
       continue;
     }
     changes.push({

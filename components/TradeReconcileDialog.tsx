@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import type { CsvTrade } from '@/lib/trade-csv';
 import { tradesToCsv } from '@/lib/trade-csv';
 import { applyTradeChanges, type BatchChanges } from '@/lib/trade-batch';
+import { downloadText } from '@/lib/download';
 import { contractLabel, diffTrades } from '@/lib/trade-diff';
 import { reconcileTrades, reconItemsFromTrades, type ReconResult } from '@/lib/trade-reconcile';
 
@@ -18,7 +19,7 @@ type Unit = { key: string; group: Group; title: string; entries: Entry[] };
 
 const groupText: Record<Group, { title: string; note: string }> = {
   pair: { title: '合併開倉與平倉成交', note: '券商把開倉（OPEN CONTRACT）與平倉（CLOSING CONTRACT）記成兩筆；合併成一筆已平倉交易，平倉成交那筆刪除。' },
-  matched: { title: '與已平倉紀錄對應', note: '這些平倉成交和你先前手動記錄的已平倉交易是同一筆：以券商的平倉日與平倉價更新那筆紀錄，重複的平倉成交刪除。' },
+  matched: { title: '與已平倉紀錄對應', note: '這些平倉成交和已記錄的已平倉交易是同一筆：平倉日或平倉價不同時以券商的資料更新那筆紀錄；重複的平倉成交刪除。' },
   orphan: { title: '找不到開倉的平倉成交', note: '開倉在資料起點之前，無法計算損益。可轉為已平倉（損益以 0 計，之後可編輯補上開倉價），或直接刪除。' },
   expiry: { title: '已過到期日仍未平倉', note: '到期日已過的選擇權：以 0 平倉。有「ASSIGNED」股票紀錄的標為被指派，平倉日用指派當天。' },
 };
@@ -39,7 +40,8 @@ function buildUnits(trades: readonly CsvTrade[], result: ReconResult): Unit[] {
   };
   for (const change of result.changes) {
     if (change.reason !== 'folded' && change.reason !== 'orphan') continue;
-    const group: Group = change.reason === 'orphan' ? 'orphan' : change.related.some((ref) => matchedRefs.has(ref)) ? 'matched' : 'pair';
+    // A fill already shown by a closed record changes nothing else: it only goes.
+    const group: Group = change.reason === 'orphan' ? 'orphan' : change.related.some((ref) => matchedRefs.has(ref) || !changeByRef.has(ref)) ? 'matched' : 'pair';
     const before = byRef.get(change.ref) ?? null;
     const entries = [...updateEntry(change.ref), ...change.related.flatMap(updateEntry)];
     units.push({ key: `c${change.ref}`, group, title: before ? contractLabel(before, false) : `#${change.ref}`, entries });
@@ -51,17 +53,6 @@ function buildUnits(trades: readonly CsvTrade[], result: ReconResult): Unit[] {
     units.push({ key: `u${change.ref}`, group, title: before ? contractLabel(before, false) : `#${change.ref}`, entries: updateEntry(change.ref) });
   }
   return units;
-}
-
-function download(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = name;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 const actionLabel: Record<Entry['action'], string> = { update: '更新', delete: '刪除', create: '新增' };
@@ -121,7 +112,7 @@ export default function TradeReconcileDialog({ trades, today, onClose, onApplied
     setBusy(true);
     setError('');
     try {
-      download(`optionflow-backup-before-cleanup-${today}.csv`, tradesToCsv(stored));
+      downloadText(`optionflow-backup-before-cleanup-${today}.csv`, tradesToCsv(stored));
       await applyTradeChanges(changes, (done, all) => setProgress({ done, total: all }));
       onApplied(`已整理 ${chosen.length} 組紀錄：更新 ${changes.updates.length}、刪除 ${changes.deletes.length}${changes.creates.length ? `、新增 ${changes.creates.length}` : ''} 筆（已先下載備份 CSV）`);
     } catch (reason) {

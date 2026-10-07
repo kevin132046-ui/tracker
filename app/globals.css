@@ -752,12 +752,21 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .import-column-name { overflow: hidden; color: var(--wa-accent); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .import-mapping-grid small { overflow: hidden; color: var(--wa-muted); font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .import-counts { display: flex; flex-wrap: wrap; gap: 6px; }
-.import-counts span, .import-state { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-.import-counts .ready, .import-state.ready { color: var(--wa-up); background: var(--wa-up-soft); }
-.import-counts .duplicate, .import-state.duplicate { color: var(--wa-gold); background: var(--wa-gold-soft); }
+.import-counts span, .import-counts button, .import-state { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.import-counts button { min-height: 26px; border: 1px solid transparent; cursor: pointer; font-variant-numeric: tabular-nums; }
+.import-counts button.active { border-color: currentColor; box-shadow: 0 0 0 2px rgb(var(--wa-accent-rgb) / .12); }
+.import-counts button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.import-counts .all { color: var(--wa-ink-2); background: var(--wa-raise); }
+.import-counts .ready, .import-state.ready, .import-counts .new, .import-state.new { color: var(--wa-up); background: var(--wa-up-soft); }
+.import-counts .update, .import-state.update { color: var(--blue); background: var(--blue-soft); }
+.import-counts .duplicate, .import-state.duplicate, .import-counts .differs, .import-state.differs { color: var(--wa-gold); background: var(--wa-gold-soft); }
+.import-counts .same, .import-state.same { color: var(--wa-muted); background: var(--wa-raise); }
 .import-counts .error, .import-state.error { color: var(--wa-down); background: var(--wa-down-soft); }
 .import-counts .merged, .import-state.merged { color: var(--wa-muted); background: var(--wa-raise); }
 .import-counts .imported, .import-state.imported { color: var(--wa-accent); background: var(--wa-accent-soft); }
+.import-compare-note { margin: -2px 0 10px; color: var(--wa-muted); font-size: 12.5px; line-height: 1.65; }
+.import-compare-note b { color: var(--wa-ink-2); font-weight: 650; }
+.import-empty { margin: 0; padding: 18px; color: var(--wa-muted); font-size: 13px; text-align: center; }
 .import-selection-actions { display: flex; gap: 6px; margin-left: auto; }
 .import-selection-actions button { min-height: 32px; padding: 0 10px; color: var(--wa-accent); background: var(--wa-accent-soft); border: 1px solid var(--wa-accent); border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .import-preview-wrap { max-height: min(46vh, 520px); overflow: auto; border: 1px solid var(--wa-line); border-radius: 13px; overscroll-behavior: contain; scrollbar-color: var(--wa-muted) var(--wa-ink); }
@@ -766,7 +775,13 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .import-preview-table td { padding: 9px 10px; color: var(--wa-ink); font-size: 13px; font-variant-numeric: tabular-nums; vertical-align: top; }
 .import-preview-table tr.is-error td { background: var(--wa-raise); }
 .import-preview-table tr.is-duplicate td { background: var(--wa-gold-soft); }
-.import-preview-table tr.is-merged td, .import-preview-table tr.is-imported td { color: var(--wa-muted); }
+.import-preview-table tr.is-merged td, .import-preview-table tr.is-imported td, .import-preview-table tr.is-same td { color: var(--wa-muted); }
+.import-preview-table tr.is-differs td { background: var(--wa-gold-soft); }
+.import-preview-table tr.is-linked td:first-child { box-shadow: inset 3px 0 0 var(--blue-soft); }
+.import-preview-table td.is-changed { color: var(--blue); font-weight: 650; background: var(--blue-soft); }
+.import-preview-table td.is-changed .import-new-value { display: block; }
+.import-preview-table td.is-changed .import-old-value { display: block; margin-top: 2px; color: var(--wa-muted); font-size: 11px; font-weight: 500; text-decoration: line-through; text-decoration-thickness: 1px; }
+.import-link { display: block; margin-top: 3px; color: var(--wa-muted); font-size: 10.5px; font-weight: 600; white-space: nowrap; }
 .import-preview-table input[type='checkbox'] { width: 17px; height: 17px; margin: 0; accent-color: var(--blue); }
 .import-preview-table td.import-messages { min-width: 260px; white-space: normal; }
 .import-messages span { display: block; font-size: 12px; font-weight: 500; line-height: 1.45; }
@@ -774,6 +789,10 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .import-messages .warning { color: var(--wa-gold); }
 .import-messages .merged { color: var(--wa-muted); }
 .import-messages .ok { color: var(--wa-up); }
+.import-messages .change, .import-messages .op-update { color: var(--blue); }
+.import-messages .op-create { color: var(--wa-up); }
+.import-messages .note { color: var(--wa-muted); }
+.import-messages .op-delete { color: var(--wa-down); }
 .import-footer { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 14px 22px; background: var(--wa-panel); border-top: 1px solid var(--wa-line); }
 .import-status { min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: 10px; color: var(--wa-muted); font-size: 13px; font-weight: 500; line-height: 1.5; }
 .import-status progress { width: 160px; height: 8px; accent-color: var(--blue); }
@@ -1012,3 +1031,6 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
   .dividend-pay-row { grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 8px; }
   .dividend-pay-row .dividend-pay-date { grid-column: 1 / -1; }
 }
+.import-flow { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 650; }
+.import-flow.deposit { color: var(--wa-up); background: var(--wa-up-soft); }
+.import-flow.withdrawal { color: var(--wa-down); background: var(--wa-down-soft); }

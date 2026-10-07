@@ -37,6 +37,7 @@ import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSu
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
 import type { TradeColumnId } from '@/lib/trade-columns';
 import { tradesToCsv } from '@/lib/trade-csv';
+import { cashFlowsToCsv, clearCashFlowsPhrase, type CashFlow } from '@/lib/cash-flows';
 import { reconcileTrades, reconItemsFromTrades } from '@/lib/trade-reconcile';
 import type { AiStatus } from '@/components/AiSettingsCard';
 import type { AiEntryContext } from '@/components/AiTradeEntry';
@@ -112,7 +113,7 @@ type Trade = {
 };
 
 type FilterMode = 'all' | 'open' | 'closed' | 'options' | 'stock' | 'cash';
-type PositionViewMode = 'visual' | 'details' | 'gains';
+type PositionViewMode = 'visual' | 'details' | 'gains' | 'cashflows';
 type AllocationChartMode = 'donut' | 'bars';
 type SymbolSuggestion = { symbol: string; name: string; exchange: string; type: string };
 type QuoteSession = 'pre' | 'regular' | 'post' | 'closed';
@@ -214,6 +215,7 @@ const loadTradeImportDialog = () => import('@/components/TradeImportDialog');
 const BrokerHub = lazy(loadBrokerHub);
 const DcfCalculator = lazy(loadDcfCalculator);
 const GainsLedger = lazy(() => import('@/components/wafu/GainsLedger'));
+const CashFlowLedger = lazy(() => import('@/components/wafu/CashFlowLedger'));
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
 const TradeImportDialog = lazy(loadTradeImportDialog);
 // The AI assistant panel is only fetched when it is opened.
@@ -228,6 +230,8 @@ const FilingAnalysisDialog = lazy(() => import('@/components/FilingAnalysisDialo
 const ManualQuotes = lazy(() => import('@/components/wafu/ManualQuotes'));
 const loadReconcileDialog = () => import('@/components/TradeReconcileDialog');
 const TradeReconcileDialog = lazy(loadReconcileDialog);
+const loadClearTradesDialog = () => import('@/components/ClearTradesDialog');
+const ClearTradesDialog = lazy(loadClearTradesDialog);
 
 // Allocation colours per theme: tonal steps of the theme's own accents (the largest holding in the
 // main accent), with the theme's gold as the one warm note. 桔梗: periwinkle → wisteria → indigo;
@@ -1161,6 +1165,10 @@ export default function Home() {
   const [editor, setEditor] = useState<Trade | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [reconcileOpen, setReconcileOpen] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
+  // 存提款紀錄: loaded the first time the ledger, the importer or 清除 needs it.
+  const [cashFlows, setCashFlows] = useState<CashFlow[] | null>(null);
+  const [cashFlowError, setCashFlowError] = useState('');
   const [deleteCandidate, setDeleteCandidate] = useState<Trade | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [dividendAdjustmentCandidate, setDividendAdjustmentCandidate] = useState<Trade | null>(null);
@@ -1868,11 +1876,28 @@ export default function Home() {
   }, []);
 
   // After an import the list reloads from the server, as on first load, and dividend cash recalculates once.
-  const handleImported = useCallback((count: number, updated = 0) => {
-    void fetchTrades().catch((error) => notify(error instanceof Error ? error.message : '無法載入交易資料'));
-    window.setTimeout(() => void refreshDividendCash(false), 0);
-    notify(updated ? (count ? `已匯入 ${count} 筆、平倉 ${updated} 筆交易` : `已平倉 ${updated} 筆交易`) : `已匯入 ${count} 筆交易`);
-  }, [fetchTrades, notify, refreshDividendCash]);
+  const loadCashFlows = useCallback(async () => {
+    try {
+      const response = await fetch('/api/cash-flows', { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({})) as { flows?: CashFlow[]; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? '無法載入存提款紀錄');
+      setCashFlows(payload.flows ?? []);
+      setCashFlowError('');
+      return payload.flows ?? [];
+    } catch (error) {
+      setCashFlowError(error instanceof Error ? error.message : '無法載入存提款紀錄');
+      return null;
+    }
+  }, []);
+  const handleImported = useCallback((count: number, updated = 0, deleted = 0, flows = 0) => {
+    if (count || updated || deleted) {
+      void fetchTrades().catch((error) => notify(error instanceof Error ? error.message : '無法載入交易資料'));
+      window.setTimeout(() => void refreshDividendCash(false), 0);
+    }
+    if (flows) void loadCashFlows();
+    const parts = [count ? `新增 ${count} 筆` : '', updated ? `更新 ${updated} 筆` : '', deleted ? `刪除 ${deleted} 筆重複紀錄` : '', flows ? `存提款紀錄 ${flows} 筆` : ''].filter(Boolean);
+    notify(`匯入完成：${parts.join('、') || '沒有變更'}`);
+  }, [fetchTrades, loadCashFlows, notify, refreshDividendCash]);
 
   // 整理選擇權紀錄: closing fills not yet paired with their open positions, and options open past expiry.
   const reconcileToday = exchangeTodayKey('SPY', Date.now());
@@ -1886,6 +1911,26 @@ export default function Home() {
     setReconcileOpen(false);
     void fetchTrades().catch((error) => notify(error instanceof Error ? error.message : '無法載入交易資料'));
     notify(message);
+  }, [fetchTrades, notify]);
+
+  const clearCashFlows = useCallback(async () => {
+    const response = await fetch('/api/cash-flows', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ all: true, confirm: clearCashFlowsPhrase }) });
+    const payload = await response.json().catch(() => ({})) as { deleted?: number; error?: string };
+    if (!response.ok) throw new Error(payload.error ?? '無法清除存提款紀錄');
+    setCashFlows([]);
+    return payload.deleted ?? 0;
+  }, []);
+  const needCashFlows = positionView === 'cashflows' || importOpen || clearOpen;
+  useEffect(() => {
+    if (needCashFlows && cashFlows === null && !cashFlowError) void loadCashFlows();
+  }, [cashFlowError, cashFlows, loadCashFlows, needCashFlows]);
+
+  // 清除所有交易資料: reload the (now empty) list; optionally go straight on to importing.
+  const handleCleared = useCallback((message: string, reimport: boolean) => {
+    setClearOpen(false);
+    void fetchTrades().catch((error) => notify(error instanceof Error ? error.message : '無法載入交易資料'));
+    notify(message);
+    if (reimport) { void loadTradeImportDialog(); setImportOpen(true); }
   }, [fetchTrades, notify]);
 
   const refreshQuotes = useCallback(async (announce = true) => {
@@ -2635,6 +2680,19 @@ export default function Home() {
   const closedTrades = useMemo(() => enriched.filter((item) => item.trade.status === 'closed'), [enriched]);
   const openPnl = openTrades.reduce((sum, item) => sum + item.pnl, 0);
   const trackedValue = openTrades.reduce((sum, item) => sum + item.marketValue, 0);
+  // Net liquidation estimate for 存提款紀錄: cash rows, stocks and long options at market, short options as a liability.
+  const accountValue = useMemo(() => {
+    let cash = 0;
+    let positions = 0;
+    for (const { trade } of openTrades) {
+      if (isCashTrade(trade)) { cash += normalizedUsdAmount(trade, Math.max(0, trade.quantity), usdJpyRate); continue; }
+      const price = trade.currentPrice ?? trade.entryPrice;
+      const stock = trade.type === 'SDI' || trade.event === 'STOCK';
+      const nativeValue = stock ? price * trade.quantity : price * trade.quantity * 100 * (trade.type.toLowerCase() === 'sell' ? -1 : 1);
+      positions += normalizedUsdAmount(trade, nativeValue, usdJpyRate);
+    }
+    return { cash, positions };
+  }, [openTrades, usdJpyRate]);
   const capitalAtRisk = openTrades.reduce((sum, item) => sum + investedCapitalUsd(item.trade, usdJpyRate), 0);
   const openReturnOnCapital = capitalAtRisk > 0 ? openPnl / capitalAtRisk : null;
   // Moneyness, implied volatility and position greeks of every open US option with a known underlying price.
@@ -3525,7 +3583,7 @@ export default function Home() {
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
             <div><p className="eyebrow">Active book</p><h2>交易與持倉</h2></div>
-            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button>{gainsTab && <button className={positionView === 'gains' ? 'active' : ''} onClick={() => setPositionView('gains')}>益損</button>}</div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" ref={importTriggerRef} className="toolbar-io-button" aria-haspopup="dialog" onClick={() => { void loadTradeImportDialog(); setImportOpen(true); }}>匯入</button><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button><button type="button" className="toolbar-io-button" aria-haspopup="dialog" title="一次輸入無法自動報價的價格" onClick={() => setManualQuotesOpen(true)}>✎ 手動報價</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
+            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button>{gainsTab && <button className={positionView === 'gains' ? 'active' : ''} onClick={() => setPositionView('gains')}>益損</button>}<button className={positionView === 'cashflows' ? 'active' : ''} onClick={() => setPositionView('cashflows')}>存提款</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" ref={importTriggerRef} className="toolbar-io-button" aria-haspopup="dialog" onClick={() => { void loadTradeImportDialog(); setImportOpen(true); }}>匯入</button><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button><button type="button" className="toolbar-io-button" aria-haspopup="dialog" title="一次輸入無法自動報價的價格" onClick={() => setManualQuotesOpen(true)}>✎ 手動報價</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
           </div>
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
           {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}
@@ -3533,9 +3591,9 @@ export default function Home() {
             <span><b>有選擇權紀錄需要整理</b>{[reconcileSummary.closings ? `${reconcileSummary.closings} 筆平倉成交還沒和開倉配對` : '', reconcileSummary.expired ? `${reconcileSummary.expired} 筆選擇權已過到期日仍顯示未平倉` : ''].filter(Boolean).join('、')}。</span>
             <button type="button" onPointerEnter={() => void loadReconcileDialog()} onClick={() => setReconcileOpen(true)}>檢視並整理</button>
           </div>}
-          {positionView !== 'gains' && <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['cash', '現金'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? portfolioTrades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : portfolioTrades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : mode === 'cash' ? isCashTrade(trade) : trade.type !== 'SDI' && !isCashTrade(trade)).length}</span></button>)}{positionView === 'details' && <TradeColumnPicker columns={tradeColumnSet} onChange={updateTradeColumns} />}{positionView === 'visual' && <VisualFieldPicker fields={visualFieldSet} onChange={updateVisualFields} />}</div>}
-          {optionRisk && positionView !== 'gains' && <OptionRiskStrip risk={optionRisk} premium={yearPremium} />}
-          {positionView === 'gains' ? <Suspense fallback={<div className="visual-empty">正在整理益損…</div>}><GainsLedger key={gainsStart.n} initialTab={gainsStart.tab} trades={portfolioTrades} usdJpyRate={usdJpyRate} today={todayKey} query={query} /></Suspense> : positionView === 'visual' ? <div className="visual-positions">
+          {positionView !== 'gains' && positionView !== 'cashflows' && <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['cash', '現金'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? portfolioTrades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : portfolioTrades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : mode === 'cash' ? isCashTrade(trade) : trade.type !== 'SDI' && !isCashTrade(trade)).length}</span></button>)}{positionView === 'details' && <TradeColumnPicker columns={tradeColumnSet} onChange={updateTradeColumns} />}{positionView === 'visual' && <VisualFieldPicker fields={visualFieldSet} onChange={updateVisualFields} />}</div>}
+          {optionRisk && positionView !== 'gains' && positionView !== 'cashflows' && <OptionRiskStrip risk={optionRisk} premium={yearPremium} />}
+          {positionView === 'cashflows' ? <Suspense fallback={<div className="visual-empty">正在讀取存提款紀錄…</div>}><CashFlowLedger flows={cashFlows} error={cashFlowError} trades={trades} usdJpyRate={usdJpyRate} accountValue={accountValue} onFlowsChanged={loadCashFlows} onTradesChanged={() => void fetchTrades().catch((error) => notify(error instanceof Error ? error.message : '無法載入交易資料'))} notify={notify} /></Suspense> : positionView === 'gains' ? <Suspense fallback={<div className="visual-empty">正在整理益損…</div>}><GainsLedger key={gainsStart.n} initialTab={gainsStart.tab} trades={portfolioTrades} usdJpyRate={usdJpyRate} today={todayKey} query={query} /></Suspense> : positionView === 'visual' ? <div className="visual-positions">
             <div className="visual-head"><span>#</span><span>標的／公司</span><span>持倉市值</span><span>成本均價／現價</span><span>標的價格波動／今日漲跌</span><span>損益／報酬率</span><span>組合占比</span></div>
             {!loading && !visualPositions.length && <div className="visual-empty">沒有符合目前篩選條件的持倉。</div>}
             {loading && <div className="visual-empty">正在整理圖形化持倉…</div>}
@@ -3589,7 +3647,7 @@ export default function Home() {
               </tbody>
             </table>
           </div>}
-          {positionView !== 'gains' && <footer className="table-footer"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span><p>現金不用查股價。股息會照你持有的期間和除息日，扣掉設定裡的外國人預扣稅後自動估算。</p></footer>}
+          {positionView !== 'gains' && positionView !== 'cashflows' && <footer className="table-footer"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span><p>現金不用查股價。股息會照你持有的期間和除息日，扣掉設定裡的外國人預扣稅後自動估算。</p></footer>}
         </section>
         </div>
       </div>
@@ -3811,6 +3869,10 @@ export default function Home() {
                 <button type="button" className="secondary-button" onClick={exportTradesCsv}>匯出 CSV</button>
                 <button type="button" className="secondary-button" onClick={() => { setSettingsOpen(false); void loadReconcileDialog(); setReconcileOpen(true); }}>整理選擇權紀錄{reconcileSummary.total ? `（${reconcileSummary.total}）` : ''}</button>
               </div>
+              <div className="settings-danger">
+                <div><b>清除所有交易資料</b><span>刪除全部交易，方便重新匯入更新後的資料；會先自動下載備份 CSV。設定、素材與 DCF 情境不受影響。</span></div>
+                <button type="button" className="settings-danger-button" disabled={!trades.some((trade) => !trade.derived)} onClick={() => { setSettingsOpen(false); void loadClearTradesDialog(); setClearOpen(true); }}>清除…</button>
+              </div>
             </section>
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
             </>}
@@ -3963,7 +4025,8 @@ export default function Home() {
       </div>}
       {rocBreakdownOpen && <RocBreakdownDialog summary={annualRocSummary} onClose={closeRocBreakdown} />}
       {reconcileOpen && <Suspense fallback={null}><TradeReconcileDialog trades={trades} today={reconcileToday} onClose={() => setReconcileOpen(false)} onApplied={handleReconciled} /></Suspense>}
-      {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} onClose={closeImport} onImported={handleImported} ai={aiEnabled ? importAi : undefined} /></Suspense>}
+      {clearOpen && <Suspense fallback={null}><ClearTradesDialog trades={trades} cashFlows={cashFlows?.length ? { count: cashFlows.length, csv: () => cashFlowsToCsv(cashFlows), clear: clearCashFlows } : undefined} onClose={() => setClearOpen(false)} onCleared={handleCleared} /></Suspense>}
+      {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} existingFlows={cashFlows} onClose={closeImport} onImported={handleImported} ai={aiEnabled ? importAi : undefined} /></Suspense>}
       {dividendAdjustmentCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!dividendAdjusting && event.target === event.currentTarget) setDividendAdjustmentCandidate(null); }}>
         <section className="dividend-adjustment-modal" role="dialog" aria-modal="true" aria-labelledby="dividend-adjustment-title">
           <header><div><p className="eyebrow">Dividend cash</p><h2 id="dividend-adjustment-title">調減股息入帳</h2></div><button type="button" className="close-button" disabled={dividendAdjusting} onClick={() => setDividendAdjustmentCandidate(null)} aria-label="關閉">×</button></header>

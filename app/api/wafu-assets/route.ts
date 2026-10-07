@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { NextResponse } from 'next/server';
 import type { WafuAsset, WafuAssets, WafuAssetSlot } from '@/lib/wafu/asset-slots';
 import { assetKind, assetUrl, assetVersionPattern, isWafuAssetSlot, maxAssetBytes, sniffAsset } from '@/lib/wafu/asset-slots';
+import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ function describe(object: R2Object): WafuAsset | null {
 }
 
 /** Without a slot: what is uploaded. With ?slot=&v=: the file itself (ranges supported, so audio can seek). */
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const missing = noBucket();
   if (missing) return missing;
   try {
@@ -91,7 +92,7 @@ export async function GET(request: Request) {
 }
 
 /** Replaces one slot: PUT ?slot=<slot> with the file as the body (and X-File-Name for music). */
-export async function PUT(request: Request) {
+async function handlePUT(request: Request) {
   const missing = noBucket();
   if (missing) return missing;
   const slot = new URL(request.url).searchParams.get('slot');
@@ -126,7 +127,7 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+async function handleDELETE(request: Request) {
   const missing = noBucket();
   if (missing) return missing;
   const slot = new URL(request.url).searchParams.get('slot');
@@ -139,3 +140,8 @@ export async function DELETE(request: Request) {
     return fail(error instanceof Error ? error.message : '和風素材無法刪除', 500);
   }
 }
+
+// Owner data: only behind Cloudflare Access once it is configured (lib/server/data-gate).
+export const GET = guarded(handleGET);
+export const PUT = guarded(handlePUT);
+export const DELETE = guarded(handleDELETE);

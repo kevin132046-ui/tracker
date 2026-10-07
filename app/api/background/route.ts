@@ -1,6 +1,7 @@
 import { ensureDatabase } from '@/lib/server/database';
 import { env } from 'cloudflare:workers';
 import { NextResponse } from 'next/server';
+import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,7 +78,7 @@ function imageUrlFor(version: string) {
   return `/api/background?image=1&version=${encodeURIComponent(version)}`;
 }
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   try {
     const url = new URL(request.url);
     if (url.searchParams.get('image') === '1') {
@@ -115,7 +116,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
+async function handlePUT(request: Request) {
   let uploadedKey = '';
   let settingsCommitted = false;
   try {
@@ -187,7 +188,7 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     const body = await request.json() as { mode?: BackgroundMode };
     if (body.mode !== 'default' && body.mode !== 'image') {
@@ -205,3 +206,8 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : '背景模式無法保存' }, { status: 500, headers: noStoreHeaders });
   }
 }
+
+// Owner data: only behind Cloudflare Access once it is configured (lib/server/data-gate).
+export const GET = guarded(handleGET);
+export const PUT = guarded(handlePUT);
+export const PATCH = guarded(handlePATCH);

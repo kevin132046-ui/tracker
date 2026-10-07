@@ -1,5 +1,6 @@
 import { ensureDatabase } from '@/lib/server/database';
 import { NextResponse } from 'next/server';
+import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +11,7 @@ function parseRow(row: ScenarioRow) {
   catch { return { ...row, data: null }; }
 }
 
-export async function GET() {
+async function handleGET() {
   try {
     const db = await ensureDatabase();
     const rows = await db.prepare(`SELECT id, name, ticker, currency, data,
@@ -22,7 +23,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const body = await request.json() as { name?: string; ticker?: string; currency?: string; data?: unknown };
     const name = String(body.name ?? '').trim().slice(0, 80);
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+async function handleDELETE(request: Request) {
   try {
     const id = Number(new URL(request.url).searchParams.get('id'));
     if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: '無效的估值情境。' }, { status: 400 });
@@ -55,3 +56,8 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : '估值情境無法刪除。' }, { status: 500 });
   }
 }
+
+// Owner data: only behind Cloudflare Access once it is configured (lib/server/data-gate).
+export const GET = guarded(handleGET);
+export const POST = guarded(handlePOST);
+export const DELETE = guarded(handleDELETE);

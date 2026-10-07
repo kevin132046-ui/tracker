@@ -6,6 +6,8 @@ declare namespace Cloudflare {
     // application AUD tags, comma-separated when workers.dev and preview URLs are separate applications).
     ACCESS_TEAM_DOMAIN?: string;
     ACCESS_AUD?: string;
+    /** "open" lets the data routes answer without Cloudflare Access (e.g. a demo); anything else protects them once Access is set up. */
+    DATA_ACCESS?: string;
     // Secrets set with `wrangler secret put`; never sent to the browser.
     ANTHROPIC_API_KEY?: string;
     OPENAI_API_KEY?: string;

@@ -2,6 +2,7 @@ import { ensureDatabase, tradeSelect, type TradeRow } from '@/lib/server/databas
 import { cleanTradeInput as clean, type TradeInput } from '@/lib/server/trade-input';
 import { clearAllPhrase } from '@/lib/trade-batch';
 import { NextResponse } from 'next/server';
+import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +11,7 @@ async function getTrade(id: number) {
   return db.prepare(`${tradeSelect} WHERE id = ?`).bind(id).first<TradeRow>();
 }
 
-export async function GET() {
+async function handleGET() {
   try {
     const db = await ensureDatabase();
     const result = await db.prepare(`${tradeSelect} ORDER BY status ASC, open_date DESC, id DESC`).all<TradeRow>();
@@ -20,7 +21,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const data = clean(await request.json());
     const db = await ensureDatabase();
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
+async function handlePUT(request: Request) {
   try {
     const body = await request.json() as Partial<TradeInput> & { id?: number };
     const id = Number(body.id);
@@ -63,7 +64,7 @@ export async function PUT(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+async function handleDELETE(request: Request) {
   try {
     const body = await request.json() as { id?: number; all?: boolean; confirm?: string };
     if (body.all === true) {
@@ -82,3 +83,9 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to delete trade.' }, { status: 400 });
   }
 }
+
+// Owner data: only behind Cloudflare Access once it is configured (lib/server/data-gate).
+export const GET = guarded(handleGET);
+export const POST = guarded(handlePOST);
+export const PUT = guarded(handlePUT);
+export const DELETE = guarded(handleDELETE);

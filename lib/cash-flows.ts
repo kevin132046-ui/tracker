@@ -15,6 +15,24 @@ export const maxCashFlowBatch = 35;
 /** The phrase a request must carry to delete every deposit and withdrawal. */
 export const clearCashFlowsPhrase = 'DELETE ALL CASH FLOWS';
 
+/**
+ * A note without bank reference numbers: wire / ACH descriptions carry IDs (FedRef …, Fed#…, SEN(…),
+ * IMAD / OMAD, trace numbers) that identify the transfer and are not kept. "Wire Funds Received
+ * FedRef 2507… SEN(2025…)" → "Wire Funds Received".
+ */
+export function cleanCashFlowNote(note: string) {
+  return note
+    .replace(/\b(?:fed\s*ref|fedref|imad|omad|trace|ref(?:erence)?|conf(?:irmation)?|trn|tran(?:saction)?\s*id)\b\s*[#:]?\s*(?:null|[A-Z0-9-]+)/gi, ' ')
+    .replace(/\bfed\s*#\s*[A-Z0-9-]+/gi, ' ')
+    .replace(/\b[A-Z]{2,5}\s*\(\s*[A-Z0-9-]{6,}\s*\)/gi, ' ')
+    .replace(/#\s*[A-Z0-9-]{6,}/gi, ' ')
+    // Any remaining long code containing digits (account, trace or confirmation numbers).
+    .replace(/\b(?=[A-Z0-9-]*\d)[A-Z0-9-]{8,}\b/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .slice(0, 500);
+}
+
 export const signedCashFlow = (flow: Pick<CashFlowInput, 'kind' | 'amount'>) => flow.kind === 'deposit' ? flow.amount : -flow.amount;
 const cents = (value: number) => Math.round(value * 100) / 100;
 

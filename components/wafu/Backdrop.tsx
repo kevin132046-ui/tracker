@@ -19,14 +19,19 @@ const watchReduced = (change: () => void) => {
  * The 和風 backdrop behind the page: the uploaded picture (if any) and the theme's light —
  * a slow window beam for 桔梗, lantern glow and falling snow for 時雨. Both parts can be switched off.
  */
-export default function Backdrop({ theme, paused }: { theme: WafuTheme; paused: boolean }) {
+export default function Backdrop({ theme, paused, hidePhoto = false }: {
+  theme: WafuTheme;
+  paused: boolean;
+  /** The page shows its own uploaded background (背景 → 圖片): one full-screen picture, not two stacked. */
+  hidePhoto?: boolean;
+}) {
   const { assets } = useWafuAssets();
   const prefs = useMediaPrefs();
   // null on the server and while hydrating: the backdrop only exists in the browser.
   const reduced = useSyncExternalStore(watchReduced, () => window.matchMedia(reducedQuery).matches, () => null);
   const lite = usePerfLite();
   const ref = useRef<HTMLDivElement>(null);
-  const photo = prefs.photo ? visitPick(assets, 'bg', theme)?.url ?? null : null;
+  const photo = prefs.photo && !hidePhoto ? visitPick(assets, 'bg', theme)?.url ?? null : null;
   const shown = reduced !== null && (Boolean(photo) || prefs.effects);
 
   // The page's own gradient steps aside while the backdrop is shown.

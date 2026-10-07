@@ -83,6 +83,8 @@ pnpm build
 
 `/api/ai` 會呼叫付費 API，所以只接受通過 Cloudflare Access 的請求。沒有設定 Access 時，這個端點會直接拒絕（fail closed），網站其他部分照常運作。
 
+設定好 Access（`ACCESS_TEAM_DOMAIN`、`ACCESS_AUD`）之後，存放個人資料的端點也只接受通過 Access 的請求：交易、存提款紀錄、背景圖片與和風素材、DCF 情境、跨券商資料、股息設定、標題。即使某個預覽網址或路徑沒放進 Access 應用程式，資料也不會被讀出。預覽網址是另一個 Access 應用程式時，把它的 AUD tag 用逗號加進 `ACCESS_AUD`。報價、財報日等公開市場資料不受影響。要刻意讓資料端點公開（例如示範站），把 Variable `DATA_ACCESS` 設成 `open`。
+
 1. Cloudflare 後台 → Zero Trust → Access → Applications → Add an application → Self-hosted。
 2. 網域填你的 Worker 網址（`<worker>.<subdomain>.workers.dev`），政策只允許你自己的 Email。
 3. 把應用程式的 **AUD tag** 填進 `ACCESS_AUD`，team domain 填進 `ACCESS_TEAM_DOMAIN`，然後重新部署。

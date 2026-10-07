@@ -5,6 +5,7 @@ import { entitledOnExDate, resolvePayDate } from '@/lib/dividend-pay-dates';
 import { addDaysToKey, parseDateKey, zonedDate, zonedDateKey } from '@/lib/market-calendar';
 import { nasdaqPayDates, yahooNextPayDate } from '@/lib/server/dividend-pay-sources';
 import type { RequestBudget } from '@/lib/server/yahoo-summary';
+import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -183,7 +184,7 @@ async function fetchDividendEvents(ticker: string, startDate: string, endDate: s
   throw new Error(`Dividend history unavailable for ${ticker}`);
 }
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   try {
     const settings = await readSettings();
     let adjustments = await readAdjustments();
@@ -264,7 +265,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     const body = await request.json() as Partial<DividendSettings> & { action?: 'adjust' | 'clear' | 'exclude' | 'reset-adjustments' | 'pay-date'; eventKey?: string; net?: number; payDate?: string };
     if (body.action === 'pay-date') {
@@ -311,3 +312,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : '股息設定無法保存' }, { status: 400, headers: { ...responseHeaders, 'Cache-Control': 'no-store' } });
   }
 }
+
+// Owner data: only behind Cloudflare Access once it is configured (lib/server/data-gate).
+export const GET = guarded(handleGET);
+export const PATCH = guarded(handlePATCH);

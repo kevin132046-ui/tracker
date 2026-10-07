@@ -1,5 +1,6 @@
 import { ensureDatabase, tradeSelect, type TradeRow } from '@/lib/server/database';
 import { NextResponse } from 'next/server';
+import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +45,7 @@ async function historicalClose(ticker: string, date: string) {
   throw new Error(`Historical quote unavailable for ${ticker}`);
 }
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const date = new URL(request.url).searchParams.get('date') ?? '';
   const today = new Date().toISOString().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today) {
@@ -114,3 +115,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to load allocation history.' }, { status: 502 });
   }
 }
+
+// Owner data: only behind Cloudflare Access once it is configured (lib/server/data-gate).
+export const GET = guarded(handleGET);

@@ -1,5 +1,6 @@
 import { ensureDatabase } from '@/lib/server/database';
 import { NextResponse } from 'next/server';
+import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +53,7 @@ async function readCurrent() {
   return { db, raw, state: parseStoredTitle(raw) };
 }
 
-export async function GET() {
+async function handleGET() {
   try {
     const { state } = await readCurrent();
     return NextResponse.json(state, { headers: responseHeaders });
@@ -61,7 +62,7 @@ export async function GET() {
   }
 }
 
-export async function PUT(request: Request) {
+async function handlePUT(request: Request) {
   const contentLength = Number(request.headers.get('content-length') ?? 0);
   if (Number.isFinite(contentLength) && contentLength > 4096) {
     return NextResponse.json({ error: '標題資料過大' }, { status: 413, headers: responseHeaders });
@@ -108,3 +109,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : '網頁標題無法保存' }, { status: 500, headers: responseHeaders });
   }
 }
+
+// Owner data: only behind Cloudflare Access once it is configured (lib/server/data-gate).
+export const GET = guarded(handleGET);
+export const PUT = guarded(handlePUT);

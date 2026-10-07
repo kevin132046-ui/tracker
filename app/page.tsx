@@ -52,6 +52,8 @@ import WafuOpening from '@/components/wafu/opening/Opening';
 import NavIcon from '@/components/wafu/NavIcon';
 import type { WafuNavIconName } from '@/components/wafu/NavIcon';
 import WafuBackdrop from '@/components/wafu/Backdrop';
+import { ActiveSection, setActiveSection } from '@/components/wafu/ActiveSection';
+import SearchInput from '@/components/wafu/SearchInput';
 import MusicDock from '@/components/wafu/MusicDock';
 import NotifyCenter from '@/components/wafu/NotifyCenter';
 import GuideBar from '@/components/wafu/GuideBar';
@@ -1106,7 +1108,6 @@ export default function Home() {
   const [filter, setFilter] = useState<FilterMode>('open');
   const [positionView, setPositionView] = useState<PositionViewMode>('visual');
   const [query, setQuery] = useState('');
-  const [activeSection, setActiveSection] = useState<'overview' | 'positions' | 'returns' | 'valuation'>('overview');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [holidayNoticeEnabled, setHolidayNoticeEnabled] = useState(true);
   // The notification center gathers the header notice line and more; off → the line as before.
@@ -1225,6 +1226,11 @@ export default function Home() {
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const backgroundOperationRef = useRef(false);
   const backgroundGenerationRef = useRef(0);
+  // Background mode as last saved on the server, the mode last chosen, and whether a save is running:
+  // quick 原始／圖片 clicks all count and the last one wins, instead of being dropped while a save runs.
+  const backgroundServerModeRef = useRef<BackgroundMode | null>(null);
+  const backgroundWantedModeRef = useRef<BackgroundMode | null>(null);
+  const backgroundModeSyncRef = useRef(false);
   const editorQuoteCacheRef = useRef(new Map<string, { quote: LiveQuote; fetchedAt: number }>());
   const benchmarkCacheRef = useRef(new Map<RangeMode, BenchmarkData>());
   const priceHistoryCacheRef = useRef(new Map<string, PriceHistoryState>());
@@ -1690,7 +1696,7 @@ export default function Home() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    if (backgroundOperationRef.current) return;
+    if (backgroundOperationRef.current || backgroundModeSyncRef.current) return notify('背景正在保存，完成後再換圖片');
     if (!file.type.startsWith('image/')) return notify('請選擇圖片檔案');
     if (file.size > 20 * 1024 * 1024) return notify('原始圖片不可超過 20 MB');
     backgroundOperationRef.current = true;
@@ -1746,6 +1752,8 @@ export default function Home() {
           const payload = await response.json() as { imageUrl?: string; error?: string };
           if (!response.ok || !payload.imageUrl) throw new Error(payload.error ?? '背景圖片無法保存');
           const durableImageUrl = payload.imageUrl;
+          backgroundServerModeRef.current = 'image';
+          backgroundWantedModeRef.current = 'image';
           try {
             window.localStorage.removeItem(backgroundPendingKey);
             window.localStorage.removeItem(backgroundPendingModeKey);
@@ -1793,13 +1801,14 @@ export default function Home() {
   }, [notify]);
 
   const switchBackgroundMode = useCallback(async (mode: BackgroundMode) => {
-    if (backgroundOperationRef.current || mode === backgroundMode) return;
+    if (backgroundOperationRef.current) return notify('背景圖片保存中，完成後再切換');
+    if (mode === backgroundMode) return;
     if (mode === 'image' && !backgroundImage) {
       backgroundInputRef.current?.click();
       return;
     }
-    const previousMode = backgroundMode;
     backgroundGenerationRef.current += 1;
+    backgroundWantedModeRef.current = mode;
     setBackgroundMode(mode);
     try {
       window.localStorage.setItem(backgroundPendingModeKey, mode);
@@ -1811,40 +1820,48 @@ export default function Home() {
       notify(mode === 'image' ? '已切換為圖片背景，待連線後會同步' : '已切換為原始背景，待連線後會同步');
       return;
     }
-    backgroundOperationRef.current = true;
-    setBackgroundSaving(true);
+    // A save already running picks up this choice when it finishes.
+    if (backgroundModeSyncRef.current) return;
+    backgroundModeSyncRef.current = true;
+    const fallback: BackgroundMode = backgroundServerModeRef.current ?? backgroundMode;
+    let failure: string | null = null;
     try {
-      const response = await fetch('/api/background', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
-        keepalive: true,
-      });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? '背景模式無法保存');
-      try {
-        window.localStorage.removeItem(backgroundPendingModeKey);
-      } catch {
-        // The same mode can be safely replayed after reopening.
+      while (backgroundWantedModeRef.current && backgroundWantedModeRef.current !== backgroundServerModeRef.current) {
+        const target: BackgroundMode = backgroundWantedModeRef.current;
+        const response = await fetch('/api/background', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: target }),
+          keepalive: true,
+        });
+        const payload = await response.json().catch(() => ({})) as { error?: string };
+        if (!response.ok) throw new Error(payload.error ?? '背景模式無法保存');
+        backgroundServerModeRef.current = target;
       }
-      notify(mode === 'image' ? '已切換為圖片背景並保存' : '已切換為原始背景，圖片仍永久保留');
     } catch (error) {
-      setBackgroundMode(previousMode);
+      failure = error instanceof Error ? error.message : '背景模式無法保存';
+    } finally {
+      backgroundModeSyncRef.current = false;
+    }
+    const saved = backgroundServerModeRef.current ?? fallback;
+    if (failure) {
+      // Back to what the server has, in memory and in this browser.
+      backgroundWantedModeRef.current = saved;
+      setBackgroundMode(saved);
       try {
         window.localStorage.removeItem(backgroundPendingModeKey);
+        window.localStorage.setItem(backgroundModeKey, saved);
       } catch {
         // The in-memory rollback remains correct for this session.
       }
-      try {
-        window.localStorage.setItem(backgroundModeKey, previousMode);
-      } catch {
-        // Keep the restored cloud setting even if a local cache cannot be written.
-      }
-      notify(error instanceof Error ? error.message : '背景模式無法保存');
-    } finally {
-      backgroundOperationRef.current = false;
-      setBackgroundSaving(false);
+      return notify(failure);
     }
+    try {
+      window.localStorage.removeItem(backgroundPendingModeKey);
+    } catch {
+      // The same mode can be safely replayed after reopening.
+    }
+    notify(saved === 'image' ? '已切換為圖片背景並保存' : '已切換為原始背景，圖片仍永久保留');
   }, [backgroundImage, backgroundMode, notify]);
 
   const fetchTrades = useCallback(async () => {
@@ -2317,7 +2334,7 @@ export default function Home() {
     const observer = new IntersectionObserver((entries) => {
       const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
       if (visible?.target.id === 'overview' || visible?.target.id === 'positions' || visible?.target.id === 'returns' || visible?.target.id === 'valuation') {
-        setActiveSection((current) => current === visible.target.id ? current : visible.target.id as 'overview' | 'positions' | 'returns' | 'valuation');
+        setActiveSection(visible.target.id);
       }
     }, { rootMargin: '-22% 0px -58% 0px', threshold: [0, .15, .4, .7] });
     ['overview', 'positions', 'returns', 'valuation'].forEach((id) => {
@@ -2368,6 +2385,7 @@ export default function Home() {
           });
           const migrationPayload = await migrationResponse.json() as { imageUrl?: string; error?: string };
           if (!migrationResponse.ok || !migrationPayload.imageUrl) throw new Error(migrationPayload.error ?? '舊背景無法同步');
+          backgroundServerModeRef.current = mode;
           if (restoreIsStale()) return;
           setBackgroundImage(migrationPayload.imageUrl);
           setBackgroundMode(mode);
@@ -2407,6 +2425,7 @@ export default function Home() {
           const durableImageUrl = payload.imageUrl;
           if (restoreIsStale()) return;
           const serverMode: BackgroundMode = payload.mode === 'default' ? 'default' : 'image';
+          backgroundServerModeRef.current = serverMode;
           const restoredMode = validPendingMode ?? serverMode;
           setBackgroundImage(durableImageUrl);
           setBackgroundMode(restoredMode);
@@ -2422,6 +2441,7 @@ export default function Home() {
                 signal: controller.signal,
               });
               pendingModeSynced = modeResponse.ok;
+              if (modeResponse.ok) backgroundServerModeRef.current = validPendingMode;
             } catch {
               pendingModeSynced = false;
             }
@@ -3424,8 +3444,10 @@ export default function Home() {
       <div className="page-frame">
         <nav className="side-nav" aria-label="頁面切換">
           <button type="button" className={`settings-nav-button ${settingsOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={settingsOpen} onPointerEnter={() => void loadSettingsCards()} onFocus={() => void loadSettingsCards()} onClick={() => setSettingsOpen(true)}>{navGlyph('settings', settingsOpen)}<span>設定</span></button>
+          <ActiveSection>{(activeSection) => <>
           {([['overview', '總覽'], ['positions', '持倉'], ['returns', '收益']] as const).map(([section, label]) => <a key={section} href={`#${section}`} className={activeSection === section ? 'active' : ''} aria-current={activeSection === section ? 'page' : undefined} onClick={(event) => { event.preventDefault(); setActiveSection(section); window.history.replaceState(null, '', `#${section}`); document.getElementById(section)?.scrollIntoView({ behavior: 'auto', block: 'start' }); }}>{navGlyph(section, activeSection === section)}<span>{label}</span></a>)}
           <button type="button" className={`settings-nav-button ${activeSection === 'valuation' ? 'active' : ''}`} aria-current={activeSection === 'valuation' ? 'page' : undefined} onClick={() => openValuation(drilledTicker ?? undefined)}>{navGlyph('valuation', activeSection === 'valuation')}<span>估值</span></button>
+          </>}</ActiveSection>
           {assistantOn && <button type="button" className={`settings-nav-button wafu-nav-ai ${assistantOpen ? 'active' : ''}`} aria-haspopup="dialog" aria-expanded={assistantOpen} onClick={() => setAssistantOpen((open) => !open)}>{navGlyph('ai', assistantOpen)}<span>AI</span></button>}
           <div className="background-control">
             <button type="button" className="background-trigger" disabled={backgroundSaving} onClick={() => backgroundInputRef.current?.click()} title={backgroundSaving ? '正在永久保存背景圖片' : backgroundImage ? '更換背景圖片' : '加入背景圖片'}>{navGlyph(backgroundSaving ? 'saving' : 'background', false)}<span>{backgroundSaving ? '保存中' : backgroundImage ? '換圖片' : '背景'}</span></button>
@@ -3583,7 +3605,7 @@ export default function Home() {
         <section className="panel positions-panel" id="positions">
           <div className="positions-toolbar">
             <div><p className="eyebrow">Active book</p><h2>交易與持倉</h2></div>
-            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button>{gainsTab && <button className={positionView === 'gains' ? 'active' : ''} onClick={() => setPositionView('gains')}>益損</button>}<button className={positionView === 'cashflows' ? 'active' : ''} onClick={() => setPositionView('cashflows')}>存提款</button></div><label className="search"><span>⌕</span><input value={query} onChange={(event) => { setAllocationGroupSelection(null); setQuery(event.target.value); }} placeholder="搜尋 ticker、策略或備註" aria-label="搜尋交易" /></label><div className="toolbar-io"><button type="button" ref={importTriggerRef} className="toolbar-io-button" aria-haspopup="dialog" onClick={() => { void loadTradeImportDialog(); setImportOpen(true); }}>匯入</button><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button><button type="button" className="toolbar-io-button" aria-haspopup="dialog" title="一次輸入無法自動報價的價格" onClick={() => setManualQuotesOpen(true)}>✎ 手動報價</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
+            <div className="toolbar-actions"><div className="view-switch" aria-label="持倉顯示方式"><button className={positionView === 'visual' ? 'active' : ''} onClick={() => (drilledTicker || allocationGroupSelection) ? returnToPositionsOverview() : setPositionView('visual')}>圖形持倉</button><button className={positionView === 'details' ? 'active' : ''} onClick={() => setPositionView('details')}>交易明細</button>{gainsTab && <button className={positionView === 'gains' ? 'active' : ''} onClick={() => setPositionView('gains')}>益損</button>}<button className={positionView === 'cashflows' ? 'active' : ''} onClick={() => setPositionView('cashflows')}>存提款</button></div><label className="search"><span>⌕</span><SearchInput value={query} onChange={(next) => { setAllocationGroupSelection(null); setQuery(next); }} placeholder="搜尋 ticker、策略或備註" label="搜尋交易" /></label><div className="toolbar-io"><button type="button" ref={importTriggerRef} className="toolbar-io-button" aria-haspopup="dialog" onClick={() => { void loadTradeImportDialog(); setImportOpen(true); }}>匯入</button><button type="button" className="toolbar-io-button" onClick={exportTradesCsv}>匯出 CSV</button><button type="button" className="toolbar-io-button" aria-haspopup="dialog" title="一次輸入無法自動報價的價格" onClick={() => setManualQuotesOpen(true)}>✎ 手動報價</button></div><button className="primary-button" onClick={() => setEditor(blankTrade())}>＋新增</button></div>
           </div>
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
           {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}
@@ -4050,8 +4072,8 @@ export default function Home() {
         </section>
       </div>}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
-      <WafuBackdrop theme={wafuTheme} paused={Boolean(intro)} />
-      {bottomNav === 'guide' && <GuideBar
+      <WafuBackdrop theme={wafuTheme} paused={Boolean(intro)} hidePhoto={imageBackgroundActive} />
+      {bottomNav === 'guide' && <ActiveSection>{(activeSection) => <GuideBar
         theme={wafuTheme}
         sections={guideSections}
         current={activeSection}
@@ -4064,8 +4086,8 @@ export default function Home() {
           ...(notifyEnabled ? [{ id: 'notify', label: '通知與休市', icon: '◔', run: () => setNotifySignal((value) => value + 1) }] : []),
           { id: 'settings', label: '設定', icon: '⚙', run: () => setSettingsOpen(true) },
         ]}
-      />}
-      {homeBarEnabled && <HomeBar
+      />}</ActiveSection>}
+      {homeBarEnabled && <ActiveSection>{(activeSection) => <HomeBar
         theme={wafuTheme}
         active={activeSection}
         settingsOpen={settingsOpen}
@@ -4074,7 +4096,7 @@ export default function Home() {
         onSettings={() => setSettingsOpen(true)}
         onValuation={() => openValuation(drilledTicker ?? undefined)}
         background={{ label: backgroundSaving ? '保存中' : backgroundImage ? '換背景圖片' : '背景圖片', busy: backgroundSaving, pick: () => backgroundInputRef.current?.click() }}
-      />}
+      />}</ActiveSection>}
       {assistantOpen && assistantOn && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={importAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}
       {intro && <WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} />}
     </main>

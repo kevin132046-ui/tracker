@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { ensureDatabase, tradeSelect, type TradeRow } from '@/lib/server/database';
 import { cleanTradeInput, type TradeInput } from '@/lib/server/trade-input';
 import { maxBatchOperations } from '@/lib/trade-batch';
+import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ const validId = (value: unknown) => {
  * Several trade writes at once (整理選擇權紀錄 and re-imports): updates, inserts and deletes run in one
  * D1 batch, which is a single transaction, so a request either applies completely or not at all.
  */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const body = await request.json() as BatchBody;
     const updates = (body.updates ?? []).map((item) => ({ id: validId(item.id), data: cleanTradeInput(item) }));
@@ -61,3 +62,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to apply the changes.' }, { status: 400 });
   }
 }
+
+// Owner data: only behind Cloudflare Access once it is configured (lib/server/data-gate).
+export const POST = guarded(handlePOST);

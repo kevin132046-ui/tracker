@@ -1,6 +1,7 @@
 import { emptyBrokerWorkspace, normalizeBrokerWorkspace } from '@/lib/broker-workspace';
 import { ensureDatabase, tradeSelect, type TradeRow } from '@/lib/server/database';
 import { NextResponse } from 'next/server';
+import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -95,7 +96,7 @@ async function buildPortfolioSeed() {
   return workspace;
 }
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   try {
     if (new URL(request.url).searchParams.get('summary') === '1') {
       const { row } = await getState();
@@ -107,7 +108,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     const body = await request.json() as { enabled?: boolean };
     if (typeof body.enabled !== 'boolean') {
@@ -132,7 +133,7 @@ export async function PATCH(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
+async function handlePUT(request: Request) {
   try {
     const body = await request.json();
     const input = body && typeof body === 'object' ? body as Record<string, unknown> : {};
@@ -153,3 +154,8 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : '跨券商資料無法保存' }, { status: 400, headers: responseHeaders });
   }
 }
+
+// Owner data: only behind Cloudflare Access once it is configured (lib/server/data-gate).
+export const GET = guarded(handleGET);
+export const PATCH = guarded(handlePATCH);
+export const PUT = guarded(handlePUT);

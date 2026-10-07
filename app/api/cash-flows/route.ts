@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/server/database';
 import { clearCashFlowsPhrase, maxCashFlowBatch, type CashFlow, type CashFlowInput } from '@/lib/cash-flows';
+import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +43,7 @@ function clean(input: Partial<CashFlowInput>): CashFlowInput {
 
 const fail = (error: unknown, status = 400) => NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to save the record.' }, { status });
 
-export async function GET() {
+async function handleGET() {
   try {
     const db = await ensureCashFlows();
     const result = await db.prepare(`${select} ORDER BY date DESC, id DESC`).all<CashFlow>();
@@ -53,7 +54,7 @@ export async function GET() {
 }
 
 /** One record, or { flows: [...] } (up to maxCashFlowBatch) saved together. */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const body = await request.json() as Partial<CashFlowInput> & { flows?: Array<Partial<CashFlowInput>> };
     const inputs = (Array.isArray(body.flows) ? body.flows : [body]).map(clean);
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PUT(request: Request) {
+async function handlePUT(request: Request) {
   try {
     const body = await request.json() as Partial<CashFlowInput> & { id?: number };
     const id = Number(body.id);
@@ -88,7 +89,7 @@ export async function PUT(request: Request) {
 }
 
 /** { id } deletes one record; { all: true, confirm } deletes every record. */
-export async function DELETE(request: Request) {
+async function handleDELETE(request: Request) {
   try {
     const body = await request.json() as { id?: number; all?: boolean; confirm?: string };
     const db = await ensureCashFlows();
@@ -106,3 +107,9 @@ export async function DELETE(request: Request) {
     return fail(error);
   }
 }
+
+// Owner data: only behind Cloudflare Access once it is configured (lib/server/data-gate).
+export const GET = guarded(handleGET);
+export const POST = guarded(handlePOST);
+export const PUT = guarded(handlePUT);
+export const DELETE = guarded(handleDELETE);

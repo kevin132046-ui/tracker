@@ -37,6 +37,7 @@ import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSu
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
 import type { TradeColumnId } from '@/lib/trade-columns';
 import { tradesToCsv } from '@/lib/trade-csv';
+import { reconcileTrades, reconItemsFromTrades } from '@/lib/trade-reconcile';
 import type { AiStatus } from '@/components/AiSettingsCard';
 import type { AiEntryContext } from '@/components/AiTradeEntry';
 import type { Tone, ToneSetting } from '@/lib/wafu/tone';
@@ -225,6 +226,8 @@ const WafuThemeCard = lazy(() => import('@/components/wafu/WafuThemeCard'));
 const WafuMediaCard = lazy(() => import('@/components/wafu/WafuMediaCard'));
 const FilingAnalysisDialog = lazy(() => import('@/components/FilingAnalysisDialog'));
 const ManualQuotes = lazy(() => import('@/components/wafu/ManualQuotes'));
+const loadReconcileDialog = () => import('@/components/TradeReconcileDialog');
+const TradeReconcileDialog = lazy(loadReconcileDialog);
 
 // Allocation colours per theme: tonal steps of the theme's own accents (the largest holding in the
 // main accent), with the theme's gold as the one warm note. 桔梗: periwinkle → wisteria → indigo;
@@ -1157,6 +1160,7 @@ export default function Home() {
   const [brokerWorkspaceSeed, setBrokerWorkspaceSeed] = useState<BrokerWorkspace | null>(null);
   const [editor, setEditor] = useState<Trade | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [reconcileOpen, setReconcileOpen] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<Trade | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [dividendAdjustmentCandidate, setDividendAdjustmentCandidate] = useState<Trade | null>(null);
@@ -1869,6 +1873,20 @@ export default function Home() {
     window.setTimeout(() => void refreshDividendCash(false), 0);
     notify(updated ? (count ? `已匯入 ${count} 筆、平倉 ${updated} 筆交易` : `已平倉 ${updated} 筆交易`) : `已匯入 ${count} 筆交易`);
   }, [fetchTrades, notify, refreshDividendCash]);
+
+  // 整理選擇權紀錄: closing fills not yet paired with their open positions, and options open past expiry.
+  const reconcileToday = exchangeTodayKey('SPY', Date.now());
+  const reconcileSummary = useMemo(() => {
+    const result = reconcileTrades(reconItemsFromTrades(trades.filter((trade) => !trade.derived)), { today: reconcileToday, label: (ref) => `#${ref}` });
+    const closings = result.changes.filter((change) => change.reason === 'folded' || change.reason === 'orphan').length;
+    const expired = result.changes.filter((change) => change.reason === 'expired' || change.reason === 'assigned').length;
+    return { closings, expired, total: result.changes.length };
+  }, [trades, reconcileToday]);
+  const handleReconciled = useCallback((message: string) => {
+    setReconcileOpen(false);
+    void fetchTrades().catch((error) => notify(error instanceof Error ? error.message : '無法載入交易資料'));
+    notify(message);
+  }, [fetchTrades, notify]);
 
   const refreshQuotes = useCallback(async (announce = true) => {
     if (quoteRefreshInFlightRef.current) {
@@ -3511,6 +3529,10 @@ export default function Home() {
           </div>
           {drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>正在查看 <strong>{drilledTicker}</strong> 的 {filteredTrades.length} 筆交易紀錄</span></div>}
           {allocationGroupSelection && !drilledTicker && <div className="drilldown-bar"><button type="button" onClick={returnToPositionsOverview}>← 返回持倉總覽</button><span>持倉配置已選擇 <strong>{allocationGroupSelection.label}</strong>：{allocationGroupSelection.members.join('、')}</span></div>}
+          {reconcileSummary.total > 0 && <div className="recon-banner" role="status">
+            <span><b>有選擇權紀錄需要整理</b>{[reconcileSummary.closings ? `${reconcileSummary.closings} 筆平倉成交還沒和開倉配對` : '', reconcileSummary.expired ? `${reconcileSummary.expired} 筆選擇權已過到期日仍顯示未平倉` : ''].filter(Boolean).join('、')}。</span>
+            <button type="button" onPointerEnter={() => void loadReconcileDialog()} onClick={() => setReconcileOpen(true)}>檢視並整理</button>
+          </div>}
           {positionView !== 'gains' && <div className="filter-row">{([['open', '未平倉'], ['closed', '已平倉'], ['options', '選擇權'], ['stock', '股票'], ['cash', '現金'], ['all', '全部']] as const).map(([mode, label]) => <button key={mode} className={filter === mode ? 'active' : ''} onClick={() => setFilter(mode)}>{label}<span>{mode === 'all' ? portfolioTrades.length : mode === 'open' ? openTrades.length : mode === 'closed' ? closedTrades.length : portfolioTrades.filter((trade) => mode === 'stock' ? trade.type === 'SDI' : mode === 'cash' ? isCashTrade(trade) : trade.type !== 'SDI' && !isCashTrade(trade)).length}</span></button>)}{positionView === 'details' && <TradeColumnPicker columns={tradeColumnSet} onChange={updateTradeColumns} />}{positionView === 'visual' && <VisualFieldPicker fields={visualFieldSet} onChange={updateVisualFields} />}</div>}
           {optionRisk && positionView !== 'gains' && <OptionRiskStrip risk={optionRisk} premium={yearPremium} />}
           {positionView === 'gains' ? <Suspense fallback={<div className="visual-empty">正在整理益損…</div>}><GainsLedger key={gainsStart.n} initialTab={gainsStart.tab} trades={portfolioTrades} usdJpyRate={usdJpyRate} today={todayKey} query={query} /></Suspense> : positionView === 'visual' ? <div className="visual-positions">
@@ -3787,6 +3809,7 @@ export default function Home() {
               <div className="settings-data-actions">
                 <button type="button" className="primary-button" onClick={() => { setSettingsOpen(false); void loadTradeImportDialog(); setImportOpen(true); }}>⇪ 匯入 CSV／Excel／PDF／截圖</button>
                 <button type="button" className="secondary-button" onClick={exportTradesCsv}>匯出 CSV</button>
+                <button type="button" className="secondary-button" onClick={() => { setSettingsOpen(false); void loadReconcileDialog(); setReconcileOpen(true); }}>整理選擇權紀錄{reconcileSummary.total ? `（${reconcileSummary.total}）` : ''}</button>
               </div>
             </section>
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
@@ -3939,6 +3962,7 @@ export default function Home() {
         </section>
       </div>}
       {rocBreakdownOpen && <RocBreakdownDialog summary={annualRocSummary} onClose={closeRocBreakdown} />}
+      {reconcileOpen && <Suspense fallback={null}><TradeReconcileDialog trades={trades} today={reconcileToday} onClose={() => setReconcileOpen(false)} onApplied={handleReconciled} /></Suspense>}
       {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} onClose={closeImport} onImported={handleImported} ai={aiEnabled ? importAi : undefined} /></Suspense>}
       {dividendAdjustmentCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!dividendAdjusting && event.target === event.currentTarget) setDividendAdjustmentCandidate(null); }}>
         <section className="dividend-adjustment-modal" role="dialog" aria-modal="true" aria-labelledby="dividend-adjustment-title">

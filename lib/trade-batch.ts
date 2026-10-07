@@ -28,15 +28,24 @@ export function chunkChanges<T>(changes: BatchChanges<T>): Array<BatchChanges<T>
   return chunks;
 }
 
+/** One /api/trades/batch request (at most maxBatchOperations changes, applied together or not at all). */
+export async function postTradeBatch<T>(chunk: BatchChanges<T>) {
+  const response = await fetch('/api/trades/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(chunk) });
+  const payload = await response.json().catch(() => ({})) as { error?: string };
+  if (!response.ok) throw new Error(payload.error ?? `儲存失敗（${response.status}）`);
+}
+
 /** Sends the changes in chunks; reports progress after each request. Stops at the first failure. */
 export async function applyTradeChanges<T>(changes: BatchChanges<T>, onProgress?: (done: number, total: number) => void) {
   const chunks = chunkChanges(changes);
   const total = changes.updates.length + changes.creates.length + changes.deletes.length;
   let done = 0;
   for (const chunk of chunks) {
-    const response = await fetch('/api/trades/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(chunk) });
-    const payload = await response.json().catch(() => ({})) as { error?: string };
-    if (!response.ok) throw new Error(`${payload.error ?? `儲存失敗（${response.status}）`}。已完成 ${done} / ${total} 項。`);
+    try {
+      await postTradeBatch(chunk);
+    } catch (error) {
+      throw new Error(`${error instanceof Error ? error.message : '儲存失敗'}。已完成 ${done} / ${total} 項。`);
+    }
     done += chunk.updates.length + chunk.creates.length + chunk.deletes.length;
     onProgress?.(done, total);
   }

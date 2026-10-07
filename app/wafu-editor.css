@@ -115,3 +115,31 @@
 .recon-diff i { margin-right: 5px; font-style: normal; }
 .recon-diff em { margin: 0 4px; font-style: normal; color: var(--wa-muted); }
 .recon-diff b { color: var(--wa-ink); font-weight: 600; }
+
+/* 設定 → 資料: 清除所有交易資料 */
+.settings-danger { display: flex; align-items: center; gap: 14px; margin-top: 16px; padding: 13px 15px; background: var(--wa-down-soft); border: 1px solid rgb(var(--wa-down-rgb, 200 80 80) / .35); border-radius: 14px; }
+.settings-danger > div { min-width: 0; flex: 1 1 auto; display: grid; gap: 3px; }
+.settings-danger b { color: var(--wa-down); font-size: 14px; font-weight: 700; }
+.settings-danger span { color: var(--wa-muted); font-size: 12.5px; line-height: 1.55; }
+.settings-danger-button { flex: 0 0 auto; min-height: 38px; padding: 0 16px; color: var(--wa-down); background: transparent; border: 1px solid var(--wa-down); border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.settings-danger-button:hover:not(:disabled) { color: var(--wa-on-accent); background: var(--wa-down); }
+.settings-danger-button:disabled { opacity: .45; cursor: not-allowed; }
+.clear-trades-confirm { width: min(500px, 100%); }
+.clear-trades-confirm > p b { color: var(--wa-down); }
+.clear-trades-scope { display: grid; gap: 6px; margin: 16px 0 14px; padding: 12px 14px; list-style: none; text-align: left; background: var(--wa-raise); border: 1px solid var(--wa-line); border-radius: 11px; font-size: 13px; line-height: 1.5; }
+.clear-trades-scope li { position: relative; padding-left: 20px; color: var(--wa-ink-2); }
+.clear-trades-scope li::before { position: absolute; left: 0; top: 0; width: 14px; text-align: center; font-weight: 800; }
+.clear-trades-scope li.gone::before { content: '×'; color: var(--wa-down); }
+.clear-trades-scope li.kept::before { content: '✓'; color: var(--wa-up); }
+.clear-trades-scope label { display: flex; align-items: flex-start; gap: 7px; cursor: pointer; }
+.clear-trades-scope input { margin: 3px 0 0; accent-color: var(--wa-down); }
+.clear-trades-type { display: grid; gap: 6px; margin-bottom: 14px; color: var(--wa-ink-2); font-size: 13px; font-weight: 600; text-align: left; }
+.clear-trades-type input { min-height: 42px; padding: 0 12px; color: var(--wa-ink); background: var(--wa-panel); border: 1px solid var(--wa-line-2); border-radius: 10px; font-size: 15px; letter-spacing: .08em; }
+.clear-trades-type input:focus { outline: 0; border-color: var(--wa-down); box-shadow: 0 0 0 3px var(--wa-down-soft); }
+.clear-trades-error { margin: 0 0 12px !important; color: var(--wa-down) !important; font-size: 13px !important; }
+.clear-trades-confirm footer { grid-template-columns: 1fr 1fr; }
+.clear-trades-confirm footer .cancel-button, .clear-trades-confirm footer .confirm-delete-button { min-height: 42px; }
+.clear-trades-reimport { grid-column: 1 / -1; min-height: 40px; color: var(--wa-down); background: transparent; border: 1px dashed var(--wa-down); border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.clear-trades-reimport:hover:not(:disabled) { background: var(--wa-down-soft); }
+.clear-trades-confirm button:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 560px) { .settings-danger { flex-direction: column; align-items: stretch; } }

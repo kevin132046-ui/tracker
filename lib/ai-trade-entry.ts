@@ -175,9 +175,10 @@ export function planAiImport(parse: AiTradeParse, existing: readonly CsvTrade[])
         return;
       }
     }
+    // Option opens say so (BTO / STO): a plain Buy / Sell could close the opposite position.
     const side = row.action === 'close'
       ? row.kind === 'stock' ? 'sell' : row.side === 'buy' ? 'btc' : row.side === 'sell' ? 'stc' : ''
-      : row.side ?? '';
+      : row.kind === 'option' && row.side ? (row.side === 'buy' ? 'bto' : 'sto') : row.side ?? '';
     tableRows.push([
       row.date ?? '',
       row.kind === 'cash' ? row.ticker === 'JPY' ? 'JPY' : 'USD' : row.ticker ?? '',

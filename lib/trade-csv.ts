@@ -8,6 +8,9 @@
  */
 
 import { isYenTicker, normalizeTickerForMarket } from '@/lib/performance';
+import { diffTrades, type FieldDiff } from '@/lib/trade-diff';
+import { contractIntent, isOptionRecord, oppositeSide, reconcileTrades, type ReconItem, type ReconReason } from '@/lib/trade-reconcile';
+import { cashFlowIntent, cashFlowKey, cashFlowKindLabels, type CashFlowInput } from '@/lib/cash-flows';
 
 export type CsvTrade = {
   id: number;
@@ -139,7 +142,7 @@ export function parseCsvTable(text: string): CsvTable {
 export type ImportField =
   | 'id' | 'type' | 'side' | 'event' | 'right' | 'ticker' | 'market' | 'strike' | 'quantity' | 'price'
   | 'currentPrice' | 'exitPrice' | 'fees' | 'collateral' | 'openDate' | 'expiryDate' | 'closeDate'
-  | 'status' | 'quoteMode' | 'notes';
+  | 'status' | 'quoteMode' | 'notes' | 'amount';
 
 export const importFields: ReadonlyArray<{ id: ImportField; label: string; synonyms: readonly string[] }> = [
   { id: 'openDate', label: '開倉日／成交日', synonyms: ['date', 'opendate', 'tradedate', 'transactiondate', 'executiondate', 'filldate', 'entrydate', 'opened', '日期', '成交日', '成交日期', '交易日', '交易日期', '開倉日', '开仓日', '買入日期', '约定日', '約定日', '取引日', '建玉日', '約定日付'] },
@@ -160,6 +163,7 @@ export const importFields: ReadonlyArray<{ id: ImportField; label: string; synon
   { id: 'market', label: '市場', synonyms: ['market', 'exchange', '市場', '市场', '交易所', '市場区分'] },
   { id: 'status', label: '狀態', synonyms: ['status', 'state', '狀態', '状态', '状態'] },
   { id: 'quoteMode', label: '報價方式', synonyms: ['quotemode', '報價方式'] },
+  { id: 'amount', label: '金額（存提款）', synonyms: ['amount', 'netamount', 'totalamount', 'cashamount', '金額', '金额', '淨額', '净额', '入出金額', '受渡金額', '入金額', '出金額'] },
   { id: 'notes', label: '備註', synonyms: ['notes', 'note', 'memo', 'comment', 'comments', 'remark', 'remarks', 'description', 'desc', '備註', '备注', '說明', 'メモ', '備考', 'コメント'] },
   { id: 'id', label: '原編號 id（不匯入）', synonyms: ['id', 'tradeid', '編號', '编号', '交易編號'] },
 ];
@@ -257,6 +261,8 @@ const sideWords: ReadonlyArray<[Side, readonly string[]]> = [
   ['buy', ['buy', 'b', 'bot', 'bought', 'long', 'bto', 'buytoopen', 'buyopen', '買', '買入', '买入', '買進', '买进', '買い', '買付', '買建', '新規買', '現物買']],
   ['sell', ['sell', 's', 'sld', 'sold', 'short', 'sto', 'selltoopen', 'sellopen', '賣', '賣出', '卖出', '売', '売り', '売付', '売建', '新規売', '現物売']],
 ];
+// Side words that say the fill opens a position (a plain Buy / Sell might close one).
+const openSideWords = ['bto', 'buytoopen', 'buyopen', 'sto', 'selltoopen', 'sellopen', '新規買', '新規売', '買建', '売建'];
 const sideOf = (raw: string): Side | null => {
   const value = token(raw);
   return value ? sideWords.find(([, words]) => words.includes(value))?.[0] ?? null : null;
@@ -270,7 +276,7 @@ const rightOf = (raw: string): 'PUT' | 'CALL' | null => {
 const appTypes: Record<string, string> = { sell: 'Sell', buy: 'Buy', ass: 'Ass', sdi: 'SDI', cash: 'CASH' };
 const stockWords = ['stock', 'stocks', 'equity', 'equities', 'share', 'shares', 'etf', '股票', '現股', '现股', '股', '株', '株式', '現物'];
 const optionWords = ['option', 'options', 'opt', 'equityoption', '選擇權', '选择权', '期權', '期权', 'オプション'];
-const cashWords = ['cash', '現金', '现金', 'deposit', '入金'];
+const cashWords = ['cash', '現金', '现金'];
 
 /** OCC option symbol such as "KO   260618P00070000" → root, expiry, right and strike. */
 export function parseOccSymbol(raw: string): { ticker: string; expiryDate: string; right: 'PUT' | 'CALL'; strike: number } | null {
@@ -300,82 +306,330 @@ export function tradeDuplicateKey(trade: Pick<CsvTrade, 'ticker' | 'type' | 'eve
 /* Rows → trades                                                       */
 /* ------------------------------------------------------------------ */
 
+/** One change importing a row makes: a new trade, an update of a stored trade, or deleting a stored duplicate. */
+export type ImportOp =
+  | { kind: 'create'; trade: CsvTrade; note: string }
+  | { kind: 'update'; id: number; before: CsvTrade; trade: CsvTrade; diffs: FieldDiff[]; note: string }
+  | { kind: 'delete'; id: number; before: CsvTrade; note: string }
+  | { kind: 'flow'; flow: CashFlowInput; note: string };
+
 export type ImportRow = {
   /** Line in the file (the header is line 1). */
   line: number;
+  /** The row as it will be stored; for a closing fill folded into a position, the fill itself (fill). Null with errors. */
   trade: CsvTrade | null;
+  /** trade is a closing fill shown as read: its position closes elsewhere (mergedInto, or a stored trade). */
+  fill: boolean;
+  /** A deposit or withdrawal: goes to 存提款紀錄, not to the trades (trade is null). */
+  flow: CashFlowInput | null;
   errors: string[];
   warnings: string[];
-  /** Id of an existing trade with the same key. */
+  /** Already stored as this trade with nothing to change (checking the row imports a copy). */
   duplicateOf: number | null;
   /** Earlier line in the file with the same key. */
   duplicateLine: number | null;
-  /** A closing fill (BTC / STC / stock sale) folded into the opening row on this line. */
+  /** A closing fill (BTC / STC / CLOSING CONTRACT / stock sale) folded into the opening row on this line. */
   mergedInto: number | null;
+  /** The stored trade this row was compared with, and the fields that differ (stored → file). */
+  existing: CsvTrade | null;
+  diffs: FieldDiff[];
+  /** What importing the row does. */
+  ops: ImportOp[];
+  /** Rows imported together because their opens and closes depend on each other share a group: its first line. */
+  group: number;
+  /** Updates fields other than the close (status, dates, exit price, quantity): not checked by default. */
+  minor: boolean;
 };
 
 type Leg = {
   line: number;
-  kind: 'stock' | 'option' | 'cash';
-  closing: boolean;
+  kind: 'stock' | 'option' | 'cash' | 'flow';
+  /** kind 'flow': the deposit or withdrawal. */
+  flow?: CashFlowInput;
+  /** yes: a closing fill; maybe: a plain Buy/Sell that closes an opposite open position if there is one. */
+  closing: 'yes' | 'no' | 'maybe';
+  /** The transaction's own side (a closing buy of a written put is Buy; its position, the trade's type, Sell). */
+  sideType: string;
   trade: CsvTrade;
   exitPrice: number | null;
+  /** No current price in the file: the entry price stands in while the trade is open. */
+  priceGuessed: boolean;
   errors: string[];
   warnings: string[];
 };
 
-export type MapOptions = { existing: readonly CsvTrade[]; delimiter?: CsvDelimiter };
+export type MapOptions = {
+  existing: readonly CsvTrade[];
+  delimiter?: CsvDelimiter;
+  /** Today at the exchange (YYYY-MM-DD): options expiring before it close at 0. */
+  today?: string;
+  /**
+   * Compare with the stored trades: changed ones become updates (with the fields that differ), stored
+   * copies of folded closing fills are deleted, and closing fills close stored open positions.
+   * Without it a row matching a stored trade is only flagged as a duplicate.
+   */
+  updateExisting?: boolean;
+  /** A closing fill with no opening anywhere: a closed record at P&L 0 (default), or an error. */
+  orphans?: 'convert' | 'error';
+  /** How messages name a row (default 第 N 列). */
+  lineLabel?: (line: number) => string;
+  /** Stored deposits and withdrawals: a file row repeating one is not added again. */
+  existingFlows?: readonly CashFlowInput[];
+};
 
-/** Each data row as a Trade for POST /api/trades, with validation, closing-fill pairing and duplicate flags. */
+// A live price on an open trade is not a difference worth an update.
+const comparedFields = new Set(['type', 'event', 'strike', 'expiryDate', 'quantity', 'entryPrice', 'openDate', 'status', 'closeDate', 'fees', 'collateral']);
+const meaningfulDiffs = (existing: CsvTrade, next: CsvTrade) => diffTrades(existing, next)
+  .filter((diff) => comparedFields.has(diff.field) || (diff.field === 'currentPrice' && (existing.status === 'closed' || next.status === 'closed')));
+// Changes that close, split or convert a trade, as opposed to corrections of other fields.
+const closeFields = new Set(['type', 'quantity', 'status', 'closeDate', 'currentPrice']);
+const round6 = (value: number) => Number(value.toFixed(6));
+
+/** Same trade with a corrected quantity or price: contract and day (cash: currency and day). */
+const looseKey = (trade: CsvTrade) => {
+  const ticker = normalizeTickerForMarket(trade.ticker, marketOf(trade));
+  return trade.type.toUpperCase() === 'CASH'
+    ? [ticker, 'CASH', trade.openDate].join('|')
+    : [ticker, trade.type.trim().toUpperCase(), trade.event.trim().toUpperCase(), strikeKey(trade.strike), trade.expiryDate ?? '', trade.openDate].join('|');
+};
+
+/**
+ * Each data row as a Trade for /api/trades. Rows are validated, closing fills are paired with the
+ * opens in the file (lib/trade-reconcile: several lots, partial closes, assignments) and options past
+ * expiry close at 0. With updateExisting each result is then compared with the stored trades — new,
+ * an update (with the fields that differ) or unchanged — and closing fills whose opening is not in the
+ * file close the stored open position instead.
+ */
 export function mapImportRows(table: CsvTable, mapping: ReadonlyArray<ImportField | ''>, options: MapOptions): ImportRow[] {
   const delimiter = options.delimiter ?? table.delimiter;
+  const today = options.today ?? new Date().toISOString().slice(0, 10);
+  const compare = options.updateExisting === true;
+  const lineLabel = options.lineLabel ?? ((line: number) => `第 ${line} 列`);
   const legs = table.rows.map((cells, index) => buildLeg(cells, index + 2, mapping, delimiter));
-  const rows = new Map<number, ImportRow>(legs.map((leg) => [leg.line, { line: leg.line, trade: null, errors: leg.errors, warnings: leg.warnings, duplicateOf: null, duplicateLine: null, mergedInto: null }]));
+  const rows = new Map<number, ImportRow>(legs.map((leg) => [leg.line, {
+    line: leg.line, trade: null, fill: false, flow: null, errors: leg.errors, warnings: leg.warnings, duplicateOf: null, duplicateLine: null, mergedInto: null,
+    existing: null, diffs: [], ops: [], group: leg.line, minor: false,
+  }]));
+  // Deposits and withdrawals go to the ledger, each once: a row repeating a stored record is not added again.
+  const flowPool = new Map<string, number>();
+  for (const flow of options.existingFlows ?? []) flowPool.set(cashFlowKey(flow), (flowPool.get(cashFlowKey(flow)) ?? 0) + 1);
+  for (const leg of legs) {
+    if (leg.kind !== 'flow' || leg.errors.length || !leg.flow) continue;
+    const row = rows.get(leg.line)!;
+    const key = cashFlowKey(leg.flow);
+    row.flow = leg.flow;
+    if (flowPool.get(key)) {
+      flowPool.set(key, flowPool.get(key)! - 1);
+      row.warnings.push('與現有的存提款紀錄相同');
+    } else {
+      row.ops.push({ kind: 'flow', flow: leg.flow, note: `存提款紀錄：${cashFlowKindLabels[leg.flow.kind]}` });
+      row.warnings.push('加入存提款紀錄（不影響交易與現金餘額）');
+    }
+  }
+  for (const leg of legs) if (!leg.errors.length && leg.kind !== 'flow') finalizeLeg(leg);
+  const valid = legs.filter((leg) => !leg.errors.length && leg.kind !== 'flow');
+  const legByLine = new Map(valid.map((leg) => [leg.line, leg]));
+  // Each row as read: what an earlier import stored, and how a closing fill shows in the preview.
+  const original = new Map(valid.map((leg) => [leg.line, { ...leg.trade }]));
+  const asFill = (line: number): CsvTrade => ({ ...original.get(line)!, type: legByLine.get(line)!.sideType });
+  const label = (ref: number) => ref < 0 ? `#${-ref}` : lineLabel(ref);
+  const noteLabel = (ref: number) => ref < 0 ? `#${-ref}` : `匯入紀錄（${legByLine.get(ref)?.trade.openDate ?? ''}）`;
 
-  // Fold closing fills into the earliest matching open of the same contract and size (FIFO).
-  const openings = legs.filter((leg) => !leg.closing && !leg.errors.length);
-  const taken = new Set<number>();
-  for (const closing of legs.filter((leg) => leg.closing)) {
-    const row = rows.get(closing.line)!;
-    if (closing.errors.length) continue;
-    const sameContract = openings.filter((open) => open.kind === closing.kind && open.trade.ticker === closing.trade.ticker && open.trade.type === closing.trade.type
-      && open.trade.event === closing.trade.event && strikeKey(open.trade.strike) === strikeKey(closing.trade.strike) && open.trade.expiryDate === closing.trade.expiryDate
-      && !open.trade.closeDate && !taken.has(open.line) && open.trade.openDate <= closing.trade.openDate)
-      .sort((a, b) => a.trade.openDate.localeCompare(b.trade.openDate) || a.line - b.line);
-    const match = sameContract.find((open) => amountKey(open.trade.quantity) === amountKey(closing.trade.quantity));
-    if (!match) {
-      row.errors.push(sameContract.length ? '平倉數量與開倉紀錄不同，請手動拆分後再匯入' : '找不到對應的開倉紀錄（平倉成交需與開倉成交一起匯入）');
+  // Rows that must be imported together: a closing fill and the positions it closes.
+  const parent = new Map<number, number>();
+  const find = (line: number): number => { const up = parent.get(line) ?? line; if (up === line) return line; const top = find(up); parent.set(line, top); return top; };
+  const join = (a: number, b: number) => { if (a <= 0 || b <= 0) return; const [x, y] = [find(a), find(b)]; if (x !== y) parent.set(Math.max(x, y), Math.min(x, y)); };
+
+  // Pass 1: the file on its own.
+  const finalTrade = new Map<number, CsvTrade | null>(valid.map((leg) => [leg.line, leg.trade]));
+  const reasons = new Map<number, ReconReason>();
+  const details = new Map<number, string[]>();
+  const extras = new Map<number, Array<{ trade: CsvTrade; detail: string; reason: ReconReason }>>();
+  const note = (line: number, detail: string) => details.set(line, [...(details.get(line) ?? []), detail]);
+  const pass1 = reconcileTrades(valid.map((leg) => ({ ref: leg.line, trade: leg.trade, closing: leg.closing })), { today, label, noteLabel });
+  for (const change of pass1.changes) {
+    const row = rows.get(change.ref)!;
+    if (change.reason !== 'assigned') for (const ref of change.related) join(change.ref, ref);
+    if (change.reason === 'orphan' && options.orphans === 'error') {
+      row.errors.push('找不到對應的開倉紀錄（平倉成交需與開倉成交一起匯入）');
+      finalTrade.set(change.ref, null);
       continue;
     }
-    taken.add(match.line);
-    match.trade.closeDate = closing.trade.openDate;
-    match.exitPrice = closing.trade.entryPrice;
-    match.trade.fees = Number((match.trade.fees + closing.trade.fees).toFixed(6));
-    match.warnings.push(`已合併第 ${closing.line} 列的平倉成交`);
-    row.mergedInto = match.line;
+    reasons.set(change.ref, change.reason);
+    if (change.reason === 'folded') row.mergedInto = change.related[0] ?? null;
+    finalTrade.set(change.ref, change.trade);
+    note(change.ref, change.detail);
+  }
+  for (const item of pass1.added) {
+    if (item.reason !== 'assigned') for (const ref of item.related) join(item.fromRef, ref);
+    extras.set(item.fromRef, [...(extras.get(item.fromRef) ?? []), { trade: item.trade, detail: item.detail, reason: item.reason }]);
   }
 
-  const existingKeys = new Map<string, number>();
-  for (const trade of options.existing) if (!trade.derived) existingKeys.set(tradeDuplicateKey(trade), trade.id);
-  const fileKeys = new Map<string, number>();
-  for (const leg of legs) {
-    const row = rows.get(leg.line)!;
-    if (leg.closing || row.errors.length) continue;
-    finalizeLeg(leg);
-    if (leg.errors.length) continue;
-    row.trade = leg.trade;
-    const key = tradeDuplicateKey(leg.trade);
-    row.duplicateOf = existingKeys.get(key) ?? null;
-    row.duplicateLine = fileKeys.get(key) ?? null;
-    if (row.duplicateOf !== null) row.warnings.push(`與現有交易 #${row.duplicateOf} 相同（標的、類型、策略、履約價、開倉日、數量、成交價），預設不匯入`);
-    else if (row.duplicateLine !== null) row.warnings.push(`與第 ${row.duplicateLine} 列相同，請確認不是重複成交`);
-    if (!fileKeys.has(key)) fileKeys.set(key, leg.line);
+  // Stored trades, each answering at most one result: ten identical one-lot rows meet ten stored trades.
+  const exactPool = new Map<string, CsvTrade[]>();
+  const loosePool = new Map<string, CsvTrade[]>();
+  for (const trade of options.existing) {
+    if (trade.derived) continue;
+    exactPool.set(tradeDuplicateKey(trade), [...(exactPool.get(tradeDuplicateKey(trade)) ?? []), trade]);
+    loosePool.set(looseKey(trade), [...(loosePool.get(looseKey(trade)) ?? []), trade]);
   }
+  const used = new Set<number>();
+  const take = (pool: Map<string, CsvTrade[]>, keys: readonly string[], target: CsvTrade) => {
+    for (const key of new Set(keys)) {
+      const candidates = (pool.get(key) ?? []).filter((trade) => !used.has(trade.id));
+      if (!candidates.length) continue;
+      const score = (trade: CsvTrade) => meaningfulDiffs(trade, target).length;
+      const best = candidates.reduce((a, b) => score(b) < score(a) || (score(b) === score(a) && b.id < a.id) ? b : a);
+      used.add(best.id);
+      return best;
+    }
+    return null;
+  };
+  // An earlier import stored rows as read (a closing fill on its own side); a reconcile, as paired here.
+  const keysOf = (line: number): string[] => {
+    const before = tradeDuplicateKey(original.get(line)!);
+    const after = finalTrade.get(line);
+    if (!compare) return after ? [tradeDuplicateKey(after)] : [];
+    const reason = reasons.get(line);
+    if (reason === 'folded') return [tradeDuplicateKey(asFill(line)), before];
+    if (reason === 'orphan') return [tradeDuplicateKey(asFill(line)), tradeDuplicateKey(after!), before];
+    return after ? [before, tradeDuplicateKey(after)] : [];
+  };
+  const lines = valid.map((leg) => leg.line).filter((line) => !rows.get(line)!.errors.length);
+  const stored = new Map<number, CsvTrade>();
+  for (const round of [0, 1]) for (const line of lines) {
+    if (stored.has(line)) continue;
+    const keys = keysOf(line);
+    const found = take(exactPool, round === 0 ? keys.slice(0, 1) : keys.slice(1), finalTrade.get(line) ?? asFill(line));
+    if (found) stored.set(line, found);
+  }
+  const extraStored = new Map<CsvTrade, CsvTrade>();
+  for (const line of lines) for (const extra of extras.get(line) ?? []) {
+    const found = take(exactPool, [tradeDuplicateKey(extra.trade)], extra.trade);
+    if (found) extraStored.set(extra.trade, found);
+  }
+  if (compare) for (const line of lines) {
+    const trade = finalTrade.get(line);
+    if (stored.has(line) || !trade) continue;
+    const found = take(loosePool, [looseKey(trade)], trade);
+    if (found) stored.set(line, found);
+  }
+
+  // Pass 2: closing fills whose opening is not in the file close stored open positions.
+  const storedOps = new Map<number, ImportOp[]>();
+  if (compare) {
+    const fills: ReconItem[] = [];
+    for (const line of lines) {
+      const reason = reasons.get(line);
+      const before = original.get(line)!;
+      const after = finalTrade.get(line);
+      if (reason === 'orphan' && after) {
+        const share = after.quantity / before.quantity;
+        fills.push({ ref: line, trade: { ...before, type: after.type, quantity: after.quantity, fees: round6(before.fees * share), collateral: 0 }, closing: 'yes' });
+      } else if (legByLine.get(line)!.closing === 'maybe' && (!reason || reason === 'expired' || reason === 'assigned') && isOptionRecord(before)) {
+        fills.push({ ref: line, trade: before, closing: 'maybe' });
+      }
+    }
+    if (fills.length) {
+      const byId = new Map(options.existing.map((trade) => [trade.id, trade]));
+      const positions: ReconItem[] = options.existing
+        .filter((trade) => !trade.derived && !used.has(trade.id) && trade.type.toUpperCase() !== 'CASH' && (trade.status === 'closed' || contractIntent(trade.notes) !== 'close'))
+        .map((trade) => ({ ref: -trade.id, trade: { ...trade, closeDate: trade.status === 'closed' ? trade.closeDate : null }, closing: 'no' }));
+      const pass2 = reconcileTrades([...positions, ...fills], { today, label, noteLabel });
+      const owner = new Map<number, number>();
+      for (const change of pass2.changes) {
+        if (change.ref > 0) {
+          if (change.reason !== 'folded' && change.reason !== 'orphan') continue;
+          // Replaces what pass 1 made of the row.
+          reasons.set(change.ref, change.reason);
+          finalTrade.set(change.ref, change.trade);
+          details.set(change.ref, [change.detail]);
+          continue;
+        }
+        const fileRefs = change.related.filter((ref) => ref > 0);
+        if (!fileRefs.length || !change.trade || change.reason === 'expired') continue;
+        const before = byId.get(-change.ref)!;
+        owner.set(change.ref, fileRefs[0]);
+        for (const ref of fileRefs) join(fileRefs[0], ref);
+        const diffs = meaningfulDiffs(before, change.trade);
+        if (diffs.length) storedOps.set(fileRefs[0], [...(storedOps.get(fileRefs[0]) ?? []), { kind: 'update', id: before.id, before, trade: change.trade, diffs, note: change.detail }]);
+      }
+      for (const item of pass2.added) {
+        const line = owner.get(item.fromRef);
+        if (line === undefined) continue;
+        for (const ref of item.related) join(line, ref);
+        storedOps.set(line, [...(storedOps.get(line) ?? []), { kind: 'create', trade: item.trade, note: item.detail }]);
+      }
+    }
+  }
+
+  // Each row's changes.
+  const createdKeys = new Map<string, number>();
+  const inferred = (reason: ReconReason | undefined) => reason === 'expired' || reason === 'assigned';
+  for (const line of lines) {
+    const row = rows.get(line)!;
+    const trade = finalTrade.get(line) ?? null;
+    const match = stored.get(line) ?? null;
+    const reason = reasons.get(line);
+    row.existing = match;
+    if (!trade) {
+      // A closing fill folded into a position: shown as read; a stored copy of it goes.
+      row.trade = asFill(line);
+      row.fill = true;
+      if (match) row.ops.push({ kind: 'delete', id: match.id, before: match, note: `現有交易 #${match.id} 是這筆平倉成交的重複紀錄，刪除` });
+    } else {
+      row.trade = trade;
+      if (!match) {
+        row.ops.push({ kind: 'create', trade, note: '' });
+        const key = tradeDuplicateKey(trade);
+        if (createdKeys.has(key)) {
+          row.duplicateLine = createdKeys.get(key)!;
+          row.warnings.push(`與${lineLabel(row.duplicateLine)}相同，請確認不是重複成交`);
+        } else createdKeys.set(key, line);
+      } else {
+        row.diffs = meaningfulDiffs(match, trade);
+        if (!compare || !row.diffs.length) {
+          row.duplicateOf = match.id;
+          row.warnings.push(compare ? `與現有交易 #${match.id} 相同` : `與現有交易 #${match.id} 相同，預設不匯入`);
+        } else if (match.status === 'closed' && (trade.status === 'open' || inferred(reason))) {
+          // A close the user recorded stays; the file only knows the expiry (or nothing).
+          row.duplicateOf = match.id;
+          row.warnings.push(`現有交易 #${match.id} 已平倉，保留現有的平倉資料`);
+        } else {
+          row.ops.push({ kind: 'update', id: match.id, before: match, trade, diffs: row.diffs, note: '' });
+        }
+      }
+    }
+    for (const extra of extras.get(line) ?? []) {
+      const twin = extraStored.get(extra.trade);
+      const diffs = twin ? meaningfulDiffs(twin, extra.trade) : [];
+      if (!twin) row.ops.push({ kind: 'create', trade: extra.trade, note: extra.detail });
+      else if (compare && diffs.length && !(twin.status === 'closed' && (extra.trade.status === 'open' || inferred(extra.reason)))) {
+        row.ops.push({ kind: 'update', id: twin.id, before: twin, trade: extra.trade, diffs, note: extra.detail });
+      }
+    }
+    row.ops.push(...(storedOps.get(line) ?? []));
+    row.warnings.push(...(details.get(line) ?? []));
+    const leg = legByLine.get(line)!;
+    if (leg.priceGuessed && trade?.status === 'open' && leg.kind === 'option' && !match) row.warnings.push('未填目前價格，暫以成交價計算');
+    row.minor = row.ops.length > 0 && row.ops.every((op) => op.kind === 'update' && op.diffs.every((diff) => !closeFields.has(diff.field)));
+    if (row.minor) row.warnings.push(`與現有交易 #${row.existing?.id} 有差異；預設不更新，勾選即以檔案內容覆寫`);
+  }
+  for (const row of rows.values()) row.group = find(row.line);
   return legs.map((leg) => rows.get(leg.line)!);
 }
 
-/** Rows checked by default: importable, not duplicates of existing trades and not folded into another row. */
-export const defaultImportSelection = (rows: readonly ImportRow[]) => new Set(rows.filter((row) => row.trade && row.duplicateOf === null).map((row) => row.line));
+/** Groups checked by default: new rows, closes and splits; not unchanged rows or other field differences. */
+export function defaultImportSelection(rows: readonly ImportRow[]) {
+  return new Set(rows.filter((row) => !row.errors.length && row.ops.length && !row.minor).map((row) => row.group));
+}
+
+/** Stored-trade changes for a set of rows (each stored trade changed once). */
+export function importOpsOf(row: ImportRow): ImportOp[] {
+  if (row.ops.length) return row.ops;
+  // An unchanged row checked by hand: a second, identical trade.
+  return row.trade && row.duplicateOf !== null && row.group === row.line && row.mergedInto === null ? [{ kind: 'create', trade: row.trade, note: '' }] : [];
+}
 
 function buildLeg(cells: readonly string[], line: number, mapping: ReadonlyArray<ImportField | ''>, delimiter: CsvDelimiter): Leg {
   const get = (field: ImportField) => {
@@ -389,6 +643,22 @@ function buildLeg(cells: readonly string[], line: number, mapping: ReadonlyArray
   const occ = parseOccSymbol(get('ticker'));
   const typeRaw = token(get('type'));
   const appType = appTypes[typeRaw] ?? null;
+
+  // Deposits and withdrawals (ACH, wire, 入金 / 出金): records for 存提款紀錄, not trades.
+  const tickerCell = plain(get('ticker')).toUpperCase();
+  const namesSecurity = Boolean(occ || get('strike') || get('expiryDate') || (tickerCell && !['USD', 'JPY', '$', '¥'].includes(tickerCell)));
+  const flowIntent = appType ? null : cashFlowIntent({ type: get('type'), side: get('side'), notes: get('notes') }, namesSecurity);
+  if (flowIntent) {
+    const date = parseDate(get('openDate'));
+    const value = number('amount') ?? number('quantity') ?? number('price');
+    if (!date) errors.push(get('openDate') ? `日期「${get('openDate')}」無法辨識` : '缺少日期');
+    if (value === null || value === 0) errors.push('缺少存提款金額');
+    const kind = flowIntent === 'signed' ? ((value ?? 0) < 0 ? 'withdrawal' : 'deposit') : flowIntent;
+    const currency = tickerCell === 'JPY' || tickerCell === '¥' || ['jp', 'jpy', 'japan', '日本'].includes(token(get('market'))) ? 'JPY' : 'USD';
+    const flow: CashFlowInput = { date: date ?? '', kind, amount: Math.round(Math.abs(value ?? 0) * 100) / 100, currency, note: plain(get('notes')).slice(0, 500) };
+    const placeholder: CsvTrade = { id: 0, type: 'CASH', event: 'CASH', ticker: currency, market: currency === 'JPY' ? 'JP' : 'US', strike: null, quantity: flow.amount, entryPrice: 1, currentPrice: 1, fees: 0, collateral: 0, openDate: flow.date, expiryDate: null, closeDate: null, notes: flow.note, status: 'open', quoteMode: 'manual' };
+    return { line, kind: 'flow', flow, closing: 'no', sideType: 'CASH', trade: placeholder, exitPrice: null, priceGuessed: false, errors, warnings };
+  }
   const eventRaw = plain(get('event')).toUpperCase();
   const side = sideOf(get('side'));
   const quantityValue = number('quantity');
@@ -434,25 +704,38 @@ function buildLeg(cells: readonly string[], line: number, mapping: ReadonlyArray
 
   let type = appType ?? '';
   let event = eventRaw;
-  let closing = false;
+  let closing: Leg['closing'] = 'no';
+  let sideType = appType ?? '';
+  // Broker descriptions ("… OPEN CONTRACT", "… CLOSING CONTRACT") say which fills open and which close.
+  const intent = contractIntent(get('notes'));
   if (kind === 'cash') {
     type = 'CASH';
     event = 'CASH';
   } else if (kind === 'stock') {
     if (!appType) type = 'SDI';
     if (!event || event === 'PUT' || event === 'CALL') event = 'STOCK';
+    sideType = 'SDI';
     if (!appType) {
-      if (side === 'sell' || side === 'sellToClose') closing = true;
+      if (side === 'sell' || side === 'sellToClose') closing = 'yes';
       else if (side === 'buyToClose') errors.push('不支援股票放空回補；股票部位只記錄買入');
-      else if (!side && quantityValue !== null && quantityValue < 0) closing = true;
+      else if (!side && quantityValue !== null && quantityValue < 0) closing = 'yes';
     }
   } else {
     if (market === 'JP') errors.push('日股只支援現股，無法匯入選擇權');
     if (!appType) {
-      const direction = side ?? (quantityValue !== null && quantityValue < 0 ? 'sell' : null);
+      const plainDirection = side ?? (quantityValue !== null && quantityValue < 0 ? 'sell' : null);
+      // A plain buy / sell is a close when the description says so (CLOSING CONTRACT).
+      const direction = intent === 'close' && plainDirection === 'buy' ? 'buyToClose' : intent === 'close' && plainDirection === 'sell' ? 'sellToClose' : plainDirection;
       if (!direction) errors.push('缺少買賣方向（Buy／Sell、BTO／STO…）');
       type = direction === 'sell' || direction === 'buyToClose' ? 'Sell' : 'Buy';
-      closing = direction === 'buyToClose' || direction === 'sellToClose';
+      sideType = direction === 'sell' || direction === 'sellToClose' ? 'Sell' : 'Buy';
+      // Explicit closes close; explicit opens open; a bare Buy / Sell closes an opposite open position if one exists.
+      closing = direction === 'buyToClose' || direction === 'sellToClose' ? 'yes'
+        : intent === 'open' || openSideWords.includes(token(get('side'))) || (side !== 'buy' && side !== 'sell') ? 'no' : 'maybe';
+    } else if (intent === 'close' && !closeDate) {
+      // The app's own export of a broker import: the row's type is the fill's side, its position the opposite.
+      closing = 'yes';
+      type = oppositeSide(appType);
     }
     if (!right && (event === 'PUT' || event === 'CALL')) right = event;
     if (!appType || !event) event = right ?? event;
@@ -487,14 +770,14 @@ function buildLeg(cells: readonly string[], line: number, mapping: ReadonlyArray
     quoteMode: quoteModeRaw === 'manual' ? 'manual' : quoteModeRaw === 'auto' ? 'auto' : 'manual',
   };
   if (!quoteModeRaw && trade.type === 'SDI') trade.quoteMode = 'auto';
-  if (collateral === null && kind === 'option' && type === 'Sell' && event === 'PUT' && strikeNumber !== null && strikeNumber > 0 && !closing) {
+  if (collateral === null && kind === 'option' && type === 'Sell' && event === 'PUT' && strikeNumber !== null && strikeNumber > 0 && closing !== 'yes') {
     trade.collateral = Number((strikeNumber * 100 * quantity).toFixed(2));
     warnings.push('擔保金以履約價 × 100 × 口數計算');
   }
-  return { line, kind, closing, trade, exitPrice, errors, warnings };
+  return { line, kind, closing, sideType: sideType || type, trade, exitPrice, priceGuessed: false, errors, warnings };
 }
 
-/** Status, current / exit price and quote mode once any closing fill has been folded in. */
+/** Status, current / exit price (from the file, 0 for a closed option at expiry, else the entry price) and quote mode. */
 function finalizeLeg(leg: Leg) {
   const trade = leg.trade;
   trade.status = trade.closeDate ? 'closed' : 'open';
@@ -508,7 +791,7 @@ function finalizeLeg(leg: Leg) {
     } else leg.errors.push('已平倉交易缺少平倉價');
   } else if (trade.currentPrice === null) {
     trade.currentPrice = trade.entryPrice;
-    if (leg.kind === 'option') leg.warnings.push('未填目前價格，暫以成交價計算');
+    leg.priceGuessed = true;
   }
   // Only open stocks follow live quotes, like the editor and POST /api/trades.
   trade.quoteMode = trade.type === 'SDI' && trade.status === 'open' && trade.quoteMode === 'auto' ? 'auto' : 'manual';

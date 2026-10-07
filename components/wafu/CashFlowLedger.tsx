@@ -3,7 +3,7 @@
 import type { FormEvent } from 'react';
 import { useMemo, useRef, useState } from 'react';
 import type { CashFlow, CashFlowCurrency, CashFlowInput, CashFlowKind } from '@/lib/cash-flows';
-import { cashFlowKey, cashFlowKindLabels, cashFlowsToCsv, maxCashFlowBatch, signedCashFlow, summarizeCashFlows } from '@/lib/cash-flows';
+import { cashFlowKey, cleanCashFlowNote, cashFlowKindLabels, cashFlowsToCsv, maxCashFlowBatch, signedCashFlow, summarizeCashFlows } from '@/lib/cash-flows';
 import { downloadText, localDateKey } from '@/lib/download';
 import type { CsvTrade } from '@/lib/trade-csv';
 import { parseCsvTable, parseDate, parseNumber } from '@/lib/trade-csv';
@@ -52,7 +52,7 @@ function readLedgerCsv(text: string): { flows: CashFlowInput[]; skipped: number 
     const value = parseNumber(get('amount'));
     const kind = kindOf(get('kind')) ?? (value !== null && value < 0 ? 'withdrawal' : 'deposit');
     if (!date || value === null || value === 0) { skipped += 1; continue; }
-    flows.push({ date, kind, amount: Math.abs(value), currency: get('currency').toUpperCase() === 'JPY' ? 'JPY' : 'USD', note: get('note').slice(0, 500) });
+    flows.push({ date, kind, amount: Math.abs(value), currency: get('currency').toUpperCase() === 'JPY' ? 'JPY' : 'USD', note: cleanCashFlowNote(get('note')) });
   }
   return { flows, skipped };
 }

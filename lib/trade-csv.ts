@@ -10,7 +10,7 @@
 import { isYenTicker, normalizeTickerForMarket } from '@/lib/performance';
 import { diffTrades, type FieldDiff } from '@/lib/trade-diff';
 import { contractIntent, isOptionRecord, oppositeSide, reconcileTrades, type ReconItem, type ReconReason } from '@/lib/trade-reconcile';
-import { cashFlowIntent, cashFlowKey, cashFlowKindLabels, type CashFlowInput } from '@/lib/cash-flows';
+import { cashFlowIntent, cashFlowKey, cashFlowKindLabels, cleanCashFlowNote, type CashFlowInput } from '@/lib/cash-flows';
 
 export type CsvTrade = {
   id: number;
@@ -655,7 +655,7 @@ function buildLeg(cells: readonly string[], line: number, mapping: ReadonlyArray
     if (value === null || value === 0) errors.push('缺少存提款金額');
     const kind = flowIntent === 'signed' ? ((value ?? 0) < 0 ? 'withdrawal' : 'deposit') : flowIntent;
     const currency = tickerCell === 'JPY' || tickerCell === '¥' || ['jp', 'jpy', 'japan', '日本'].includes(token(get('market'))) ? 'JPY' : 'USD';
-    const flow: CashFlowInput = { date: date ?? '', kind, amount: Math.round(Math.abs(value ?? 0) * 100) / 100, currency, note: plain(get('notes')).slice(0, 500) };
+    const flow: CashFlowInput = { date: date ?? '', kind, amount: Math.round(Math.abs(value ?? 0) * 100) / 100, currency, note: cleanCashFlowNote(plain(get('notes'))) };
     const placeholder: CsvTrade = { id: 0, type: 'CASH', event: 'CASH', ticker: currency, market: currency === 'JPY' ? 'JP' : 'US', strike: null, quantity: flow.amount, entryPrice: 1, currentPrice: 1, fees: 0, collateral: 0, openDate: flow.date, expiryDate: null, closeDate: null, notes: flow.note, status: 'open', quoteMode: 'manual' };
     return { line, kind: 'flow', flow, closing: 'no', sideType: 'CASH', trade: placeholder, exitPrice: null, priceGuessed: false, errors, warnings };
   }

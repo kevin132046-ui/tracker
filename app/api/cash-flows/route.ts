@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/server/database';
-import { clearCashFlowsPhrase, maxCashFlowBatch, type CashFlow, type CashFlowInput } from '@/lib/cash-flows';
+import { cleanCashFlowNote, clearCashFlowsPhrase, maxCashFlowBatch, type CashFlow, type CashFlowInput } from '@/lib/cash-flows';
 import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
@@ -37,7 +37,7 @@ function clean(input: Partial<CashFlowInput>): CashFlowInput {
     kind: input.kind,
     amount: Math.round(amount * 100) / 100,
     currency: input.currency === 'JPY' ? 'JPY' : 'USD',
-    note: String(input.note ?? '').trim().slice(0, 500),
+    note: cleanCashFlowNote(String(input.note ?? '')),
   };
 }
 
@@ -47,7 +47,11 @@ async function handleGET() {
   try {
     const db = await ensureCashFlows();
     const result = await db.prepare(`${select} ORDER BY date DESC, id DESC`).all<CashFlow>();
-    return NextResponse.json({ flows: result.results });
+    // Records saved before notes were cleaned lose their bank reference numbers (a few per request).
+    const stale = result.results.filter((flow) => cleanCashFlowNote(flow.note) !== flow.note).slice(0, maxCashFlowBatch);
+    if (stale.length) await db.batch(stale.map((flow) => db.prepare('UPDATE cash_flows SET note = ? WHERE id = ?').bind(cleanCashFlowNote(flow.note), flow.id)));
+    const flows = result.results.map((flow) => ({ ...flow, note: cleanCashFlowNote(flow.note) }));
+    return NextResponse.json({ flows });
   } catch (error) {
     return fail(error, 500);
   }

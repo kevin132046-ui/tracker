@@ -605,3 +605,56 @@
   .cf-summary strong { font-size: clamp(15px, 4.3vw, 19px); white-space: nowrap; overflow-wrap: normal; }
   .cf-actions button { margin-left: 4px; padding: 4px 8px; }
 }
+/* 六項指標: six figure cards over the 淨值曲線／回撤／逐月 views */
+.wafu-six-panel { margin-bottom: 14px; container-type: inline-size; }
+.wafu-six-panel.is-pending .wafu-six-grid, .wafu-six-panel.is-pending .wafu-six-chart { opacity: .6; transition: opacity .2s; }
+.wafu-six-sub { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 0; color: var(--wa-muted); font-size: 11px; }
+.wafu-six-pending { color: var(--wa-gold); }
+.wafu-six-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+@container (max-width: 760px) { .wafu-six-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 440px) { .wafu-six-grid { grid-template-columns: 1fr; } }
+.wafu-six-card { position: relative; display: grid; align-content: start; gap: 4px; min-width: 0; padding: 12px 14px 12px 16px; border: 1px solid var(--wa-line); border-radius: 10px; background: color-mix(in srgb, var(--wa-raise) 70%, transparent); cursor: help; }
+.wafu-six-card::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 2px; border-radius: 2px; background: var(--wa-line-2); }
+.wafu-six-card.tone-good::before { background: var(--wa-up); }
+.wafu-six-card.tone-mid::before { background: var(--wa-gold); }
+.wafu-six-card.tone-weak::before { background: var(--wa-down); }
+.wafu-six-label { display: flex; align-items: center; gap: 7px; color: var(--wa-muted); font-size: 11px; letter-spacing: .04em; }
+.wafu-six-label i { display: inline-grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--wa-line-2); border-radius: 50%; color: var(--wa-ink-2); font: 600 9.5px/1 var(--wa-f-display, serif); font-style: normal; }
+.wafu-six-card > strong { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; color: var(--wa-ink); font: 600 22px/1.2 var(--wa-f-display, serif); letter-spacing: .01em; }
+.wafu-six-card > strong small { color: var(--wa-muted); font: 500 12px/1.2 var(--wa-f-body, sans-serif); font-variant-numeric: tabular-nums; }
+.wafu-six-card p { margin: 0; color: var(--wa-ink-2); font-size: 11.5px; line-height: 1.55; }
+.wafu-six-card p b { color: var(--wa-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.wafu-six-card p b.positive { color: var(--wa-up); }
+.wafu-six-card p b.negative { color: var(--wa-down); }
+.wafu-six-card p.foot { color: var(--wa-muted); font-size: 10.5px; }
+.wafu-six-gauge { position: relative; height: 6px; margin: 5px 0 4px; border-radius: 99px; background: var(--wa-down-soft); }
+.wafu-six-gauge i { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: color-mix(in srgb, var(--wa-up) 72%, transparent); }
+.wafu-six-gauge b { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--wa-ink); box-shadow: 0 0 0 2px var(--wa-bg); }
+.wafu-six-bars { display: grid; gap: 3px; margin: 5px 0 4px; }
+.wafu-six-bars span { position: relative; height: 5px; overflow: hidden; border-radius: 99px; background: var(--wa-line); }
+.wafu-six-bars i { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--wa-ink-2); opacity: .55; }
+.wafu-six-bars .profit i { background: var(--wa-up); opacity: .85; }
+.wafu-six-chart-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 18px 0 8px; }
+.wafu-six-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--wa-ink-2); font-size: 11px; }
+.wafu-six-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.wafu-six-legend i { width: 16px; height: 2px; border-radius: 2px; }
+.wafu-six-legend i.dashed, .wafu-six-chart .wafu-perf-tip i.key.dashed { height: 0; border-top: 2px dashed currentColor; border-radius: 0; background: none !important; }
+.wafu-six-legend-note { color: var(--wa-muted); font-size: 11px; }
+.wafu-six-chart { border-radius: 8px; outline: none; }
+.wafu-six-chart:focus-visible { box-shadow: 0 0 0 2px rgb(var(--wa-accent-rgb) / .45); }
+.wafu-six-chart .six-grid { stroke: var(--wa-line); stroke-width: 1; }
+.wafu-six-chart .six-grid.zero { stroke: var(--wa-line-2); }
+.wafu-six-chart .six-extreme line { stroke: var(--wa-muted); stroke-width: 1; opacity: .7; }
+.wafu-six-chart .six-note { fill: var(--wa-ink); font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: var(--wa-bg); stroke-width: 3px; stroke-linejoin: round; }
+.wafu-six-chart .wafu-perf-tip i.key { width: 12px; height: 2px; border-radius: 2px; }
+.wafu-six-table-wrap { overflow-x: auto; }
+.wafu-six-table { width: 100%; min-width: 470px; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.wafu-six-table th, .wafu-six-table td, :root[data-wafu] .wafu-six-table th { padding: 7px 8px; border-top: 0; border-bottom: 1px solid var(--wa-line); background: transparent; text-align: right; white-space: nowrap; }
+:root[data-wafu] .wafu-six-table tbody tr:hover td, :root[data-wafu] .wafu-six-table tbody tr:hover th { background: var(--wa-raise); }
+.wafu-six-table thead th { color: var(--wa-muted); font-size: 11px; font-weight: 500; }
+.wafu-six-table thead th:first-child, .wafu-six-table tbody th, :root[data-wafu] .wafu-six-table thead th:first-child, :root[data-wafu] .wafu-six-table tbody th { text-align: left; }
+.wafu-six-table tbody th, :root[data-wafu] .wafu-six-table tbody th { color: var(--wa-ink); font-family: var(--wa-f-display, serif); font-weight: 600; letter-spacing: .02em; }
+.wafu-six-table td { color: var(--wa-ink); }
+.wafu-six-table td.positive { color: var(--wa-up); }
+.wafu-six-table td.negative { color: var(--wa-down); }
+@media (max-width: 720px) { .wafu-six-panel .panel-heading { flex-direction: column; align-items: stretch; gap: 10px; } }

@@ -15,13 +15,16 @@ import {
   isYenTrade,
   normalizeTickerForMarket,
   normalizedUsdAmount,
+  benchmarkSymbol,
+  buildDailyBook,
+  priceHistoryBatchSize,
   priceHistoryRequest,
   priceSymbolFor,
   rangeBuckets,
   timeWeightedReturnSeries,
   dailyTimeWeightedReturns,
 } from '@/lib/performance';
-import type { AnnualRocSummary, CapitalBasis, PriceHistorySeries, RangeMode } from '@/lib/performance';
+import type { AnnualRocSummary, CapitalBasis, PriceBar, PriceHistorySeries, PriceSplits, RangeMode } from '@/lib/performance';
 import { addDaysToKey, dateKey, isTradingDay, japaneseHolidays, parseDateKey, upcomingClosures, usEarlyCloseName, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
 import type { UpcomingClosure } from '@/lib/market-calendar';
 import { earningsReminders, exchangeTodayKey, mergeEarnings, pruneManualEarnings } from '@/lib/earnings';
@@ -67,6 +70,7 @@ import type { ChartColors, ChartSeries } from '@/lib/wafu/chart-colors';
 import { loadChartColors, saveChartColors, wairoName } from '@/lib/wafu/chart-colors';
 import type { ManualQuoteRow } from '@/components/wafu/ManualQuotes';
 import { computeRiskMetrics, monthlyGrid } from '@/lib/wafu/metrics';
+import { capitalStartDate } from '@/lib/six-metrics';
 import HankoTile from '@/components/wafu/HankoTile';
 import ResearchDrawer from '@/components/wafu/ResearchDrawer';
 import type { ResearchChip, ResearchTab } from '@/components/wafu/ResearchDrawer';
@@ -182,7 +186,7 @@ type BenchmarkMarket = {
   changePercent: number | null;
 };
 type BenchmarkData = { SPY: number[]; BOXX: number[]; keys?: string[] };
-type PriceHistoryState = { key: string; series: PriceHistorySeries };
+type PriceHistoryState = { key: string; series: PriceHistorySeries; splits: PriceSplits };
 type MacroMarketData = { mode: RangeMode | null; markets: BenchmarkMarket[]; updatedAt: string | null };
 type MacroCacheEntry = { markets: BenchmarkMarket[]; updatedAt: string; fetchedAt: number };
 type BackgroundMode = 'default' | 'image';
@@ -217,6 +221,7 @@ const loadTradeImportDialog = () => import('@/components/TradeImportDialog');
 const BrokerHub = lazy(loadBrokerHub);
 const DcfCalculator = lazy(loadDcfCalculator);
 const GainsLedger = lazy(() => import('@/components/wafu/GainsLedger'));
+const SixMetrics = lazy(() => import('@/components/wafu/SixMetrics'));
 const CashFlowLedger = lazy(() => import('@/components/wafu/CashFlowLedger'));
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
 const TradeImportDialog = lazy(loadTradeImportDialog);
@@ -1937,7 +1942,10 @@ export default function Home() {
     setCashFlows([]);
     return payload.deleted ?? 0;
   }, []);
-  const needCashFlows = positionView === 'cashflows' || importOpen || clearOpen;
+  // 六項指標 reads 存提款紀錄 for its 淨值 card once the panel has been on screen.
+  const [sixMetricsSeen, setSixMetricsSeen] = useState(false);
+  const markSixMetricsSeen = useCallback(() => setSixMetricsSeen(true), []);
+  const needCashFlows = positionView === 'cashflows' || importOpen || clearOpen || sixMetricsSeen;
   useEffect(() => {
     if (needCashFlows && cashFlows === null && !cashFlowError) void loadCashFlows();
   }, [cashFlowError, cashFlows, loadCashFlows, needCashFlows]);
@@ -2212,18 +2220,43 @@ export default function Home() {
       setPriceHistory(cached);
       return;
     }
-    const [symbols, from] = priceHistoryKey.split('|');
+    const [symbolList, from] = priceHistoryKey.split('|');
+    const symbols = symbolList.split(',');
+    const batches = Array.from({ length: Math.ceil(symbols.length / priceHistoryBatchSize) }, (_, index) => symbols.slice(index * priceHistoryBatchSize, (index + 1) * priceHistoryBatchSize));
     const controller = new AbortController();
-    fetch(`/api/price-history?symbols=${encodeURIComponent(symbols)}&from=${from}`, { signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json() as { series?: PriceHistorySeries; error?: string };
-        if (!response.ok || !payload.series || typeof payload.series !== 'object') throw new Error(payload.error ?? '歷史價格暫時無法取得');
-        const next: PriceHistoryState = { key: priceHistoryKey, series: payload.series };
-        priceHistoryCacheRef.current.set(priceHistoryKey, next);
-        if (!controller.signal.aborted) setPriceHistory(next);
-      })
-      // Without history the chart keeps the linear-estimate fallback; nothing blocks the page.
-      .catch(() => { if (!controller.signal.aborted) setPriceHistory({ key: priceHistoryKey, series: {} }); });
+    // Two batches at a time (each asks Yahoo for several symbols at once); a batch that fails leaves its
+    // symbols to the straight-line estimate.
+    const load = async (batch: string[]) => {
+      try {
+        const response = await fetch(`/api/price-history?symbols=${encodeURIComponent(batch.join(','))}&from=${from}`, { signal: controller.signal });
+        const payload = await response.json() as { series?: PriceHistorySeries; splits?: PriceSplits; error?: string };
+        if (!response.ok || !payload.series || typeof payload.series !== 'object') return null;
+        return { series: payload.series, splits: payload.splits && typeof payload.splits === 'object' ? payload.splits : {} };
+      } catch {
+        return null;
+      }
+    };
+    const results: Array<Awaited<ReturnType<typeof load>>> = batches.map(() => null);
+    let nextBatch = 0;
+    const worker = async () => {
+      while (nextBatch < batches.length && !controller.signal.aborted) {
+        const index = nextBatch;
+        nextBatch += 1;
+        results[index] = await load(batches[index]);
+      }
+    };
+    void Promise.all([worker(), worker()]).then(() => {
+      if (controller.signal.aborted) return;
+      const next: PriceHistoryState = { key: priceHistoryKey, series: {}, splits: {} };
+      for (const result of results) {
+        if (!result) continue;
+        Object.assign(next.series, result.series);
+        Object.assign(next.splits, result.splits);
+      }
+      // Only a full answer is kept for the session; a partial one is tried again on the next change.
+      if (results.every(Boolean)) priceHistoryCacheRef.current.set(priceHistoryKey, next);
+      setPriceHistory(next);
+    });
     return () => controller.abort();
   }, [priceHistoryKey]);
 
@@ -2803,11 +2836,24 @@ export default function Home() {
 
   const activePriceHistory = priceHistory && priceHistory.key === priceHistoryKey ? priceHistory : null;
   const priceHistoryPending = Boolean(priceHistoryKey) && !activePriceHistory;
+  // Every position valued at each trading day's close: the base of 收益分析 and 六項指標.
+  const dailyBook = useMemo(() => buildDailyBook(trades, {
+    endDate: today(),
+    usdJpyRate,
+    prices: activePriceHistory?.series ?? null,
+    splits: activePriceHistory?.splits ?? null,
+  }), [activePriceHistory, trades, usdJpyRate]);
+  const spyHistory: PriceBar[] | null = activePriceHistory?.series[benchmarkSymbol] ?? null;
+  const sixMetricsColors = useMemo(() => ({ line: lineColors.mine, drawdown: chartColors.mine ?? 'var(--wa-down)', spy: lineColors.spy }), [chartColors.mine, lineColors]);
+  // Returns leave out a tiny early book: they start the day capital at work first reached 10% of its peak,
+  // as 六項指標's % figures do.
+  const capitalStart = useMemo(() => capitalStartDate(dailyBook), [dailyBook]);
   const returnAnalytics = useMemo(() => timeWeightedReturnSeries(trades, rangeMode, {
     todayKey: today(),
     usdJpyRate,
-    prices: activePriceHistory?.series ?? null,
-  }), [activePriceHistory, rangeMode, trades, usdJpyRate]);
+    book: dailyBook,
+    from: capitalStart,
+  }), [capitalStart, dailyBook, rangeMode, trades, usdJpyRate]);
   const returnSeries = returnAnalytics.series;
   // Benchmarks are matched to chart buckets by key, so a server/browser date difference cannot shift them.
   const activeBenchmarks = useMemo(() => {
@@ -2837,12 +2883,13 @@ export default function Home() {
   const perfLabels = useMemo(() => returnSeries.slice(perfStart).map((item) => perfLabel(rangeMode, item)), [perfStart, rangeMode, returnSeries]);
   const perfSeries = useMemo(() => ({ mine: returnSeries.slice(perfStart).map((item) => item.value), spy: activeBenchmarks.SPY.slice(perfStart), boxx: activeBenchmarks.BOXX.slice(perfStart) }), [activeBenchmarks, perfStart, returnSeries]);
   const spyCumulative = perfSeries.spy.length ? perfSeries.spy.reduce((growth, value) => growth * (1 + value), 1) - 1 : null;
+  // The headline compounds the same periods the chart shows.
+  const perfCumulative = perfSeries.mine.reduce((growth, value) => growth * (1 + value), 1) - 1;
   const returnWindowLabel = perfStart > 0 ? `${perfLabels[0]} 起` : rangeMode === 'day' ? '近 60 個交易日' : rangeMode === 'week' ? '近 52 週' : rangeMode === 'month' ? '近 36 個月' : '近 6 年';
   // Metrics leave out the stretch before the first position.
   const riskMetrics = useMemo(() => {
-    const first = returnSeries.findIndex((item) => item.capital > 0);
-    if (first < 0) return null;
-    const rows = returnSeries.map((item, index) => ({ item, index })).filter(({ index }) => index >= first);
+    if (!returnSeries.some((item) => item.capital > 0)) return null;
+    const rows = returnSeries.map((item, index) => ({ item, index })).filter(({ index }) => index >= perfStart);
     if (rows.length < 2) return null;
     return computeRiskMetrics({
       labels: rows.map(({ item }) => perfLabel(rangeMode, item)),
@@ -2850,15 +2897,16 @@ export default function Home() {
       spy: rows.map(({ index }) => activeBenchmarks.SPY[index] ?? 0),
       boxx: rows.map(({ index }) => activeBenchmarks.BOXX[index] ?? 0),
     }, rangeMode);
-  }, [activeBenchmarks, rangeMode, returnSeries]);
+  }, [activeBenchmarks, perfStart, rangeMode, returnSeries]);
   // 月曆 needs every day since the first trade, so it is only computed while that view is open.
   const heatGrid = useMemo(() => {
     if (returnView !== 'heat') return [];
-    const from = trades.reduce((earliest, trade) => trade.openDate && /^\d{4}-\d{2}-\d{2}$/.test(trade.openDate) && (!earliest || trade.openDate < earliest) ? trade.openDate : earliest, '');
+    const firstTrade = trades.reduce((earliest, trade) => trade.openDate && /^\d{4}-\d{2}-\d{2}$/.test(trade.openDate) && (!earliest || trade.openDate < earliest) ? trade.openDate : earliest, '');
+    const from = capitalStart && capitalStart > firstTrade ? capitalStart : firstTrade;
     if (!from) return [];
-    const daily = dailyTimeWeightedReturns(trades, { startDate: from, endDate: today(), usdJpyRate, prices: activePriceHistory?.series ?? null });
+    const daily = dailyTimeWeightedReturns(trades, { startDate: from, endDate: today(), usdJpyRate, book: dailyBook });
     return monthlyGrid(daily.days);
-  }, [activePriceHistory, returnView, trades, usdJpyRate]);
+  }, [capitalStart, dailyBook, returnView, trades, usdJpyRate]);
   const rangeModeLabel = rangeMode === 'day' ? '日' : rangeMode === 'week' ? '週' : rangeMode === 'month' ? '月' : '年';
   const macroRangeModeLabel = macroRangeMode === 'day' ? '日' : macroRangeMode === 'week' ? '週' : macroRangeMode === 'month' ? '月' : '年';
   const macroTimeline = useMemo(() => rangeBuckets(macroRangeMode, today()), [macroRangeMode]);
@@ -3500,9 +3548,9 @@ export default function Home() {
             </div>
           </div>
           <div className="wafu-perf-summary">
-            <div className="wafu-perf-big"><strong className={returnAnalytics.cumulative >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(returnAnalytics.cumulative)}</strong><span>{returnWindowLabel}累積報酬</span></div>
+            <div className="wafu-perf-big"><strong className={perfCumulative >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(perfCumulative)}</strong><span>{returnWindowLabel}累積報酬</span></div>
             <dl>
-              <div><dt>相對 SPY</dt><dd className={spyCumulative === null ? '' : returnAnalytics.cumulative - spyCumulative >= 0 ? 'positive' : 'negative'}>{spyCumulative === null ? '—' : `${signedPrecisePercent(returnAnalytics.cumulative - spyCumulative)}`}</dd></div>
+              <div><dt>相對 SPY</dt><dd className={spyCumulative === null ? '' : perfCumulative - spyCumulative >= 0 ? 'positive' : 'negative'}>{spyCumulative === null ? '—' : `${signedPrecisePercent(perfCumulative - spyCumulative)}`}</dd></div>
               <div><dt>最新一{rangeModeLabel}</dt><dd className={(returnSeries.at(-1)?.value ?? 0) >= 0 ? 'positive' : 'negative'}>{signedPrecisePercent(returnSeries.at(-1)?.value ?? 0)}</dd></div>
               <div><dt>最大回撤</dt><dd className={riskMetrics && riskMetrics.mdd < 0 ? 'negative' : ''}>{riskMetrics ? signedPrecisePercent(riskMetrics.mdd) : '—'}{riskMetrics?.mddAt && <small>{riskMetrics.mddAt}</small>}</dd></div>
             </dl>
@@ -3514,13 +3562,17 @@ export default function Home() {
             <div className="wafu-perf-main">
               {returnView === 'heat' ? <MonthlyHeatmap grid={heatGrid} loading={priceHistoryPending} />
                 : <PerfChart mode={returnView} labels={perfLabels} series={perfSeries} visible={perfVisible} colors={lineColors} names={perfNames} ddColor={chartColors.mine ?? 'var(--wa-down)'} />}
-              <p className="return-method-note">時間加權報酬：每日損益 ÷ 當日占用資本；股票用 Yahoo 含息調整收盤，選擇權以進出場價線性估算{returnEstimateNote}</p>
+              <p className="return-method-note">時間加權報酬：每日損益 ÷ 當日占用資本（個股市值＋max（BOXX, 賣權擔保金））；股票用 Yahoo 收盤並還原分割、含股息，選擇權以內含價值＋時間價值逐日估值{returnEstimateNote}</p>
             </div>
             <aside className="wafu-perf-side" aria-label="績效與風險指標">
               {riskMetrics ? <MetricsGrid m={riskMetrics} mode={rangeMode} /> : <p className="wafu-perf-empty"><b>績效與風險指標</b>開始交易後就會計算報酬、波動與回撤。</p>}
             </aside>
           </div>
         </article>
+
+        <Suspense fallback={<article className="panel wafu-six-panel" id="six-metrics" aria-busy="true"><div className="panel-heading"><div><p className="eyebrow">Six metrics</p><h2>六項指標</h2></div></div></article>}>
+          <SixMetrics trades={trades} book={dailyBook} spy={spyHistory} cashFlows={cashFlows} usdJpyRate={usdJpyRate} todayKey={todayKey} loading={loading} pending={priceHistoryPending} colors={sixMetricsColors} onVisible={markSixMetricsSeen} />
+        </Suspense>
 
         <section className="content-grid wafu-pair-grid">
           <article className="panel allocation-panel" id="allocation">

@@ -9,10 +9,14 @@ type ChartResult = {
     adjclose?: Array<{ adjclose?: Array<number | null> }>;
     quote?: Array<{ close?: Array<number | null> }>;
   };
+  events?: { splits?: Record<string, { date?: number; numerator?: number; denominator?: number }> };
 };
 type ChartPayload = { chart?: { result?: ChartResult[] } };
 /** [local exchange date, close, adjusted close] */
 type PriceBar = [string, number, number];
+/** [first local date at the new basis, numerator ÷ denominator]; Yahoo books spin-offs as splits too. */
+type SplitEvent = [string, number];
+type History = { bars: PriceBar[]; splits: SplitEvent[] };
 type RequestBudget = { remaining: number };
 
 const symbolPattern = /^[A-Z0-9.=^-]{1,15}$/;
@@ -25,8 +29,8 @@ const historyFreshMs = 10 * 60_000;
 const yahooTimeoutMs = 5_000;
 const yahooHosts = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'] as const;
 
-const historyCache = new Map<string, { bars: PriceBar[]; fetchedAt: number }>();
-const historyRequests = new Map<string, Promise<PriceBar[]>>();
+const historyCache = new Map<string, { history: History; fetchedAt: number }>();
+const historyRequests = new Map<string, Promise<History>>();
 
 const roundPrice = (value: number) => Math.round(value * 1e6) / 1e6;
 
@@ -70,11 +74,23 @@ function toBars(result: ChartResult): PriceBar[] {
   return [...byDate.values()].sort((a, b) => a[0].localeCompare(b[0]));
 }
 
+/** Split (and spin-off) events with the local date they take effect: Yahoo's closes before it are scaled by 1 ÷ ratio. */
+function toSplits(result: ChartResult): SplitEvent[] {
+  const offset = Number.isFinite(result.meta?.gmtoffset) ? Number(result.meta?.gmtoffset) : 0;
+  return Object.values(result.events?.splits ?? {}).flatMap((event) => {
+    const numerator = Number(event?.numerator);
+    const denominator = Number(event?.denominator);
+    const timestamp = Number(event?.date);
+    if (!(numerator > 0) || !(denominator > 0) || !Number.isFinite(timestamp) || numerator === denominator) return [];
+    return [[new Date((timestamp + offset) * 1000).toISOString().slice(0, 10), Math.round((numerator / denominator) * 1e9) / 1e9] as SplitEvent];
+  }).sort((a, b) => a[0].localeCompare(b[0]));
+}
+
 async function fetchYahooHistory(host: string, symbol: string, period1: number, period2: number) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), yahooTimeoutMs);
   try {
-    const response = await fetch(`https://${host}/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d`, {
+    const response = await fetch(`https://${host}/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=1d&events=split`, {
       headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OptionFlow/1.0' },
       cache: 'no-store',
       signal: controller.signal,
@@ -83,7 +99,7 @@ async function fetchYahooHistory(host: string, symbol: string, period1: number, 
     const payload = await response.json() as ChartPayload;
     const result = payload.chart?.result?.[0];
     if (!result) throw new Error(`${symbol} history returned no data.`);
-    return toBars(result);
+    return { bars: toBars(result), splits: toSplits(result) };
   } finally {
     clearTimeout(timeout);
   }
@@ -92,7 +108,7 @@ async function fetchYahooHistory(host: string, symbol: string, period1: number, 
 async function fetchHistory(symbol: string, from: string, budget: RequestBudget) {
   const key = `${symbol}:${from}`;
   const cached = historyCache.get(key);
-  if (cached && Date.now() - cached.fetchedAt < historyFreshMs) return cached.bars;
+  if (cached && Date.now() - cached.fetchedAt < historyFreshMs) return cached.history;
   const pending = historyRequests.get(key);
   if (pending) return pending;
 
@@ -104,14 +120,14 @@ async function fetchHistory(symbol: string, from: string, budget: RequestBudget)
       if (budget.remaining <= 0) break;
       budget.remaining -= 1;
       try {
-        const bars = await fetchYahooHistory(host, symbol, period1, period2);
-        historyCache.set(key, { bars, fetchedAt: Date.now() });
-        return bars;
+        const history = await fetchYahooHistory(host, symbol, period1, period2);
+        historyCache.set(key, { history, fetchedAt: Date.now() });
+        return history;
       } catch (error) {
         lastError = error;
       }
     }
-    if (cached) return cached.bars;
+    if (cached) return cached.history;
     throw lastError instanceof Error ? lastError : new Error(`${symbol} history is unavailable.`);
   })().finally(() => historyRequests.delete(key));
 
@@ -147,17 +163,21 @@ export async function GET(request: Request) {
   const budget: RequestBudget = { remaining: maxYahooAttempts };
   const settled = await settleWithConcurrency(parsed.symbols, maxConcurrentSymbols, (symbol) => fetchHistory(symbol, from, budget));
   const series: Record<string, PriceBar[]> = {};
+  const splits: Record<string, SplitEvent[]> = {};
   const failed: string[] = [];
   settled.forEach((result, index) => {
     const symbol = parsed.symbols[index];
-    if (result.status === 'fulfilled' && result.value.length) series[symbol] = result.value;
-    else failed.push(symbol);
+    if (result.status === 'fulfilled' && result.value.bars.length) {
+      series[symbol] = result.value.bars;
+      if (result.value.splits.length) splits[symbol] = result.value.splits;
+    } else failed.push(symbol);
   });
   if (failed.length) console.warn(`Price history unavailable: ${failed.join(', ')}`);
   return NextResponse.json({
     from,
     series,
+    splits,
     failed,
-    source: 'Yahoo Finance daily close and adjusted close; dates are exchange-local trading days',
+    source: 'Yahoo Finance daily close and adjusted close, with split and spin-off events; dates are exchange-local trading days',
   }, { headers: { 'Cache-Control': 'private, max-age=600' } });
 }

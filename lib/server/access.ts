@@ -4,9 +4,28 @@ import { env } from 'cloudflare:workers';
  * Verifies the Cloudflare Access token on a request (RS256 JWT, signed with the team's keys).
  * Fails closed: without ACCESS_TEAM_DOMAIN and ACCESS_AUD configured, nothing is allowed.
  */
+/** Which check turned a token away. Nothing secret: AUD tags and the team domain appear in Access's own login URLs. */
+export type AccessFailure = {
+  reason: 'malformed' | 'algorithm' | 'certs-unavailable' | 'unknown-key' | 'bad-signature' | 'wrong-audience' | 'wrong-issuer' | 'expired' | 'not-yet-valid';
+  tokenAudience?: string[];
+  expectedAudience?: string[];
+  tokenIssuer?: string;
+  expectedIssuer?: string;
+};
 export type AccessResult =
   | { ok: true; email: string | null }
-  | { ok: false; status: 401 | 503; code: 'access-not-configured' | 'access-required' | 'access-invalid' };
+  | { ok: false; status: 401 | 503; code: 'access-not-configured' | 'access-required' | 'access-invalid'; failure?: AccessFailure };
+
+class AccessCheckError extends Error {
+  readonly failure: AccessFailure;
+  constructor(failure: AccessFailure) {
+    super(failure.reason);
+    this.failure = failure;
+  }
+}
+const fail = (failure: AccessFailure): never => { throw new AccessCheckError(failure); };
+/** The first 8 characters of an AUD tag: enough to tell two apart. */
+const tagPrefix = (value: unknown) => String(value ?? '').slice(0, 8);
 
 type Jwk = JsonWebKey & { kid?: string };
 type JwtHeader = { alg?: string; kid?: string };
@@ -60,24 +79,33 @@ export async function verifyAccess(request: Request, now = Date.now()): Promise<
   if (!token) return { ok: false, status: 401, code: 'access-required' };
   try {
     const [headerPart, payloadPart, signaturePart, extra] = token.split('.');
-    if (!headerPart || !payloadPart || !signaturePart || extra !== undefined) throw new Error('Malformed token.');
-    const header = base64UrlJson<JwtHeader>(headerPart);
-    if (header.alg !== 'RS256' || !header.kid) throw new Error('Unexpected token algorithm.');
+    if (!headerPart || !payloadPart || !signaturePart || extra !== undefined) fail({ reason: 'malformed' });
+    let header: JwtHeader = {};
+    try { header = base64UrlJson<JwtHeader>(headerPart); } catch { fail({ reason: 'malformed' }); }
+    if (header.alg !== 'RS256' || !header.kid) fail({ reason: 'algorithm' });
+    const kid = header.kid as string;
     // An unknown key id may mean Access rotated its keys; refetch once.
-    let key = (await signingKeys(teamUrl)).get(header.kid);
-    if (!key) key = (await signingKeys(teamUrl, true)).get(header.kid);
-    if (!key) throw new Error('Unknown signing key.');
+    let keys: Map<string, CryptoKey> = new Map();
+    try { keys = await signingKeys(teamUrl); } catch { fail({ reason: 'certs-unavailable', expectedIssuer: teamUrl }); }
+    let key = keys.get(kid);
+    if (!key) {
+      try { key = (await signingKeys(teamUrl, true)).get(kid); } catch { fail({ reason: 'certs-unavailable', expectedIssuer: teamUrl }); }
+    }
+    if (!key) fail({ reason: 'unknown-key', expectedIssuer: teamUrl });
     const signed = new TextEncoder().encode(`${headerPart}.${payloadPart}`);
-    if (!(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, base64UrlBytes(signaturePart), signed))) throw new Error('Bad signature.');
-    const payload = base64UrlJson<JwtPayload>(payloadPart);
+    if (!(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key as CryptoKey, base64UrlBytes(signaturePart), signed))) fail({ reason: 'bad-signature', expectedIssuer: teamUrl });
+    let payload: JwtPayload = {};
+    try { payload = base64UrlJson<JwtPayload>(payloadPart); } catch { fail({ reason: 'malformed' }); }
     const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
     const seconds = Math.floor(now / 1000);
-    if (!audiences.some((value) => typeof value === 'string' && allowedAudiences.includes(value))) throw new Error('Wrong audience.');
-    if (payload.iss !== teamUrl) throw new Error('Wrong issuer.');
-    if (typeof payload.exp !== 'number' || payload.exp <= seconds) throw new Error('Expired token.');
-    if (typeof payload.nbf === 'number' && payload.nbf > seconds + 60) throw new Error('Token not yet valid.');
+    if (!audiences.some((value) => typeof value === 'string' && allowedAudiences.includes(value))) {
+      fail({ reason: 'wrong-audience', tokenAudience: audiences.map(tagPrefix), expectedAudience: allowedAudiences.map(tagPrefix) });
+    }
+    if (payload.iss !== teamUrl) fail({ reason: 'wrong-issuer', tokenIssuer: String(payload.iss ?? ''), expectedIssuer: teamUrl });
+    if (typeof payload.exp !== 'number' || payload.exp <= seconds) fail({ reason: 'expired' });
+    if (typeof payload.nbf === 'number' && payload.nbf > seconds + 60) fail({ reason: 'not-yet-valid' });
     return { ok: true, email: typeof payload.email === 'string' ? payload.email : null };
-  } catch {
-    return { ok: false, status: 401, code: 'access-invalid' };
+  } catch (error) {
+    return { ok: false, status: 401, code: 'access-invalid', failure: error instanceof AccessCheckError ? error.failure : { reason: 'malformed' } };
   }
 }

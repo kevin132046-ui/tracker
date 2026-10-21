@@ -15,7 +15,7 @@ export async function dataGate(request: Request): Promise<Response | null> {
   const access = await verifyAccess(request);
   if (access.ok) return null;
   return Response.json(
-    { error: '需要先透過 Cloudflare Access 登入才能讀寫資料', code: access.code },
+    { error: '需要先透過 Cloudflare Access 登入才能讀寫資料', code: access.code, ...(access.failure ? { check: access.failure } : {}) },
     { status: access.status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } },
   );
 }

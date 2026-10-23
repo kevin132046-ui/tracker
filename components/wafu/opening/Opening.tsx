@@ -43,10 +43,12 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
   onDone: () => void;
   onReveal?: () => void;
 }) {
-  const { assets } = useWafuAssets();
+  const { assets, status } = useWafuAssets();
+  const prefs = useMediaPrefs();
+  // The character inside the ink: the same backdrop picture the page will show (one pick per visit).
+  const photo = prefs.photo ? visitPick(assets, 'bg', theme)?.url ?? null : null;
   const silhouette = visitPick(assets, 'sil', theme)?.url ?? null;
   const icon = visitPick(assets, 'icon', theme)?.url ?? null;
-  const prefs = useMediaPrefs();
   const callbacks = useRef({ onDone, onReveal });
   const readyRef = useRef(ready);
   const readyWaiters = useRef<Array<() => void>>([]);
@@ -57,14 +59,24 @@ export default function Opening({ theme, reduced, ready, onDone, onReveal }: {
     if (ready) readyWaiters.current.splice(0).forEach((resolve) => resolve());
   }, [ready]);
 
-  // The uploaded silhouette behind the shoji / on the noren.
+  // The backdrop picture, painted in ink inside the blots (桔梗) or the brush stroke (時雨).
+  // The boot script may already have painted last visit's choice for this one; it stays until the
+  // uploads are known, then follows them (or goes when there is no picture or 顯示背景圖 is off).
+  useEffect(() => {
+    const root = document.documentElement;
+    if (photo) { root.style.setProperty('--op-photo', `url("${photo}")`); root.dataset.opPhoto = '1'; }
+    else if (status === 'ready' || status === 'error' || !prefs.photo) { root.style.removeProperty('--op-photo'); delete root.dataset.opPhoto; }
+  }, [photo, status, prefs.photo]);
+  useEffect(() => () => { const root = document.documentElement; root.style.removeProperty('--op-photo'); delete root.dataset.opPhoto; }, []);
+
+  // The uploaded silhouette, in the ink when there is no picture.
   useEffect(() => {
     const root = document.documentElement;
     if (silhouette) { root.style.setProperty('--op-sil', `url("${silhouette}")`); root.dataset.opSil = '1'; }
     return () => { root.style.removeProperty('--op-sil'); delete root.dataset.opSil; };
   }, [silhouette]);
 
-  // The uploaded emblem in place of the drawn crest and halo.
+  // The uploaded emblem in place of the seal (桔梗) or the crest inside the ensō (時雨).
   useEffect(() => {
     const root = document.documentElement;
     if (icon) { root.style.setProperty('--op-icon', `url("${icon}")`); root.dataset.opIcon = '1'; }

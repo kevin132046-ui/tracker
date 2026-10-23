@@ -1,298 +1,164 @@
-/* 和風 opening, rebuilt (plan A): the markup ships with the page (StaticOpening, in the layout) and
-   plays from the first frame. Every motion is a transform or opacity change, so the compositor runs
-   it even while the page underneath is still loading. The controller only sets, on <html>:
+/* 和風 opening (水墨): 桔梗 · 墨染 and 時雨 · 一筆. The markup ships with the page (StaticOpening, in the
+   layout) and plays from the first frame. Every motion is a transform or opacity change; the ink shapes
+   are static mask images that are only scaled, so the compositor runs it even while the page underneath
+   is still loading. The controller sets, on <html>:
      data-op        loading (default) | form | stamp | opening | fading
      data-op-step   the finished steps as a list, e.g. "1 2 3"
-     --op-p         0..1 for the progress bar */
+     --op-p         0..1 for the progress line
+     --op-photo / data-op-photo   the backdrop picture (the character), shown inside the ink
+     --op-sil / data-op-sil       the uploaded silhouette, used when there is no picture
+     --op-icon / data-op-icon     the uploaded emblem, in place of the seal (桔梗) or the crest in the ensō (時雨) */
 .op { display: none; position: fixed; inset: 0; z-index: 1000; overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; font-family: var(--wa-f-body); contain: strict; }
 :root[data-wafu-intro] .op { display: block; }
-.op-theme { position: absolute; inset: 0; }
+.op-theme { position: absolute; inset: 0; transition: opacity .9s ease .25s; }
 :root[data-wafu='kikyo'] .op-shigure, :root[data-wafu='shigure'] .op-kikyo { display: none; }
 .op-bg { position: absolute; inset: 0; background: var(--wa-bg); transition: opacity .9s ease; }
-:root[data-wafu='shigure'] .op-bg { background: radial-gradient(80% 60% at 50% 0%, #17414b, #07141a 70%); }
-:root[data-op='opening'] .op-bg, :root[data-op='fading'] .op-bg { opacity: 0; }
+/* Leaving: the ink floods the screen and lifts away over the page, which is already there underneath. */
+:root:is([data-op='opening'], [data-op='fading']) .op-bg, :root:is([data-op='opening'], [data-op='fading']) .op-theme { opacity: 0; }
 :root[data-op='fading'] .op { opacity: 0; transition: opacity .28s ease; pointer-events: none; }
 
-/* A step's elements switch on through --on (0/1); each element turns it into opacity / scale. */
-:root[data-op-step~='1'] .op [data-at='1'], :root[data-op-step~='2'] .op [data-at='2'], :root[data-op-step~='3'] .op [data-at='3'],
-:root[data-op-step~='4'] .op [data-at='4'], :root[data-op-step~='5'] .op [data-at='5'], .op [data-at='0'] { --on: 1; }
-
-/* 桔梗: shoji doors */
-.op-kikyo { --o-ink: #17130f; --o-fill: rgba(125, 105, 210, 0.28); }
-.doors { position: absolute; inset: 0; z-index: 1; }
-.door {
-  position: absolute; top: 0; bottom: 0; width: 50.2%; background: #1c1712; padding: 12px;
-  transition: transform 1.1s cubic-bezier(0.77, 0, 0.18, 1);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04); overflow: hidden;
+/* ---- What shows inside the ink: the picture, else the silhouette, else the ink alone ---- */
+.ink-hold > i, .ink-unbloom > i { position: absolute; inset: 0; display: block; }
+.ink-hold > .ink-photo, .ink-unbloom > .ink-photo { inset: -4%; background: var(--op-photo, none) var(--photo-pos, 40% 28%) / cover no-repeat; filter: var(--ink-filter); opacity: 0; transition: opacity .8s ease; }
+:root[data-op-photo] .ink-photo { opacity: 1; }
+.ink-sil { visibility: hidden; }
+:root[data-op-sil]:not([data-op-photo]) .ink-hold > .ink-sil, :root[data-op-sil]:not([data-op-photo]) .ink-unbloom > .ink-sil {
+  visibility: visible; inset: 18% 12% 0 12%; background: var(--sil-ink);
+  mask: var(--op-sil) center bottom / contain no-repeat; -webkit-mask: var(--op-sil) center bottom / contain no-repeat;
 }
-.door-l { left: 0; }
-.door-r { right: 0; }
-:root[data-op='opening'] .door-l { transform: translateX(-101%); }
-:root[data-op='opening'] .door-r { transform: translateX(101%); }
-.shoji-paper {
-  position: absolute; inset: 12px;
-  background-color: #2b2823;
-  background-image:
-    linear-gradient(90deg, #1c1712 0 3px, transparent 3px),
-    linear-gradient(0deg, #1c1712 0 3px, transparent 3px),
-    radial-gradient(ellipse 120% 70% at var(--glow-x, 100%) 46%, rgba(244, 236, 216, 0.72), rgba(244, 236, 216, 0.28) 55%, rgba(244, 236, 216, 0.08));
-  background-size: 25% 100%, 100% 16.66%, 100% 100%;
-  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.45);
+.ink-ground { background: var(--ink-ground); }
+
+/* ---- 桔梗 · 墨染 ---- */
+.op-kikyo { --o-ink: #2b241c; --ink-ground: #1d1915; --sil-ink: #6f655a; --photo-pos: 40% 28%; --ink-filter: grayscale(1) sepia(.18) contrast(1.08) brightness(.86); }
+.ink-paper { position: absolute; inset: 0; background-color: #ebe2cf; background-size: 220px 220px; }
+.ink-paper::after { content: ""; position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 42%, transparent 55%, rgb(120 96 60 / .2)); }
+.ink-drop { position: absolute; left: 36vw; top: 40vh; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #1a1612; opacity: 0; animation: ink-drop .55s cubic-bezier(.5, 0, .9, .6) .05s both; }
+@keyframes ink-drop { 0% { transform: translateY(-40vh) scale(.6, 1.4); opacity: 0; } 12% { opacity: 1; } 90% { transform: translateY(0) scale(.8, 1.2); opacity: 1; } 100% { transform: translateY(0) scale(1.7, .4); opacity: 0; } }
+.ink-blot { --s: .02; position: absolute; left: var(--cx); top: var(--cy); width: 170vmax; height: 170vmax; margin: -85vmax 0 0 -85vmax; }
+.ink-grow { position: absolute; inset: 0; transform: scale(var(--s)); mask-size: 100% 100%; -webkit-mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-repeat: no-repeat; will-change: transform; transition: transform 1.2s cubic-bezier(.2, .7, .2, 1); }
+.ink-hold { position: absolute; left: calc(85vmax - var(--cx)); top: calc(85vmax - var(--cy)); width: 100vw; height: 100vh; transform-origin: var(--cx) var(--cy); transform: scale(calc(1 / var(--s))); will-change: transform; transition: transform 1.2s cubic-bezier(.2, .7, .2, 1); }
+.ink-unbloom { position: absolute; inset: 0; transform-origin: var(--cx) var(--cy); }
+/* The first blot opens where the drop lands, before the first step is done. */
+.ink-blot-a { --s: .2; animation: ink-bloom 1.3s cubic-bezier(.2, .7, .2, 1) .5s backwards; }
+.ink-blot-a .ink-unbloom { animation: ink-unbloom 1.3s cubic-bezier(.2, .7, .2, 1) .5s backwards; }
+@keyframes ink-bloom { from { transform: scale(.08); opacity: 0; } 6% { opacity: 1; } }
+@keyframes ink-unbloom { from { transform: scale(12.5); } }
+.ink-blot-b, .ink-blot-c { opacity: 0; transition: opacity .5s ease; }
+:root[data-op-step~='1'] .ink-blot-a { --s: .26; }
+:root[data-op-step~='2'] .ink-blot-a { --s: .3; }
+:root[data-op-step~='2'] .ink-blot-b { --s: .11; opacity: 1; }
+:root[data-op-step~='3'] .ink-blot-a { --s: .34; }
+:root[data-op-step~='3'] .ink-blot-b { --s: .15; }
+:root[data-op-step~='3'] .ink-blot-c { --s: .1; opacity: 1; }
+:root[data-op-step~='4'] .ink-blot-a { --s: .38; }
+:root[data-op-step~='4'] .ink-blot-b { --s: .19; }
+:root[data-op-step~='4'] .ink-blot-c { --s: .14; }
+:root[data-op-step~='5'] .ink-blot-a { --s: .42; }
+:root[data-op-step~='5'] .ink-blot-b { --s: .22; }
+:root[data-op-step~='5'] .ink-blot-c { --s: .17; }
+:root:is([data-op='form'], [data-op='stamp']) .ink-blot-a { --s: .52; }
+:root:is([data-op='form'], [data-op='stamp']) .ink-blot-b { --s: .28; }
+:root:is([data-op='form'], [data-op='stamp']) .ink-blot-c { --s: .24; }
+:root:is([data-op='opening'], [data-op='fading']) .ink-blot { --s: 1.3; opacity: 1; }
+:root:is([data-op='opening'], [data-op='fading']) :is(.ink-grow, .ink-hold) { transition-duration: 1.1s; }
+
+/* The theme's name and its seal, down the right side. */
+.ink-title { position: absolute; z-index: 3; writing-mode: vertical-rl; font-family: var(--wa-f-title); line-height: 1; letter-spacing: .2em; opacity: 0; transform: translateY(-12px); transition: opacity 1s ease, transform 1.2s cubic-bezier(.2, .7, .2, 1); pointer-events: none; }
+.op-kikyo .ink-title { right: calc(3.5vw + 64px + env(safe-area-inset-right, 0px)); top: 14vh; color: #2b241c; font-weight: 700; font-size: clamp(30px, 4.2vw, 54px); }
+:root[data-op-step~='1'] .ink-title { opacity: .92; transform: none; }
+.ink-seal { position: absolute; z-index: 3; display: grid; place-items: center; width: clamp(38px, 4vw, 52px); aspect-ratio: 1; border-radius: 5px; opacity: 0; transform: scale(1.5); pointer-events: none; }
+.ink-seal svg { width: 72%; height: 72%; overflow: visible; }
+.ink-seal path { fill: none; stroke-width: .09; stroke-linejoin: round; }
+.op-kikyo .ink-seal { right: calc(3.5vw + 64px + env(safe-area-inset-right, 0px)); top: calc(14vh + clamp(30px, 4.2vw, 54px) * 2.6 + 22px); background: #b5382c; }
+.op-kikyo .ink-seal path { stroke: #efe6d2; }
+:root:is([data-op='stamp'], [data-op='opening'], [data-op='fading']) .ink-seal { opacity: 1; transform: scale(1); transition: transform .32s cubic-bezier(.3, 1.6, .5, 1), opacity .12s ease; }
+.ink-icon { display: none; }
+:root[data-op-icon] .op-kikyo .ink-seal { display: none; }
+:root[data-op-icon] .op-kikyo .ink-icon {
+  display: block; position: absolute; z-index: 3; right: calc(3.5vw + 52px + env(safe-area-inset-right, 0px)); top: calc(14vh + clamp(30px, 4.2vw, 54px) * 2.6 + 18px);
+  width: clamp(56px, 7vw, 84px); aspect-ratio: 1; background: var(--op-icon) center / contain no-repeat; opacity: 0; transform: scale(1.3);
 }
-.door-l .shoji-paper { right: 0; box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.45), inset -2px 0 0 #120e0b; }
-.door-r .shoji-paper { --glow-x: 0%; left: 0; box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.45), inset 2px 0 0 #120e0b; }
-/* 丸窓: a round window across both doors, split in two as they slide */
-.maru {
-  position: absolute; top: 44%; width: var(--maru); height: var(--maru); margin-top: calc(var(--maru) / -2); border-radius: 50%;
-  --maru: min(66vmin, 400px);
-  background: radial-gradient(circle, rgba(250, 244, 228, 0.95) 0%, rgba(236, 228, 208, 0.9) 55%, rgba(214, 204, 182, 0.85) 100%);
-  box-shadow: 0 0 0 7px #1c1712, 0 0 0 9px rgba(201, 164, 92, 0.35), inset 0 0 40px rgba(120, 100, 70, 0.25);
-}
-.maru::after { content: ""; position: absolute; inset: 0; border-radius: 50%; opacity: 0.4; background-image: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.04) 0 1px, transparent 1px 4px); }
-.door-l .maru { right: calc(var(--maru) / -2); }
-.door-r .maru { left: calc(var(--maru) / -2); }
-.shoji-paper::after { content: ""; position: absolute; inset: 0; opacity: 0.35; background-image: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 4px), repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 5px); }
-.hikite { position: absolute; top: 74%; width: 26px; height: 26px; margin-top: -13px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #3a3128, #120e0b 70%); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8), 0 0 0 3px #1c1712, 0 0 0 4px rgba(201, 164, 92, 0.5); }
-.door-l .hikite { right: 40px; }
-.door-r .hikite { left: 40px; }
-.ayatori { width: 190px; height: 32px; overflow: visible; }
-.ayatori-ghost { stroke: rgba(23, 19, 15, 0.18); stroke-width: 1; stroke-dasharray: 2 4; fill: none; }
+:root[data-op-icon]:is([data-op='stamp'], [data-op='opening'], [data-op='fading']) .op-kikyo .ink-icon { opacity: 1; transform: scale(1); transition: transform .32s cubic-bezier(.3, 1.6, .5, 1), opacity .12s ease; }
 
-/* 時雨: long noren */
-.op-shigure { --o-ink: #eefcfb; --o-fill: rgba(98, 212, 210, 0.18); }
+/* ---- 時雨 · 一筆 ---- */
+.op-shigure { --o-ink: #cfe0df; --ink-ground: #10262c; --sil-ink: #2c5560; --photo-pos: 46% 44%; --ink-filter: grayscale(1) sepia(.4) hue-rotate(150deg) saturate(.55) brightness(.68) contrast(1.14); }
+.ink-night { position: absolute; inset: 0; background: #0b181d; }
+.ink-stroke { position: absolute; inset: 0; mask-size: 100% 100%; -webkit-mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-repeat: no-repeat; transform-origin: 50% 56%; will-change: transform; transition: transform 1.1s cubic-bezier(.6, .05, .25, 1); }
+.ink-stroke > .ink-hold { left: 0; top: 0; transform-origin: 50% 56%; transform: none; transition: transform 1.1s cubic-bezier(.6, .05, .25, 1); }
+:root:is([data-op='opening'], [data-op='fading']) .ink-stroke { transform: scale(5); }
+:root:is([data-op='opening'], [data-op='fading']) .ink-stroke > .ink-hold { transform: scale(.2); }
+/* The stroke is drawn by a night-coloured sheet sliding off it along the stroke, a step at a time. */
+.stroke-cover { --wipe: 40vw; position: absolute; left: -50vw; top: -50vh; width: 200vw; height: 200vh; background: linear-gradient(90deg, rgb(11 24 29 / 0) 0, #0b181d 9vw); transform: rotate(-24deg) translateX(var(--wipe)); will-change: transform; transition: transform 1.2s cubic-bezier(.3, .6, .3, 1); }
+:root[data-op-step~='1'] .stroke-cover { --wipe: 62vw; }
+:root[data-op-step~='2'] .stroke-cover { --wipe: 80vw; }
+:root[data-op-step~='3'] .stroke-cover { --wipe: 98vw; }
+:root[data-op-step~='4'] .stroke-cover { --wipe: 116vw; }
+:root[data-op-step~='5'] .stroke-cover { --wipe: 132vw; }
+:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .stroke-cover { --wipe: 160vw; }
+.ink-lantern { position: absolute; right: -12vmax; bottom: -18vmax; width: 62vmax; height: 62vmax; border-radius: 50%; background: radial-gradient(circle, rgb(240 194 75 / .15), rgb(240 194 75 / 0) 62%); pointer-events: none; }
+.ink-rain { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.ink-rain i { position: absolute; top: -10vh; width: 1px; height: 7vh; background: linear-gradient(rgb(207 224 223 / 0), rgb(207 224 223 / .42)); transform: rotate(14deg); animation: ink-rain 1.3s linear infinite; }
+.ink-rain i:nth-child(1) { left: 6%; animation-delay: -.2s; } .ink-rain i:nth-child(2) { left: 13%; animation-delay: -.9s; } .ink-rain i:nth-child(3) { left: 20%; animation-delay: -.5s; }
+.ink-rain i:nth-child(4) { left: 27%; animation-delay: -1.1s; } .ink-rain i:nth-child(5) { left: 35%; animation-delay: -.3s; } .ink-rain i:nth-child(6) { left: 42%; animation-delay: -.8s; }
+.ink-rain i:nth-child(7) { left: 50%; animation-delay: -.1s; } .ink-rain i:nth-child(8) { left: 57%; animation-delay: -1.2s; } .ink-rain i:nth-child(9) { left: 64%; animation-delay: -.6s; }
+.ink-rain i:nth-child(10) { left: 72%; animation-delay: -1s; } .ink-rain i:nth-child(11) { left: 79%; animation-delay: -.4s; } .ink-rain i:nth-child(12) { left: 86%; animation-delay: -.7s; }
+.ink-rain i:nth-child(13) { left: 93%; animation-delay: -1.25s; } .ink-rain i:nth-child(14) { left: 99%; animation-delay: -.15s; }
+@keyframes ink-rain { from { transform: translate(0, 0) rotate(14deg); } to { transform: translate(-28vh, 120vh) rotate(14deg); } }
+.op-shigure .ink-title { left: calc(4vw + env(safe-area-inset-left, 0px)); top: 9vh; color: #cfe0df; font-size: clamp(32px, 4.4vw, 58px); }
+/* An ensō closes round the 雪輪 (or the uploaded emblem). */
+.enso { position: absolute; z-index: 3; right: calc(9vw + env(safe-area-inset-right, 0px)); top: 13vh; width: clamp(110px, 15vmin, 170px); aspect-ratio: 1; pointer-events: none; }
+.enso svg { width: 100%; height: 100%; overflow: visible; }
+.enso-ring { fill: none; stroke: #cfe0df; stroke-width: .09; stroke-linecap: round; stroke-dasharray: 7; stroke-dashoffset: 7; transition: stroke-dashoffset 1.1s cubic-bezier(.5, .1, .3, 1); }
+:root[data-op-step~='4'] .enso-ring { stroke-dashoffset: 0; }
+.enso-crest { opacity: 0; transition: opacity .9s ease; }
+.enso-crest path { fill: none; stroke: #cfe0df; stroke-width: .08; stroke-linejoin: round; stroke-linecap: round; }
+.enso-crest .enso-detail { stroke: #9fe3e0; stroke-width: .055; }
+:root[data-op-step~='5'] .enso-crest { opacity: 1; }
+:root[data-op-icon] .enso-crest { display: none; }
+:root[data-op-icon] .enso .ink-icon { display: block; position: absolute; inset: 20%; background: var(--op-icon) center / contain no-repeat; opacity: 0; transition: opacity .9s ease; }
+:root[data-op-icon][data-op-step~='5'] .enso .ink-icon { opacity: 1; }
+.op-shigure .ink-seal { right: calc(9vw + env(safe-area-inset-right, 0px)); top: calc(13vh + clamp(110px, 15vmin, 170px) + 12px); width: clamp(30px, 3vw, 40px); background: #c4594b; }
+.op-shigure .ink-seal path { stroke: #eef7f6; stroke-width: .1; }
 
-.noren { position: absolute; inset: 0; z-index: 1; }
-.noren-rod { position: absolute; top: 0; left: 0; right: 0; height: 16px; background: linear-gradient(180deg, #5a4330, #3a2a1d); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5); z-index: 2; transition: transform 0.8s ease 0.2s; }
-:root[data-op='opening'] .noren-rod { transform: translateY(-120%); }
-.noren-strip {
-  position: absolute; top: 8px; height: 82%; width: calc(33.333% - 6px); overflow: hidden;
-  background: linear-gradient(180deg, #123a45, #0e2e37 70%, #0b252d);
-  box-shadow: inset 0 -2px 0 rgba(238, 252, 251, 0.12), 0 12px 30px rgba(0, 0, 0, 0.45);
-  border-radius: 0 0 4px 4px; transform-origin: top center;
-  animation: op-sway 3.2s ease-in-out infinite alternate;
-  transition: transform 1s cubic-bezier(0.7, 0, 0.2, 1), opacity 1s ease;
-}
-.noren-0 { left: 0; transform-origin: top left; animation-delay: -0.6s; }
-.noren-1 { left: calc(33.333% + 3px); animation-delay: -1.4s; }
-.noren-2 { right: 0; transform-origin: top right; }
-@keyframes op-sway { from { transform: skewX(-1.2deg); } to { transform: skewX(1.2deg); } }
-:root[data-op='opening'] .noren-strip { animation: none; }
-:root[data-op='opening'] .noren-0 { transform: translateX(-108%) rotate(-7deg); }
-:root[data-op='opening'] .noren-1 { transform: translateY(-104%); }
-:root[data-op='opening'] .noren-2 { transform: translateX(108%) rotate(7deg); }
-.noren-print { position: absolute; inset: 0; opacity: 0.12; background-size: 120px 120px; }
-.noren-strip::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px); }
-/* One box per character (not writing-mode), so fonts without vertical metrics still stack them. */
-.noren-text { position: absolute; left: 16%; bottom: 10%; display: flex; flex-direction: column; gap: 0.2em; font-family: "Yuji Syuku", serif; font-size: clamp(28px, 5vw, 54px); line-height: 1; color: rgba(238, 252, 251, 0.85); }
-.noren-text i { font-style: normal; }
-.steam { position: absolute; left: 0; right: 0; bottom: 0; height: 30%; z-index: 2; pointer-events: none; }
-.steam i:nth-child(1) { left: 8%; animation-delay: 0s; }
-.steam i:nth-child(2) { left: 32%; animation-delay: 1.3s; }
-.steam i:nth-child(3) { left: 56%; animation-delay: 2.4s; }
-.steam i:nth-child(4) { left: 76%; animation-delay: 0.7s; }
-@keyframes op-steam { 0% { transform: translateY(20%) scale(0.7); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-120%) scale(1.3); opacity: 0; } }
-:root[data-op='opening'] .steam { opacity: 0; transition: opacity 0.6s; }
-.door, .noren-strip, .noren-rod { will-change: transform; }
-.door { contain: paint; }
-.steam i { position: absolute; bottom: -10%; width: 22vw; height: 22vw; border-radius: 50%; background: radial-gradient(circle, rgba(230, 250, 250, 0.16), rgba(230, 250, 250, 0) 65%); animation: op-steam 5s ease-in infinite; }
-/* The uploaded silhouette (set by the controller once the asset is known). */
-.kage, .noren-figure { display: none; }
-:root[data-op-sil] .kage, :root[data-op-sil] .noren-figure { display: block; mask-image: var(--op-sil); -webkit-mask-image: var(--op-sil); mask-size: contain; -webkit-mask-size: contain; mask-repeat: no-repeat; -webkit-mask-repeat: no-repeat; mask-position: center bottom; -webkit-mask-position: center bottom; }
-:root[data-op-sil] .kage { position: absolute; left: 12%; right: 8%; top: 20%; bottom: 0; background: rgba(28, 23, 18, 0.55); opacity: calc(.35 + .5 * var(--op-p, 0)); transition: opacity 1s ease; }
-:root[data-op-sil] .noren-figure { position: absolute; inset: 18% 6% 0 6%; background: rgba(238, 252, 251, 0.28); }
-
-/* ---- Centre: crest, brush, halo ---- */
-.op-center { --crest: min(28vmin, 168px); position: absolute; left: 50%; top: 44%; translate: -50% calc(var(--crest) / -2); z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 14px; transition: opacity .5s ease, scale .7s ease; }
-:root[data-op='opening'] .op-center { opacity: 0; scale: 1.08; }
-.op-crest { position: relative; width: var(--crest); aspect-ratio: 1; }
-.op-crest > svg { position: relative; z-index: 2; width: 100%; height: 100%; overflow: visible; transition: opacity .8s ease .35s; }
-.op-kikyo .op-crest > svg { stroke: #17130f; }
-.op-shigure .op-crest > svg { stroke: #eefcfb; }
-/* The crest is laid down layer by layer (fade + settle), the brush point circling with it. */
-.op-crest-a, .op-crest-b, .op-crest-c, .op-crest-dot { opacity: 0; transform-box: fill-box; transform-origin: center; scale: .9; animation: op-lay .7s cubic-bezier(.2, .8, .2, 1) forwards; }
-.op-crest-a { animation-delay: .15s; }
-.op-crest-b { animation-delay: .7s; }
-.op-crest-c { animation-delay: 1s; }
-.op-crest-dot { animation-delay: 1.2s; fill: #17130f; stroke: none; }
-@keyframes op-lay { to { opacity: 1; scale: 1; } }
-.op-crest-fill { opacity: 0; transition: opacity .5s ease; }
-.op-kikyo .op-crest-fill { fill: rgba(125, 105, 210, 0.28); stroke: none; }
-.op-shigure .op-crest-fill { fill: rgba(98, 212, 210, 0.18); stroke: none; }
-:root[data-op='stamp'] .op-crest-fill, :root[data-op='opening'] .op-crest-fill { opacity: 1; }
-.op-brush { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0; animation: op-brush 1.5s cubic-bezier(.45, .05, .35, 1) .1s forwards; }
-.op-brush::after { content: ""; position: absolute; left: 50%; top: -3%; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: #fff6df; box-shadow: 0 0 12px 4px rgba(255, 214, 140, .7); }
-.op-shigure .op-brush::after { background: #eafffe; box-shadow: 0 0 12px 4px rgba(98, 212, 210, .75); }
-@keyframes op-brush { 0% { opacity: 0; rotate: -30deg; } 12% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; rotate: 330deg; } }
-/* The emblem (花の輪, WreathEmblem): hidden while loading. At 'form' the drawn crest melts into its centre,
-   the gold ring draws itself, the small crests open one by one, the veins are traced in gold, and the ring
-   keeps turning slowly; on 桔梗 a few petals drift down. */
-.op-halo, .op-ripple { position: absolute; left: 50%; top: 50%; width: calc(var(--crest) * 2.2); aspect-ratio: 1; translate: -50% -50%; pointer-events: none; }
-.op-halo { z-index: 1; opacity: 0; transition: opacity .5s ease; }
-.op-halo svg { width: 100%; height: 100%; overflow: visible; }
-:root[data-op='form'] .op-halo, :root[data-op='stamp'] .op-halo { opacity: 1; }
-:root[data-op='form'] .op-crest > svg, :root[data-op='stamp'] .op-crest > svg { opacity: 0; }
-.op-wreath { --ow-ring: #b8923e; --ow-dot: #c9a24a; --ow-ink: #1d1712; --ow-fill: #6a58b0; --ow-gold: #e0bb62; }
-.op-wreath-shigure { --ow-ring: #9fe3e0; --ow-dot: #bff1ee; --ow-ink: #eefcfb; --ow-fill: rgb(98 212 210 / .22); --ow-gold: #eafffe; }
-.ow-dots { fill: none; stroke: var(--ow-dot); stroke-width: .026; stroke-linecap: round; stroke-dasharray: .0001 .072; opacity: 0; transform-box: view-box; transform-origin: 50% 50%; }
-.ow-orbit { transform-box: view-box; transform-origin: 50% 50%; }
-.ow-ring { fill: none; stroke: var(--ow-ring); stroke-width: .016; stroke-dasharray: 8; stroke-dashoffset: 8; }
-.ow-bloom { transform-box: fill-box; transform-origin: center; opacity: 0; scale: 0; }
-.ow-mini { fill: var(--ow-fill); stroke: var(--ow-ink); stroke-width: .12; stroke-linejoin: round; }
-.op-wreath-shigure .ow-mini { fill: none; stroke-width: .16; stroke-linecap: round; }
-.ow-core { opacity: 0; }
-.ow-crest { fill: var(--ow-fill); stroke: var(--ow-ink); stroke-width: .05; stroke-linejoin: round; }
-.ow-detail { fill: none; stroke: var(--ow-gold); stroke-width: .03; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
-.ow-heart { fill: var(--ow-gold); transform-box: fill-box; transform-origin: center; opacity: 0; scale: 0; }
-.ow-petal { fill: var(--ow-fill); transform-box: fill-box; transform-origin: center; scale: var(--s); opacity: 0; }
-/* One selector for 'form' and every later stage, so no animation restarts when the stage changes. */
-:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-core { animation: ow-show .6s ease .15s both; }
-:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-ring { animation: ow-ring .9s cubic-bezier(.45, .05, .35, 1) .1s both; }
-:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-orbit { animation: ow-turn 40s linear infinite; }
-:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-dots { animation: ow-dots .8s ease .4s both, ow-turn 60s linear infinite reverse; }
-:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-bloom { animation: ow-pop .5s cubic-bezier(.3, 1.5, .4, 1) calc(.35s + var(--i) * .12s) both; }
-:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-detail { animation: ow-draw .7s ease-out .7s both; }
-:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-heart { animation: ow-pop .4s cubic-bezier(.3, 1.5, .4, 1) 1.2s both; }
-:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-petal { animation: ow-fall 4.4s ease-in-out calc(1.3s + var(--i) * .6s) both; }
-@keyframes ow-show { from { opacity: 0; } to { opacity: 1; } }
-@keyframes ow-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
-/* The ring is about 7.4 units round; its dash runs from 8 (hidden) to 0 (whole). */
-@keyframes ow-ring { from { stroke-dashoffset: 8; } to { stroke-dashoffset: 0; } }
-@keyframes ow-dots { from { opacity: 0; } to { opacity: .8; } }
-@keyframes ow-turn { to { rotate: 360deg; } }
-@keyframes ow-pop { 0% { opacity: 0; scale: 0; } 70% { opacity: 1; scale: 1.15; } 100% { opacity: 1; scale: 1; } }
-@keyframes ow-fall { 0% { opacity: 0; translate: 0 0; rotate: 0deg; } 12% { opacity: .85; } 85% { opacity: .85; } 100% { opacity: 0; translate: calc((var(--i) - 1) * .2px) 1.1px; rotate: calc(160deg - var(--i) * 130deg); } }
-.op-ripple { z-index: 1; border-radius: 50%; border: 1.5px solid rgb(201 162 74 / .55); opacity: 0; }
-.op-shigure .op-ripple { border-color: rgb(191 241 238 / .55); }
-:root[data-op='stamp'] .op-ripple { animation: op-ripple .9s ease-out forwards; }
-@keyframes op-ripple { from { opacity: .8; scale: 1; } to { opacity: 0; scale: 1.55; } }
-:root[data-op='stamp'] .op-crest { animation: op-press .55s ease-in-out; }
-@keyframes op-press { 35% { scale: .95; } 70% { scale: 1.02; } }
-.op-shigure .op-wreath { filter: drop-shadow(0 0 8px rgb(79 200 245 / .45)); }
-
-/* ---- Ink washes: laid down one per step, drawn to the centre as the halo forms ---- */
-.op-washes { position: absolute; inset: 0; z-index: 2; pointer-events: none; transition: scale 1.4s cubic-bezier(.3, .7, .2, 1), opacity 1s ease; transform-origin: 50% 44%; }
-.op-washes i { position: absolute; translate: -50% -50%; opacity: calc(var(--on, 0) * .9); scale: calc(.3 + .7 * var(--on, 0)); transition: opacity 1.4s ease, scale 2.2s cubic-bezier(.2, .8, .2, 1); }
-.op-washes b { display: block; width: 100%; height: 100%; border-radius: 46% 54% 58% 42% / 52% 40% 60% 48%; animation: op-drift 9s ease-in-out infinite alternate; }
-.op-kikyo .op-washes b { background: radial-gradient(closest-side, rgba(24, 20, 16, .34), rgba(24, 20, 16, .16) 55%, rgba(24, 20, 16, 0)); }
-.op-shigure .op-washes b { background: radial-gradient(closest-side, rgba(98, 212, 210, .2), rgba(98, 212, 210, .08) 55%, rgba(98, 212, 210, 0)); }
-.op-washes i:nth-child(2) b { animation-delay: -3s; }
-.op-washes i:nth-child(3) b { animation-delay: -5s; }
-.op-washes i:nth-child(4) b { animation-delay: -7s; }
-@keyframes op-drift { to { translate: 3% -4%; rotate: 8deg; scale: 1.06; } }
-:root[data-op='form'] .op-washes, :root[data-op='stamp'] .op-washes { scale: .55; opacity: .7; }
-:root[data-op='stamp'] .op-washes, :root[data-op='opening'] .op-washes { opacity: 0; }
-/* Only 桔梗's washes sit on the paper window: keep them inside the round window's area. */
-.op-kikyo .op-washes { clip-path: circle(min(33vmin, 200px) at 50% 44%); }
-
-/* ---- Motes: light dust (桔梗) / snow (時雨) ---- */
-.op-motes { position: absolute; inset: 0; z-index: 3; pointer-events: none; transition: opacity .6s; }
-.op-motes i { position: absolute; bottom: -4%; width: calc(5px * var(--s, 1)); height: calc(5px * var(--s, 1)); border-radius: 50%; animation: op-rise 10s linear infinite; }
-.op-kikyo .op-motes i { background: radial-gradient(circle, rgba(64, 150, 235, .8), rgba(64, 150, 235, 0) 70%); }
-.op-shigure .op-motes i { top: -4%; bottom: auto; background: radial-gradient(circle, rgba(238, 252, 251, .95), rgba(238, 252, 251, 0) 70%); animation-name: op-fall; }
-@keyframes op-rise { from { translate: 0 0; } 50% { translate: 14px -55vh; } to { translate: -8px -110vh; } }
-@keyframes op-fall { from { translate: 0 0; } 50% { translate: 18px 55vh; } to { translate: -6px 110vh; } }
-:root[data-op='opening'] .op-motes { opacity: 0; }
-
-/* ---- 桔梗 · 軍議機関 ---- */
-.op-map { position: absolute; left: 50%; top: 44%; z-index: 1; width: min(66vmin, 400px); aspect-ratio: 1; translate: -50% -50%; overflow: visible; opacity: .55; transition: opacity .5s; }
-:root[data-op='form'] .op-map, :root[data-op='stamp'] .op-map { opacity: .35; }
-:root[data-op='opening'] .op-map { opacity: 0; }
-.op-grid line, .op-grid circle { stroke: rgba(40, 52, 90, .16); stroke-width: .4; fill: none; }
-.op-grid circle { stroke-dasharray: 1.5 2.5; }
-.op-terrain path { fill: none; stroke: rgba(23, 19, 15, .42); stroke-width: 1.1; stroke-linecap: round; }
-.op-terrain, .op-advance { opacity: var(--on, 0); transition: opacity 1.2s ease; }
-.op-advance path { fill: none; stroke: #b8322a; stroke-width: 1; stroke-dasharray: 3 2; opacity: .75; }
-.op-unit { opacity: var(--on, 0); scale: calc(.4 + .6 * var(--on, 0)); transform-box: fill-box; transform-origin: center; transition: opacity .45s ease, scale .45s cubic-bezier(.3, 1.6, .5, 1); }
-.op-unit rect { fill: rgba(125, 105, 210, .35); stroke: rgba(23, 19, 15, .7); stroke-width: .8; }
-.op-unit line { stroke: rgba(23, 19, 15, .7); stroke-width: .8; }
-.op-unit path { fill: #b8322a; }
-.op-valve rect { fill: rgba(40, 34, 28, .5); stroke: rgba(23, 19, 15, .55); stroke-width: .6; }
-.op-valve line { stroke: rgba(23, 19, 15, .55); stroke-width: .6; }
-.op-valve .glow { opacity: var(--on, 0); transition: opacity .35s ease; }
-/* Radar sweep: an HTML cone over the window, turned by the compositor. */
-.op-sweep { position: absolute; left: 50%; top: 44%; z-index: 1; width: min(64vmin, 388px); aspect-ratio: 1; translate: -50% -50%; border-radius: 50%; background: conic-gradient(from 0deg, rgba(61, 95, 168, 0) 0deg, rgba(61, 95, 168, 0) 300deg, rgba(61, 95, 168, .2) 360deg); animation: op-turn 5.5s linear infinite; pointer-events: none; transition: opacity .5s; }
-:root[data-op='opening'] .op-sweep { opacity: 0; }
-.ayatori-seg { stroke: #b8322a; stroke-width: 1.6; opacity: var(--on, 0); transition: opacity .35s ease; }
-.ayatori-peg { fill: rgba(23, 19, 15, .35); }
-.ayatori-peg[data-at] { fill: rgba(23, 19, 15, calc(.35 + .65 * var(--on, 0))); }
-.ayatori, .brew-gauges { transition: opacity .5s ease; }
-:root[data-op='form'] .ayatori, :root[data-op='stamp'] .ayatori, :root[data-op='form'] .brew-gauges, :root[data-op='stamp'] .brew-gauges { opacity: 0; }
-.op-gunbai { position: absolute; z-index: 5; left: calc(50% + min(15vmin, 96px)); top: calc(44% - min(20vmin, 120px)); width: min(20vmin, 120px); opacity: 0; transform-origin: 50% 90%; rotate: -55deg; transition: opacity .2s ease, rotate .45s cubic-bezier(.5, 0, .2, 1.3); pointer-events: none; }
-.op-gunbai .fan { fill: rgba(28, 23, 18, .9); stroke: rgba(201, 164, 92, .8); stroke-width: 1.4; }
-.op-gunbai .mark { fill: none; stroke: rgba(201, 164, 92, .9); stroke-width: .06; }
-.op-gunbai .grip { fill: #3a2a1d; }
-.op-gunbai .tassel { fill: #b8322a; }
-:root[data-op='stamp'] .op-gunbai { opacity: 1; rotate: 12deg; }
-
-/* ---- 時雨 · 喫茶の夜 ---- */
-.op-crt { position: absolute; inset: 0; z-index: 2; overflow: hidden; pointer-events: none; opacity: .4; transition: opacity 1s ease; }
-:root[data-op-step~='2'] .op-crt { opacity: .26; }
-:root[data-op-step~='3'] .op-crt { opacity: .14; }
-:root[data-op-step~='4'] .op-crt, :root[data-op='form'] .op-crt, :root[data-op='stamp'] .op-crt, :root[data-op='opening'] .op-crt { opacity: 0; }
-.op-crt .noise { position: absolute; inset: -48px; will-change: translate; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .85  0 0 0 0 .95  0 0 0 0 .95  0 0 0 1.4 -.35'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>"); background-size: 160px 160px; animation: op-static .5s steps(5) infinite; }
-@keyframes op-static { 0% { translate: 0 0; } 20% { translate: -37px 21px; } 40% { translate: 18px -44px; } 60% { translate: -12px 31px; } 80% { translate: 41px 9px; } }
-.op-crt .scan { position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .35) 0 1px, transparent 1px 3px); }
-.op-shigure .op-motes { opacity: .25; }
-:root[data-op-step~='2'] .op-shigure .op-motes { opacity: .6; }
-:root[data-op-step~='4'] .op-shigure .op-motes { opacity: 1; }
-:root[data-op='opening'] .op-shigure .op-motes { opacity: 0; }
-/* The noren's 時雨 flickers on as neon at the first step. */
-:root[data-op-step~='1'] .noren-text { color: #d9fffd; text-shadow: 0 0 6px rgba(98, 212, 210, .9), 0 0 18px rgba(98, 212, 210, .55); animation: op-flicker .9s steps(1) both; }
-@keyframes op-flicker { 0% { opacity: .3; } 12% { opacity: 1; } 18% { opacity: .35; } 30% { opacity: 1; } 36% { opacity: .5; } 48%, 100% { opacity: 1; } }
-.op-furin { position: absolute; top: 12px; right: 14%; z-index: 3; width: 38px; opacity: 0; transform-origin: 50% 0; transition: opacity .6s ease; animation: op-swing 2.8s ease-in-out infinite alternate; pointer-events: none; }
-:root[data-op-step~='2'] .op-furin { opacity: 1; }
-:root[data-op='opening'] .op-furin { opacity: 0; }
-.op-furin line { stroke: rgba(238, 252, 251, .55); stroke-width: .8; }
-.op-furin .bell { fill: rgba(190, 245, 243, .28); stroke: rgba(238, 252, 251, .8); stroke-width: .9; }
-.op-furin .tanzaku { fill: rgba(184, 50, 42, .75); }
-@keyframes op-swing { from { rotate: -7deg; } to { rotate: 7deg; } }
-.brew-gauges { display: flex; gap: 12px; color: #eefcfb; }
-.brew-gauge { display: grid; justify-items: center; gap: 2px; opacity: calc(.45 + .55 * var(--on, 0)); transition: opacity .35s; }
-.brew-gauge svg { width: 34px; height: 22px; overflow: visible; }
-.brew-gauge .track { fill: none; stroke: rgba(238, 252, 251, .25); stroke-width: 1.6; }
-.brew-gauge .needle { stroke: #62d4d2; stroke-width: 1.4; stroke-linecap: round; transform-box: fill-box; transform-origin: 100% 50%; rotate: calc(160deg * var(--on, 0)); transition: rotate .6s cubic-bezier(.3, 1.5, .5, 1); }
-.brew-gauge circle { fill: #eefcfb; }
-.brew-gauge span { font-size: 9.5px; letter-spacing: .2em; opacity: .8; }
-
-/* ---- Caption, sound ---- */
-.op-kikyo, .op .opening-caption { --o-ink: #17130f; }
-:root[data-wafu='shigure'] .op .opening-caption, :root[data-wafu='shigure'] .opening-sound { --o-ink: #eefcfb; }
-.op .opening-caption { position: absolute; left: 50%; bottom: calc(9vh + env(safe-area-inset-bottom, 0px)); translate: -50% 0; z-index: 5; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 18px 9px; border-radius: 999px; background: rgba(244, 236, 216, .86); box-shadow: 0 8px 30px -10px rgba(0, 0, 0, .45); transition: opacity .4s ease; }
-:root[data-wafu='shigure'] .op .opening-caption { background: rgba(9, 22, 26, .8); box-shadow: 0 8px 30px -10px rgba(0, 0, 0, .6); }
-:root[data-op='opening'] .op .opening-caption { opacity: 0; }
-.op .opening-label { display: flex; align-items: baseline; gap: 10px; min-height: 20px; color: var(--o-ink); font-size: 14px; letter-spacing: .2em; }
-.op .opening-step { font-family: var(--wa-f-display); font-weight: 700; }
+/* ---- The steps, written down the side; the progress is a hairline beside them ---- */
+.op .opening-caption { position: absolute; z-index: 5; top: 14vh; display: flex; align-items: flex-start; gap: 12px; color: var(--o-ink); transition: opacity .4s ease; pointer-events: none; }
+:root[data-wafu='kikyo'] .op .opening-caption { --o-ink: #2b241c; right: calc(3.5vw + env(safe-area-inset-right, 0px)); flex-direction: row-reverse; }
+:root[data-wafu='shigure'] .op .opening-caption { --o-ink: #cfe0df; top: 10vh; left: calc(4vw + clamp(32px, 4.4vw, 58px) + 26px + env(safe-area-inset-left, 0px)); }
+:root:is([data-op='opening'], [data-op='fading']) .op .opening-caption { opacity: 0; }
+.op .opening-label { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.op .opening-step { writing-mode: vertical-rl; min-height: 9em; font-family: var(--wa-f-title); font-size: clamp(15px, 1.4vw, 18px); letter-spacing: .32em; }
 .op .opening-step:empty { display: none; }
-.op .opening-pct { font-family: var(--wa-f-mono); font-size: 12px; letter-spacing: .06em; opacity: .75; }
-.op .opening-bar { display: block; width: 140px; height: 1.5px; border-radius: 1px; background: color-mix(in srgb, var(--o-ink) 15%, transparent); overflow: hidden; }
-.op .opening-bar i { display: block; height: 100%; background: var(--o-ink); opacity: .6; transform-origin: 0 50%; scale: 0 1; animation: op-creep 5s cubic-bezier(.1, .6, .3, 1) forwards; }
-@keyframes op-creep { to { scale: .35 1; } }
-:root[data-op] .op .opening-bar i { animation: none; scale: var(--op-p, 0) 1; transition: scale 1.3s cubic-bezier(.2, .7, .3, 1); }
-.op .opening-sound { position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 6; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; color: var(--o-ink, #17130f); background: rgba(244, 236, 216, .7); border: 1px solid rgba(23, 19, 15, .2); border-radius: 999px; font-size: 12px; cursor: pointer; }
-:root[data-wafu='shigure'] .op .opening-sound { background: rgba(9, 22, 26, .6); border-color: rgba(238, 252, 251, .2); }
+.op .opening-pct { font-family: var(--wa-f-mono); font-size: 11px; letter-spacing: .04em; opacity: .7; }
+.op .opening-bar { position: relative; display: block; width: 1px; height: 11em; margin-top: 2px; font-size: clamp(15px, 1.4vw, 18px); background: color-mix(in srgb, var(--o-ink) 18%, transparent); }
+.op .opening-bar i { position: absolute; inset: 0; display: block; background: var(--o-ink); opacity: .7; transform-origin: 50% 0; transform: scaleY(var(--op-p, .06)); transition: transform 1.3s cubic-bezier(.2, .7, .3, 1); }
+.op .opening-sound { position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 6; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; color: #2b241c; background: rgb(235 226 207 / .7); border: 1px solid rgb(43 36 28 / .22); border-radius: 999px; font-size: 12px; cursor: pointer; }
+:root[data-wafu='shigure'] .op .opening-sound { color: #cfe0df; background: rgb(11 24 29 / .6); border-color: rgb(207 224 223 / .22); }
+:root[data-wafu='kikyo'] .op .opening-sound { right: auto; left: 14px; }
 .op .opening-sound .on, .op .opening-sound[aria-pressed='true'] .off { display: none; }
 .op .opening-sound[aria-pressed='true'] .on { display: inline; }
+
+/* Phones: smaller marks, the caption tucked closer to the edge. */
+@media (max-width: 640px) {
+  :root[data-wafu='kikyo'] .op .opening-caption { right: calc(10px + env(safe-area-inset-right, 0px)); top: 12vh; }
+  .op-kikyo .ink-title, .op-kikyo .ink-seal { right: calc(54px + env(safe-area-inset-right, 0px)); top: 12vh; }
+  .op-kikyo .ink-seal { top: calc(12vh + clamp(30px, 4.2vw, 54px) * 2.6 + 18px); }
+  .enso { right: 16px; top: 9vh; width: 96px; }
+  .op-shigure .ink-seal { right: 16px; top: calc(9vh + 108px); }
+}
 
 /* Reduced motion: no motion at all; the controller runs a short timeline and a fade. */
 @media (prefers-reduced-motion: reduce) {
   .op *, .op *::before, .op *::after { animation: none !important; transition-duration: .01s !important; }
-  .op-crest-a, .op-crest-b, .op-crest-c, .op-crest-dot { opacity: 1; scale: 1; }
-  .ow-core, .ow-bloom, .ow-heart { opacity: 1; scale: 1; }
-  .ow-ring, .ow-detail { stroke-dashoffset: 0; }
-  .ow-dots { opacity: .8; }
-  .op-brush, .op-motes, .op-crt, .op-sweep { display: none; }
+  .ink-drop, .ink-rain { display: none; }
 }
-/* 效能模式: the loops stop (drawings stay). */
-:root[data-perf='lite'] .op-motes, :root[data-perf='lite'] .op-crt .noise, :root[data-perf='lite'] .op-sweep, :root[data-perf='lite'] .op-washes b { animation: none; }
-:root[data-perf='lite'] .ow-orbit, :root[data-perf='lite'] .ow-dots { animation: none; }
-:root[data-perf='lite'] .ow-dots { opacity: .8; }
-:root[data-perf='lite'] .op-motes { display: none; }
-@media (max-width: 560px) { .op-center { gap: 10px; } .ayatori { width: 150px; } .op .opening-label { font-size: 13px; letter-spacing: .12em; } .noren-text { left: 12%; bottom: 14%; } }
-@media (max-width: 640px) { .op .opening-caption { bottom: calc(6vh + env(safe-area-inset-bottom, 0px)); } }
+/* 效能模式: the loops stop (the ink still spreads; it is only scaled). */
+:root[data-perf='lite'] .ink-rain { display: none; }
 
-/* Until the opening mounts, the boot script veils the page (data-wafu-intro) so the dashboard never flashes. */
-:root[data-wafu-intro] body::after { content: ""; position: fixed; inset: 0; z-index: 999; background: var(--wa-bg); }
-/* As the doors open, the page rises into place. */
+/* Until the opening mounts, the boot script veils the page (data-wafu-intro) so the dashboard never flashes;
+   the veil goes as the ink lifts, so the page is there underneath. */
+:root[data-wafu-intro] body::after { content: ""; position: fixed; inset: 0; z-index: 999; background: var(--wa-bg); transition: opacity .6s ease; }
+:root[data-wafu-intro]:is([data-op='opening'], [data-op='fading']) body::after { opacity: 0; }
+/* As the ink lifts, the page rises into place. */
 :root[data-wafu-reveal] .topbar, :root[data-wafu-reveal] .side-nav, :root[data-wafu-reveal] .dashboard > :nth-child(-n+4) { animation: op-rise 0.8s ease backwards; }
 :root[data-wafu-reveal] .side-nav { animation-delay: 0.12s; }
 :root[data-wafu-reveal] .dashboard > :nth-child(1) { animation-delay: 0.2s; }
@@ -301,35 +167,3 @@
 :root[data-wafu-reveal] .dashboard > :nth-child(4) { animation-delay: 0.56s; }
 @keyframes op-rise { from { opacity: 0; transform: translateY(14px); } }
 @media (prefers-reduced-motion: reduce) { :root[data-wafu-reveal] .topbar, :root[data-wafu-reveal] .side-nav, :root[data-wafu-reveal] .dashboard > * { animation: none; } }
-
-/* 開場圖標 (設定 → 和風背景與音樂): an uploaded emblem takes the place of the drawn crest and halo and
-   follows their timeline. Loading: it is laid down as a one-colour ink silhouette at crest size, the
-   brush point circling it (white ink on 時雨's night, sumi on 桔梗's paper). Form: it turns into full
-   colour and grows to halo size, as the drawn crest melts into the halo. Stamp: it presses with the
-   seal and the ripple. Opening: it fades with the centre. object-fit contain keeps the whole picture. */
-:root[data-op-icon] .op-crest > svg, :root[data-op-icon] .op-halo svg { visibility: hidden; }
-:root[data-op-icon] .op-halo {
-  --ink-b: 0; --ink-i: 1; --glow: rgb(98 212 210 / .45);
-  width: calc(var(--crest) * 2); z-index: 2; opacity: 0; scale: .5; rotate: 0deg;
-  filter: brightness(var(--ink-b)) invert(var(--ink-i)) drop-shadow(0 0 0 transparent);
-  transition: opacity .9s ease .15s, scale 1.2s cubic-bezier(.2, .8, .2, 1), filter 1.1s ease;
-}
-.op-kikyo { --op-icon-glow: rgb(110 120 230 / .38); }
-.op-shigure { --op-icon-glow: rgb(98 212 210 / .45); }
-:root[data-op-icon] .op-kikyo .op-halo { --ink-i: 0; }
-:root[data-op-icon] .op-halo::after {
-  content: ''; position: absolute; inset: 0; background: var(--op-icon) center / contain no-repeat;
-  clip-path: circle(0% at 50% 50%); animation: op-icon-ink 1.5s cubic-bezier(.45, .05, .35, 1) .1s forwards;
-}
-@keyframes op-icon-ink { to { clip-path: circle(75% at 50% 50%); } }
-:root[data-op-icon][data-op='loading'] .op-halo { opacity: .82; }
-:root[data-op-icon][data-op='form'] .op-halo, :root[data-op-icon][data-op='stamp'] .op-halo, :root[data-op-icon][data-op='opening'] .op-halo, :root[data-op-icon][data-op='fading'] .op-halo {
-  opacity: 1; scale: 1; rotate: 0deg; filter: brightness(1) invert(0) drop-shadow(0 0 16px var(--op-icon-glow));
-}
-/* The ring and ripple frame the larger picture. */
-:root[data-op-icon] .op-ripple { width: calc(var(--crest) * 2.2); }
-:root[data-op-icon][data-perf='lite'] .op-halo { filter: none; }
-@media (prefers-reduced-motion: reduce) {
-  :root[data-op-icon] .op-halo { opacity: 1; scale: 1; filter: none; transition: none; }
-  :root[data-op-icon] .op-halo::after { animation: none; clip-path: none; }
-}

@@ -48,12 +48,30 @@ export const themeAssets = (assets: WafuAssets, kind: WafuAssetKind, theme: Wafu
 
 // One pick per kind and theme for the whole visit, so the backdrop does not change while browsing.
 const picks = new Map<string, number>();
+/**
+ * The backdrop already chosen for the next visit, per theme: the boot script (theme.ts) paints it into
+ * the opening's ink from the first frame, and that visit's backdrop is the same picture.
+ */
+export const nextPhotoKey = 'optionflow-op-photo';
+function nextPhotos(): Record<string, string> {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(nextPhotoKey) ?? '{}');
+    return saved && typeof saved === 'object' ? saved as Record<string, string> : {};
+  } catch { return {}; }
+}
 /** A backdrop or silhouette for this visit: one of the uploaded ones, chosen at random once. */
 export function visitPick(assets: WafuAssets, kind: 'bg' | 'sil' | 'icon', theme: WafuAssetTheme): WafuAsset | null {
   const list = themeAssets(assets, kind, theme);
   if (!list.length) return null;
   const key = `${kind}-${theme}`;
   let pick = picks.get(key);
-  if (pick === undefined || pick >= list.length) { pick = Math.floor(Math.random() * list.length); picks.set(key, pick); }
+  if (pick === undefined || pick >= list.length) {
+    const chosen = kind === 'bg' && typeof window !== 'undefined' ? list.findIndex((asset) => asset.url === nextPhotos()[theme]) : -1;
+    pick = chosen >= 0 ? chosen : Math.floor(Math.random() * list.length);
+    picks.set(key, pick);
+    if (kind === 'bg' && typeof window !== 'undefined') {
+      try { window.localStorage.setItem(nextPhotoKey, JSON.stringify({ ...nextPhotos(), [theme]: list[Math.floor(Math.random() * list.length)].url })); } catch { /* storage unavailable */ }
+    }
+  }
   return list[pick];
 }

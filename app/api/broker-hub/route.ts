@@ -16,12 +16,20 @@ const stateTable = `CREATE TABLE IF NOT EXISTS broker_hub_state (
 
 type StateRow = { enabled: number; revision: number; data: string; updatedAt: string };
 
+// Set once the table and its single row exist in this isolate (two round trips to D1 saved per request).
+let stateReady = false;
+
 async function getState() {
   const db = await ensureDatabase();
-  await db.prepare(stateTable).run();
-  const empty = emptyBrokerWorkspace(false);
-  await db.prepare(`INSERT OR IGNORE INTO broker_hub_state (id, enabled, revision, data, updated_at)
-    VALUES (1, 0, 0, ?, ?)`).bind(JSON.stringify(empty), empty.updatedAt).run();
+  if (!stateReady) {
+    const empty = emptyBrokerWorkspace(false);
+    await db.batch([
+      db.prepare(stateTable),
+      db.prepare(`INSERT OR IGNORE INTO broker_hub_state (id, enabled, revision, data, updated_at)
+        VALUES (1, 0, 0, ?, ?)`).bind(JSON.stringify(empty), empty.updatedAt),
+    ]);
+    stateReady = true;
+  }
   const row = await db.prepare(`SELECT enabled, revision, data, updated_at AS updatedAt
     FROM broker_hub_state WHERE id = 1`).first<StateRow>();
   if (!row) throw new Error('跨券商設定尚未建立');

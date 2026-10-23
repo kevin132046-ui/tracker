@@ -279,6 +279,7 @@ const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
 const aiEnabledKey = 'optionflow-ai-enabled';
 const notifyCenterKey = 'optionflow-notify-center';
 const notifyBarKey = 'optionflow-notify-bar';
+const notifyCountKey = 'optionflow-notify-count';
 // The 益損 tab in 交易與持倉 ('off' hides it).
 const gainsTabKey = 'optionflow-gains-tab';
 const bottomNavKey = 'optionflow-bottom-nav';
@@ -878,7 +879,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, ra
   onDeleteLot: (trade: Trade) => void;
 }) {
   const [priceHoverIndex, setPriceHoverIndex] = useState<number | null>(null);
-  const [priceChartMode, setPriceChartMode] = useState<PriceChartMode>('line');
+  const [priceChartMode, setPriceChartMode] = useState<PriceChartMode>('candles');
   const [customRangeOpen, setCustomRangeOpen] = useState(range === 'custom');
   const [draftFrom, setDraftFrom] = useState(customFrom);
   const [draftTo, setDraftTo] = useState(customTo);
@@ -1121,6 +1122,8 @@ export default function Home() {
   const [notifyEnabled, setNotifyEnabled] = useState(true);
   // The notice bar in the middle of the top bar (wide screens); can be turned off in the settings.
   const [notifyBar, setNotifyBar] = useState(true);
+  // The unread number on the bell; off → the bell only lights up.
+  const [notifyCount, setNotifyCount] = useState(true);
   const [gainsTab, setGainsTab] = useState(true);
   // Which 益損 tab to open on, and a counter so the same request reopens it.
   const [gainsStart, setGainsStart] = useState<{ tab: 'this' | 'last' | 'open'; n: number }>({ tab: 'this', n: 0 });
@@ -1370,6 +1373,7 @@ export default function Home() {
       if (window.localStorage.getItem(holidayNoticeKey) === 'off') queueMicrotask(() => setHolidayNoticeEnabled(false));
       if (window.localStorage.getItem(notifyCenterKey) === 'off') queueMicrotask(() => setNotifyEnabled(false));
       if (window.localStorage.getItem(notifyBarKey) === 'off') queueMicrotask(() => setNotifyBar(false));
+      if (window.localStorage.getItem(notifyCountKey) === 'off') queueMicrotask(() => setNotifyCount(false));
       if (window.localStorage.getItem(gainsTabKey) === 'off') queueMicrotask(() => setGainsTab(false));
       const storedNav = window.localStorage.getItem(bottomNavKey);
       if (storedNav === 'menu' || storedNav === 'off') queueMicrotask(() => setBottomNav(storedNav));
@@ -1597,6 +1601,12 @@ export default function Home() {
   const toggleNotifyBar = useCallback(() => {
     setNotifyBar((current) => {
       try { window.localStorage.setItem(notifyBarKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
+  }, []);
+  const toggleNotifyCount = useCallback(() => {
+    setNotifyCount((current) => {
+      try { window.localStorage.setItem(notifyCountKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
       return !current;
     });
   }, []);
@@ -3480,7 +3490,7 @@ export default function Home() {
           </a>
           <HeaderMarketCalendar />
         </div>
-        {notifyEnabled && <div className="topbar-notice"><NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} bar={notifyBar} calendar={noticeCalendar} /></div>}
+        {notifyEnabled && <div className="topbar-notice"><NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} bar={notifyBar} count={notifyCount} calendar={noticeCalendar} /></div>}
         <div className="header-actions">
           <LanguageSwitcher />
           {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
@@ -3830,6 +3840,10 @@ export default function Home() {
               {notifyEnabled && <div className="settings-feature-actions">
                 <span>頂欄中央的通知條（寬螢幕）；關閉後只留右側的鈴鐺。</span>
                 <button type="button" className={`settings-toggle ${notifyBar ? 'is-on' : ''}`} role="switch" aria-checked={notifyBar} aria-label="頂欄通知條" onClick={toggleNotifyBar}><i /><b>{notifyBar ? '開啟' : '關閉'}</b></button>
+              </div>}
+              {notifyEnabled && <div className="settings-feature-actions">
+                <span>鈴鐺上的未讀數字；關閉後不顯示數字，有新通知時鈴鐺仍會亮起。</span>
+                <button type="button" className={`settings-toggle ${notifyCount ? 'is-on' : ''}`} role="switch" aria-checked={notifyCount} aria-label="未讀數字" onClick={toggleNotifyCount}><i /><b>{notifyCount ? '開啟' : '關閉'}</b></button>
               </div>}
             </section>
             <section className={`settings-feature-card ${gainsTab ? 'is-enabled' : ''}`}>

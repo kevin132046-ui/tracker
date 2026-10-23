@@ -1,7 +1,7 @@
 import { kikyoInner, kikyoOutline, snowCrystal, yukiwaOutline } from '@/lib/wafu/marks';
 
 /**
- * The small mark of each theme, in the language of the opening's 花の輪 (WreathEmblem): 桔梗's bellflower
+ * The small mark of each theme, a 花の輪: 桔梗's bellflower
  * crest (時雨: a 雪輪 with a snow crystal) inside a thin gold ring set with tiny crests. Flat (tilt 0) it is
  * an icon — settings title, AI button. Tilted back (tilt in degrees) only the ring is drawn, as a wreath
  * floating above the current item or the assistant's name. `spin` turns the ring slowly; reduced motion

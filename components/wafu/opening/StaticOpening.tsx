@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { kikyoOutline, snowCrystal, yukiwaOutline } from '@/lib/wafu/marks';
-import { brushStroke, inkBlot, paperFibre } from '@/lib/wafu/ink';
+import { paperFibre } from '@/lib/wafu/ink';
 
 /**
  * The 和風 opening's markup (水墨), rendered with the page itself (in the layout) so it is on screen from
@@ -14,33 +14,33 @@ import { brushStroke, inkBlot, paperFibre } from '@/lib/wafu/ink';
  * round the 雪輪; then the stroke opens over the whole screen and lifts away.
  *
  * Every motion is a transform or opacity change (wafu-opening.css), so the compositor runs it even
- * while the page underneath is still loading; the shapes are static mask images. The controller
+ * while the page underneath is still loading. The picture never moves: it lies still underneath, and
+ * the ink is a sheet of plain bitmaps (app/ink) that only scale, blended over it so the picture shows
+ * through where the ink is. Nothing is masked or re-drawn while it plays. The controller
  * (Opening.tsx) switches stages on <html> (data-op, data-op-step, --op-p), sets the picture
  * (--op-photo), the uploaded silhouette (--op-sil) and emblem (--op-icon), and writes the step text.
  */
 type Vars = CSSProperties & Record<`--${string}`, string>;
-const blots: Array<{ key: string; cx: string; cy: string; seed: number }> = [
-  { key: 'a', cx: '36vw', cy: '40vh', seed: 2 },
-  { key: 'b', cx: '22vw', cy: '60vh', seed: 5 },
-  { key: 'c', cx: '58vw', cy: '62vh', seed: 8 },
+const blots: Array<{ key: string; cx: string; cy: string }> = [
+  { key: 'a', cx: '36vw', cy: '40vh' },
+  { key: 'b', cx: '22vw', cy: '60vh' },
+  { key: 'c', cx: '58vw', cy: '62vh' },
 ];
 
-/** What shows inside the ink: the backdrop picture, else the uploaded silhouette, else the ink alone. */
-function InkLayers() {
-  return <><i className="ink-ground" /><i className="ink-photo" /><i className="ink-sil" /></>;
+/** What shows through the ink: the backdrop picture, else the uploaded silhouette, else the ink alone. */
+function InkBase() {
+  return <div className="ink-base"><i className="ink-ground" /><i className="ink-photo" /><i className="ink-sil" /></div>;
 }
 
 function Kikyo() {
   return <div className="op-theme op-kikyo">
-    <div className="ink-paper" style={{ backgroundImage: paperFibre }} />
-    {/* Each blot is a masked box that only scales (.ink-grow); the picture inside is scaled back the
-        other way (.ink-hold, .ink-unbloom) so it stays put on the screen while the ink spreads over it. */}
-    {blots.map(({ key, cx, cy, seed }) => {
-      const mask = inkBlot(seed);
-      return <div key={key} className={`ink-blot ink-blot-${key}`} style={{ '--cx': cx, '--cy': cy } as Vars}>
-        <div className="ink-grow" style={{ maskImage: mask, WebkitMaskImage: mask }}><div className="ink-hold"><div className="ink-unbloom"><InkLayers /></div></div></div>
-      </div>;
-    })}
+    <InkBase />
+    {/* White paper with black blots, screened over the picture: the picture is left where the ink is,
+        white elsewhere. The paper (its colour and fibres) is then multiplied in, so the blacks stay black. */}
+    <div className="ink-sheet">
+      {blots.map(({ key, cx, cy }) => <div key={key} className={`ink-blot ink-blot-${key}`} style={{ '--cx': cx, '--cy': cy } as Vars}><i className="ink-spot" /></div>)}
+    </div>
+    <div className="ink-tint" style={{ backgroundImage: paperFibre }} />
     <i className="ink-drop" />
     <div className="ink-title" aria-hidden="true">桔梗</div>
     <div className="ink-seal" aria-hidden="true"><svg viewBox="-1.25 -1.25 2.5 2.5"><path d={kikyoOutline()} /></svg></div>
@@ -50,8 +50,11 @@ function Kikyo() {
 
 function Shigure() {
   return <div className="op-theme op-shigure">
+    <InkBase />
+    {/* A white stroke on black, multiplied over the picture (the picture stays only in the stroke);
+        the night colour is then screened over it, so outside the stroke it is plain night. */}
+    <div className="ink-sheet"><i className="ink-stroke" /></div>
     <div className="ink-night" />
-    <div className="ink-stroke" style={{ maskImage: brushStroke, WebkitMaskImage: brushStroke }}><div className="ink-hold"><InkLayers /></div></div>
     <i className="stroke-cover" />
     <i className="ink-lantern" />
     <div className="ink-rain">{Array.from({ length: 14 }, (_, i) => <i key={i} />)}</div>

@@ -1,7 +1,7 @@
 /* 和風 opening (水墨): 桔梗 · 墨染 and 時雨 · 一筆. The markup ships with the page (StaticOpening, in the
    layout) and plays from the first frame. Every motion is a transform or opacity change; the ink shapes
-   are static mask images that are only scaled, so the compositor runs it even while the page underneath
-   is still loading. The controller sets, on <html>:
+   are plain bitmaps that are only scaled, blended over a picture that never moves, so the compositor runs
+   it even while the page underneath is still loading. The controller sets, on <html>:
      data-op        loading (default) | form | stamp | opening | fading
      data-op-step   the finished steps as a list, e.g. "1 2 3"
      --op-p         0..1 for the progress line
@@ -10,39 +10,44 @@
      --op-icon / data-op-icon     the uploaded emblem, in place of the seal (桔梗) or the crest in the ensō (時雨) */
 .op { display: none; position: fixed; inset: 0; z-index: 1000; overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; font-family: var(--wa-f-body); contain: strict; }
 :root[data-wafu-intro] .op { display: block; }
-.op-theme { position: absolute; inset: 0; transition: opacity .9s ease .25s; }
+.op-theme { position: absolute; inset: 0; isolation: isolate; transition: opacity .9s ease .25s; }
 :root[data-wafu='kikyo'] .op-shigure, :root[data-wafu='shigure'] .op-kikyo { display: none; }
 .op-bg { position: absolute; inset: 0; background: var(--wa-bg); transition: opacity .9s ease; }
 /* Leaving: the ink floods the screen and lifts away over the page, which is already there underneath. */
 :root:is([data-op='opening'], [data-op='fading']) .op-bg, :root:is([data-op='opening'], [data-op='fading']) .op-theme { opacity: 0; }
 :root[data-op='fading'] .op { opacity: 0; transition: opacity .28s ease; pointer-events: none; }
 
-/* ---- What shows inside the ink: the picture, else the silhouette, else the ink alone ---- */
-.ink-hold > i, .ink-unbloom > i { position: absolute; inset: 0; display: block; }
-.ink-hold > .ink-photo, .ink-unbloom > .ink-photo { inset: -4%; background: var(--op-photo, none) var(--photo-pos, 40% 28%) / cover no-repeat; filter: var(--ink-filter); opacity: 0; transition: opacity .8s ease; }
+/* ---- What shows through the ink: the picture, else the silhouette, else the ink alone. It never moves. ---- */
+.ink-base, .ink-sheet { position: absolute; inset: 0; overflow: hidden; }
+.ink-base > i { position: absolute; inset: 0; display: block; }
+.ink-ground { background: var(--ink-ground); }
+.ink-photo { background: var(--op-photo, none) var(--photo-pos, 40% 28%) / cover no-repeat; filter: var(--ink-filter); opacity: 0; transition: opacity .8s ease; }
 :root[data-op-photo] .ink-photo { opacity: 1; }
 .ink-sil { visibility: hidden; }
-:root[data-op-sil]:not([data-op-photo]) .ink-hold > .ink-sil, :root[data-op-sil]:not([data-op-photo]) .ink-unbloom > .ink-sil {
+:root[data-op-sil]:not([data-op-photo]) .ink-base > .ink-sil {
   visibility: visible; inset: 18% 12% 0 12%; background: var(--sil-ink);
   mask: var(--op-sil) center bottom / contain no-repeat; -webkit-mask: var(--op-sil) center bottom / contain no-repeat;
 }
-.ink-ground { background: var(--ink-ground); }
+/* The ink is a sheet of plain bitmaps (app/ink, rendered once from SVG turbulence) blended over the picture
+   as one layer: the bitmaps only scale, so nothing is masked or re-drawn while the opening plays. */
+.ink-sheet { isolation: isolate; }
 
-/* ---- 桔梗 · 墨染 ---- */
-.op-kikyo { --o-ink: #2b241c; --ink-ground: #1d1915; --sil-ink: #6f655a; --photo-pos: 40% 28%; --ink-filter: grayscale(1) sepia(.18) contrast(1.08) brightness(.86); }
-.ink-paper { position: absolute; inset: 0; background-color: #ebe2cf; background-size: 220px 220px; }
-.ink-paper::after { content: ""; position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 42%, transparent 55%, rgb(120 96 60 / .2)); }
+/* ---- 桔梗 · 墨染: white paper with black blots, screened over the picture, then the paper (colour, fibres) multiplied in ---- */
+.op-kikyo { --o-ink: #2b241c; --ink-ground: #1d1915; --sil-ink: #6f655a; --photo-pos: 40% 28%; --ink-filter: grayscale(1) sepia(.18) contrast(1.08) brightness(.96); }
+.op-kikyo .ink-sheet { background: #fff; mix-blend-mode: screen; }
+.ink-tint { position: absolute; inset: 0; background-color: #ebe2cf; background-size: 220px 220px; mix-blend-mode: multiply; }
+.ink-tint::after { content: ""; position: absolute; inset: 0; background: radial-gradient(120% 90% at 50% 42%, transparent 55%, rgb(120 96 60 / .2)); }
 .ink-drop { position: absolute; left: 36vw; top: 40vh; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #1a1612; opacity: 0; animation: ink-drop .55s cubic-bezier(.5, 0, .9, .6) .05s both; }
 @keyframes ink-drop { 0% { transform: translateY(-40vh) scale(.6, 1.4); opacity: 0; } 12% { opacity: 1; } 90% { transform: translateY(0) scale(.8, 1.2); opacity: 1; } 100% { transform: translateY(0) scale(1.7, .4); opacity: 0; } }
-.ink-blot { --s: .02; position: absolute; left: var(--cx); top: var(--cy); width: 170vmax; height: 170vmax; margin: -85vmax 0 0 -85vmax; }
-.ink-grow { position: absolute; inset: 0; transform: scale(var(--s)); mask-size: 100% 100%; -webkit-mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-repeat: no-repeat; will-change: transform; transition: transform 1.2s cubic-bezier(.2, .7, .2, 1); }
-.ink-hold { position: absolute; left: calc(85vmax - var(--cx)); top: calc(85vmax - var(--cy)); width: 100vw; height: 100vh; transform-origin: var(--cx) var(--cy); transform: scale(calc(1 / var(--s))); will-change: transform; transition: transform 1.2s cubic-bezier(.2, .7, .2, 1); }
-.ink-unbloom { position: absolute; inset: 0; transform-origin: var(--cx) var(--cy); }
+/* A blot is a point at (--cx, --cy); its bitmap scales about that point to --s. */
+.ink-blot { --s: .02; position: absolute; left: var(--cx); top: var(--cy); width: 0; height: 0; }
+.ink-spot { position: absolute; left: -85vmax; top: -85vmax; width: 170vmax; height: 170vmax; display: block; background: center / 100% 100% no-repeat; transform: scale(var(--s)); will-change: transform; transition: transform 1.2s cubic-bezier(.2, .7, .2, 1); }
+.ink-blot-a .ink-spot { background-image: url('./ink/blot-2.webp'); }
+.ink-blot-b .ink-spot { background-image: url('./ink/blot-5.webp'); }
+.ink-blot-c .ink-spot { background-image: url('./ink/blot-8.webp'); }
 /* The first blot opens where the drop lands, before the first step is done. */
 .ink-blot-a { --s: .2; animation: ink-bloom 1.3s cubic-bezier(.2, .7, .2, 1) .5s backwards; }
-.ink-blot-a .ink-unbloom { animation: ink-unbloom 1.3s cubic-bezier(.2, .7, .2, 1) .5s backwards; }
 @keyframes ink-bloom { from { transform: scale(.08); opacity: 0; } 6% { opacity: 1; } }
-@keyframes ink-unbloom { from { transform: scale(12.5); } }
 .ink-blot-b, .ink-blot-c { opacity: 0; transition: opacity .5s ease; }
 :root[data-op-step~='1'] .ink-blot-a { --s: .26; }
 :root[data-op-step~='2'] .ink-blot-a { --s: .3; }
@@ -60,7 +65,7 @@
 :root:is([data-op='form'], [data-op='stamp']) .ink-blot-b { --s: .28; }
 :root:is([data-op='form'], [data-op='stamp']) .ink-blot-c { --s: .24; }
 :root:is([data-op='opening'], [data-op='fading']) .ink-blot { --s: 1.3; opacity: 1; }
-:root:is([data-op='opening'], [data-op='fading']) :is(.ink-grow, .ink-hold) { transition-duration: 1.1s; }
+:root:is([data-op='opening'], [data-op='fading']) .ink-spot { transition-duration: 1.1s; }
 
 /* The theme's name and its seal, down the right side. */
 .ink-title { position: absolute; z-index: 3; writing-mode: vertical-rl; font-family: var(--wa-f-title); line-height: 1; letter-spacing: .2em; opacity: 0; transform: translateY(-12px); transition: opacity 1s ease, transform 1.2s cubic-bezier(.2, .7, .2, 1); pointer-events: none; }
@@ -81,12 +86,13 @@
 :root[data-op-icon]:is([data-op='stamp'], [data-op='opening'], [data-op='fading']) .op-kikyo .ink-icon { opacity: 1; transform: scale(1); transition: transform .32s cubic-bezier(.3, 1.6, .5, 1), opacity .12s ease; }
 
 /* ---- 時雨 · 一筆 ---- */
-.op-shigure { --o-ink: #cfe0df; --ink-ground: #10262c; --sil-ink: #2c5560; --photo-pos: 46% 44%; --ink-filter: grayscale(1) sepia(.4) hue-rotate(150deg) saturate(.55) brightness(.68) contrast(1.14); }
-.ink-night { position: absolute; inset: 0; background: #0b181d; }
-.ink-stroke { position: absolute; inset: 0; mask-size: 100% 100%; -webkit-mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-repeat: no-repeat; transform-origin: 50% 56%; will-change: transform; transition: transform 1.1s cubic-bezier(.6, .05, .25, 1); }
-.ink-stroke > .ink-hold { left: 0; top: 0; transform-origin: 50% 56%; transform: none; transition: transform 1.1s cubic-bezier(.6, .05, .25, 1); }
+.op-shigure { --o-ink: #cfe0df; --ink-ground: #051011; --sil-ink: #2c5560; --photo-pos: 46% 44%; --ink-filter: grayscale(1) sepia(.4) hue-rotate(150deg) saturate(.55) brightness(.68) contrast(1.14); }
+/* A white stroke on black, multiplied over the picture; then the night screened over everything, so outside
+   the stroke it is plain night and inside it the picture, lifted to the night's colour. */
+.op-shigure .ink-sheet { background: #000; mix-blend-mode: multiply; }
+.ink-stroke { position: absolute; inset: 0; display: block; background: url('./ink/stroke.webp') 0 0 / 100% 100% no-repeat; transform-origin: 50% 56%; will-change: transform; transition: transform 1.1s cubic-bezier(.6, .05, .25, 1); }
 :root:is([data-op='opening'], [data-op='fading']) .ink-stroke { transform: scale(5); }
-:root:is([data-op='opening'], [data-op='fading']) .ink-stroke > .ink-hold { transform: scale(.2); }
+.ink-night { position: absolute; inset: 0; background: #0b181d; mix-blend-mode: screen; }
 /* The stroke is drawn by a night-coloured sheet sliding off it along the stroke, a step at a time. */
 .stroke-cover { --wipe: 40vw; position: absolute; left: -50vw; top: -50vh; width: 200vw; height: 200vh; background: linear-gradient(90deg, rgb(11 24 29 / 0) 0, #0b181d 9vw); transform: rotate(-24deg) translateX(var(--wipe)); will-change: transform; transition: transform 1.2s cubic-bezier(.3, .6, .3, 1); }
 :root[data-op-step~='1'] .stroke-cover { --wipe: 62vw; }

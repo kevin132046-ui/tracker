@@ -123,28 +123,51 @@
 .op-brush::after { content: ""; position: absolute; left: 50%; top: -3%; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: #fff6df; box-shadow: 0 0 12px 4px rgba(255, 214, 140, .7); }
 .op-shigure .op-brush::after { background: #eafffe; box-shadow: 0 0 12px 4px rgba(98, 212, 210, .75); }
 @keyframes op-brush { 0% { opacity: 0; rotate: -30deg; } 12% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; rotate: 330deg; } }
-/* The halo: hidden while loading; turns into place as the crest melts into it. */
-.op-halo, .op-halo-ring, .op-ripple { position: absolute; left: 50%; top: 50%; width: calc(var(--crest) * 2.2); aspect-ratio: 1; translate: -50% -50%; pointer-events: none; }
-.op-halo { z-index: 1; opacity: 0; scale: .55; rotate: -40deg; transition: opacity 1s ease, scale 1.2s cubic-bezier(.2, .8, .2, 1), rotate 1.4s cubic-bezier(.2, .8, .2, 1); }
-.op-halo svg { width: 100%; height: 100%; }
-:root[data-op='form'] .op-halo, :root[data-op='stamp'] .op-halo { opacity: 1; scale: 1; rotate: 0deg; }
+/* The emblem (花の輪, WreathEmblem): hidden while loading. At 'form' the drawn crest melts into its centre,
+   the gold ring draws itself, the small crests open one by one, the veins are traced in gold, and the ring
+   keeps turning slowly; on 桔梗 a few petals drift down. */
+.op-halo, .op-ripple { position: absolute; left: 50%; top: 50%; width: calc(var(--crest) * 2.2); aspect-ratio: 1; translate: -50% -50%; pointer-events: none; }
+.op-halo { z-index: 1; opacity: 0; transition: opacity .5s ease; }
+.op-halo svg { width: 100%; height: 100%; overflow: visible; }
+:root[data-op='form'] .op-halo, :root[data-op='stamp'] .op-halo { opacity: 1; }
 :root[data-op='form'] .op-crest > svg, :root[data-op='stamp'] .op-crest > svg { opacity: 0; }
-.op-halo-ring { z-index: 1; border-radius: 50%; border: 1px dashed rgba(64, 160, 230, .45); opacity: 0; scale: .8; transition: opacity 1s ease .3s, scale 1.2s ease .2s; animation: op-turn 14s linear infinite; }
-.op-shigure .op-halo-ring { border-color: rgba(79, 200, 245, .45); }
-:root[data-op='form'] .op-halo-ring, :root[data-op='stamp'] .op-halo-ring { opacity: 1; scale: 1.12; }
-@keyframes op-turn { to { rotate: 360deg; } }
-.op-ripple { z-index: 1; border-radius: 50%; border: 1.5px solid rgba(40, 120, 220, .5); opacity: 0; }
-.op-shigure .op-ripple { border-color: rgba(120, 215, 250, .55); }
+.op-wreath { --ow-ring: #b8923e; --ow-dot: #c9a24a; --ow-ink: #1d1712; --ow-fill: #6a58b0; --ow-gold: #e0bb62; }
+.op-wreath-shigure { --ow-ring: #9fe3e0; --ow-dot: #bff1ee; --ow-ink: #eefcfb; --ow-fill: rgb(98 212 210 / .22); --ow-gold: #eafffe; }
+.ow-dots { fill: none; stroke: var(--ow-dot); stroke-width: .026; stroke-linecap: round; stroke-dasharray: .0001 .072; opacity: 0; transform-box: view-box; transform-origin: 50% 50%; }
+.ow-orbit { transform-box: view-box; transform-origin: 50% 50%; }
+.ow-ring { fill: none; stroke: var(--ow-ring); stroke-width: .016; stroke-dasharray: 8; stroke-dashoffset: 8; }
+.ow-bloom { transform-box: fill-box; transform-origin: center; opacity: 0; scale: 0; }
+.ow-mini { fill: var(--ow-fill); stroke: var(--ow-ink); stroke-width: .12; stroke-linejoin: round; }
+.op-wreath-shigure .ow-mini { fill: none; stroke-width: .16; stroke-linecap: round; }
+.ow-core { opacity: 0; }
+.ow-crest { fill: var(--ow-fill); stroke: var(--ow-ink); stroke-width: .05; stroke-linejoin: round; }
+.ow-detail { fill: none; stroke: var(--ow-gold); stroke-width: .03; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.ow-heart { fill: var(--ow-gold); transform-box: fill-box; transform-origin: center; opacity: 0; scale: 0; }
+.ow-petal { fill: var(--ow-fill); transform-box: fill-box; transform-origin: center; scale: var(--s); opacity: 0; }
+/* One selector for 'form' and every later stage, so no animation restarts when the stage changes. */
+:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-core { animation: ow-show .6s ease .15s both; }
+:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-ring { animation: ow-ring .9s cubic-bezier(.45, .05, .35, 1) .1s both; }
+:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-orbit { animation: ow-turn 40s linear infinite; }
+:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-dots { animation: ow-dots .8s ease .4s both, ow-turn 60s linear infinite reverse; }
+:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-bloom { animation: ow-pop .5s cubic-bezier(.3, 1.5, .4, 1) calc(.35s + var(--i) * .12s) both; }
+:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-detail { animation: ow-draw .7s ease-out .7s both; }
+:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-heart { animation: ow-pop .4s cubic-bezier(.3, 1.5, .4, 1) 1.2s both; }
+:root:is([data-op='form'], [data-op='stamp'], [data-op='opening'], [data-op='fading']) .ow-petal { animation: ow-fall 4.4s ease-in-out calc(1.3s + var(--i) * .6s) both; }
+@keyframes ow-show { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ow-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+/* The ring is about 7.4 units round; its dash runs from 8 (hidden) to 0 (whole). */
+@keyframes ow-ring { from { stroke-dashoffset: 8; } to { stroke-dashoffset: 0; } }
+@keyframes ow-dots { from { opacity: 0; } to { opacity: .8; } }
+@keyframes ow-turn { to { rotate: 360deg; } }
+@keyframes ow-pop { 0% { opacity: 0; scale: 0; } 70% { opacity: 1; scale: 1.15; } 100% { opacity: 1; scale: 1; } }
+@keyframes ow-fall { 0% { opacity: 0; translate: 0 0; rotate: 0deg; } 12% { opacity: .85; } 85% { opacity: .85; } 100% { opacity: 0; translate: calc((var(--i) - 1) * .2px) 1.1px; rotate: calc(160deg - var(--i) * 130deg); } }
+.op-ripple { z-index: 1; border-radius: 50%; border: 1.5px solid rgb(201 162 74 / .55); opacity: 0; }
+.op-shigure .op-ripple { border-color: rgb(191 241 238 / .55); }
 :root[data-op='stamp'] .op-ripple { animation: op-ripple .9s ease-out forwards; }
 @keyframes op-ripple { from { opacity: .8; scale: 1; } to { opacity: 0; scale: 1.55; } }
 :root[data-op='stamp'] .op-crest { animation: op-press .55s ease-in-out; }
 @keyframes op-press { 35% { scale: .95; } 70% { scale: 1.02; } }
-/* 桔梗's halo on the paper window: dark ink with a blue glint (the page's halo is drawn for dark ground). */
-.op-kikyo .halo-kikyo .h-glint { stroke: #2f63c8; fill: none; }
-.op-kikyo .halo-kikyo .h-ring { stroke: #1d2230; fill: none; }
-.op-kikyo .halo-kikyo .h-eye { stroke: #1d2230; fill: #1d2230; }
-.op-kikyo .halo-kikyo .h-pupil { stroke: #8fb4ff; fill: none; }
-.op-shigure .halo-ico { filter: drop-shadow(0 0 8px rgba(79, 200, 245, .6)); }
+.op-shigure .op-wreath { filter: drop-shadow(0 0 8px rgb(79 200 245 / .45)); }
 
 /* ---- Ink washes: laid down one per step, drawn to the centre as the halo forms ---- */
 .op-washes { position: absolute; inset: 0; z-index: 2; pointer-events: none; transition: scale 1.4s cubic-bezier(.3, .7, .2, 1), opacity 1s ease; transform-origin: 50% 44%; }
@@ -254,10 +277,15 @@
 @media (prefers-reduced-motion: reduce) {
   .op *, .op *::before, .op *::after { animation: none !important; transition-duration: .01s !important; }
   .op-crest-a, .op-crest-b, .op-crest-c, .op-crest-dot { opacity: 1; scale: 1; }
+  .ow-core, .ow-bloom, .ow-heart { opacity: 1; scale: 1; }
+  .ow-ring, .ow-detail { stroke-dashoffset: 0; }
+  .ow-dots { opacity: .8; }
   .op-brush, .op-motes, .op-crt, .op-sweep { display: none; }
 }
 /* 效能模式: the loops stop (drawings stay). */
-:root[data-perf='lite'] .op-motes, :root[data-perf='lite'] .op-crt .noise, :root[data-perf='lite'] .op-sweep, :root[data-perf='lite'] .op-washes b, :root[data-perf='lite'] .op-halo-ring { animation: none; }
+:root[data-perf='lite'] .op-motes, :root[data-perf='lite'] .op-crt .noise, :root[data-perf='lite'] .op-sweep, :root[data-perf='lite'] .op-washes b { animation: none; }
+:root[data-perf='lite'] .ow-orbit, :root[data-perf='lite'] .ow-dots { animation: none; }
+:root[data-perf='lite'] .ow-dots { opacity: .8; }
 :root[data-perf='lite'] .op-motes { display: none; }
 @media (max-width: 560px) { .op-center { gap: 10px; } .ayatori { width: 150px; } .op .opening-label { font-size: 13px; letter-spacing: .12em; } .noren-text { left: 12%; bottom: 14%; } }
 @media (max-width: 640px) { .op .opening-caption { bottom: calc(6vh + env(safe-area-inset-bottom, 0px)); } }
@@ -299,7 +327,7 @@
   opacity: 1; scale: 1; rotate: 0deg; filter: brightness(1) invert(0) drop-shadow(0 0 16px var(--op-icon-glow));
 }
 /* The ring and ripple frame the larger picture. */
-:root[data-op-icon] .op-halo-ring, :root[data-op-icon] .op-ripple { width: calc(var(--crest) * 2.2); }
+:root[data-op-icon] .op-ripple { width: calc(var(--crest) * 2.2); }
 :root[data-op-icon][data-perf='lite'] .op-halo { filter: none; }
 @media (prefers-reduced-motion: reduce) {
   :root[data-op-icon] .op-halo { opacity: 1; scale: 1; filter: none; transition: none; }

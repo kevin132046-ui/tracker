@@ -372,7 +372,10 @@ button, a { touch-action: manipulation; }.shell.has-custom-background:before { t
 .settings-panel > header h2 { margin: 5px 0 4px; font-size: 30px; letter-spacing: -.04em; }
 .settings-panel > header span { color: var(--wa-muted); font-size: 13px; }
 .settings-close { width: 42px; height: 42px; flex: 0 0 auto; color: var(--wa-muted); background: var(--wa-accent-soft); border: 0; border-radius: 13px; font-size: 24px; line-height: 1; cursor: pointer; }
-.settings-body { display: grid; gap: 16px; padding: 27px 32px 42px; }
+/* One column that never grows past the drawer: a card whose content cannot shrink (a wide row, a long
+   word) would otherwise widen every card and push the drawer into sideways scrolling. */
+.settings-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 27px 32px 42px; }
+.settings-body > * { min-width: 0; overflow-wrap: anywhere; }
 .settings-feature-card { padding: 24px; background: linear-gradient(145deg, var(--wa-raise), var(--wa-accent-soft)); border: 1px solid var(--wa-line); border-radius: 20px; box-shadow: 0 14px 34px rgb(0 0 0 / 0.154); transition: border-color .2s ease, box-shadow .2s ease; }
 .settings-feature-card.is-enabled { border-color: var(--wa-accent); box-shadow: 0 16px 40px rgb(var(--wa-accent-rgb) / 0.11); }
 .settings-feature-heading { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 13px; }
@@ -871,7 +874,7 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 /* Earnings reminders and calendar card. */
 .holiday-notice-item.is-earnings b { color: var(--wa-accent-2); }
 .settings-feature-icon.earnings { background: linear-gradient(145deg, var(--wa-line-2), var(--wa-line-2)); box-shadow: 0 8px 18px rgb(var(--wa-accent-2-rgb) / 0.18); font-size: 18px; }
-.earnings-table { display: grid; gap: 4px; margin: -4px 0 16px; padding: 6px; background: var(--wa-panel); border: 1px solid var(--wa-line); border-radius: 12px; }
+.earnings-table { container: earnings / inline-size; display: grid; gap: 4px; margin: -4px 0 16px; padding: 6px; background: var(--wa-panel); border: 1px solid var(--wa-line); border-radius: 12px; }
 .earnings-row { display: grid; grid-template-columns: minmax(64px, .8fr) minmax(120px, 1.6fr) minmax(70px, .8fr) auto; align-items: center; gap: 10px; min-height: 38px; padding: 4px 8px; border-radius: 8px; font-size: 12px; }
 .earnings-row:nth-child(even) { background: var(--wa-accent-soft); }
 .earnings-row strong { color: var(--wa-ink); font-weight: 600; }
@@ -883,12 +886,14 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .earnings-manual button { width: 24px; height: 24px; color: var(--wa-muted); background: transparent; border: 0; border-radius: 6px; cursor: pointer; font-size: 15px; line-height: 1; }
 .earnings-manual button:hover { color: var(--wa-ink); background: var(--wa-accent-soft); }
 .earnings-empty { margin: 6px 8px; color: var(--wa-muted); font-size: 12px; }
-@media (max-width: 620px) {
+/* The four columns need about 460px; a narrower table (the settings drawer, a phone, larger text or a
+   classic scrollbar) stacks each row instead of pushing the drawer wider. */
+@container earnings (max-width: 480px) {
   .earnings-row { grid-template-columns: minmax(56px, 1fr) auto; gap: 2px 8px; padding: 6px 8px; }
   .earnings-row > span:not(.earnings-manual) { grid-column: 1 / -1; grid-row: 2; }
   .earnings-row small { justify-self: end; }
   .earnings-manual { grid-column: 1 / -1; }
-  .earnings-manual input { flex: 1; width: auto; }
+  .earnings-manual input { flex: 1; width: auto; min-width: 0; }
 }
 .earnings-ai-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; margin-top: -2px; }
 .earnings-ai-actions button, .earnings-ai-suggestion button { min-height: 26px; padding: 0 10px; color: var(--wa-accent-2); background: var(--wa-accent-2-soft); border: 1px solid var(--wa-accent-2); border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer; }

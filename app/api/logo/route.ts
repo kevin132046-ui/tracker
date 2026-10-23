@@ -83,6 +83,9 @@ export async function GET(request: Request) {
           'Content-Type': contentType,
           'Cache-Control': 'public, max-age=604800, stale-while-revalidate=2592000',
           'X-Content-Type-Options': 'nosniff',
+          // The image comes from another site but is served from this one: opened on its own (an SVG
+          // can carry script), it must not run anything here.
+          'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
         },
       });
     } catch {

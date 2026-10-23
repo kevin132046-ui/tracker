@@ -1,5 +1,6 @@
 import { ensureDatabase } from '@/lib/server/database';
 import { NextResponse } from 'next/server';
+import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -126,7 +127,8 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST() {
+/** Refreshes the stored prices of the open stock lots; it reads and writes the owner's trades, so it is guarded. */
+async function handlePOST() {
   try {
     const db = await ensureDatabase();
     const tickerRows = await db.prepare(`SELECT DISTINCT ticker FROM trades
@@ -145,3 +147,6 @@ export async function POST() {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Unable to refresh prices.' }, { status: 502 });
   }
 }
+
+// Owner data (which stocks are held): only behind Cloudflare Access (lib/server/data-gate).
+export const POST = guarded(handlePOST);

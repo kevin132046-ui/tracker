@@ -15,6 +15,8 @@ const typescriptFile = (base) => {
 };
 
 export async function resolve(specifier, context, next) {
+  // The Workers runtime module does not exist under Node; tests get a plain env object instead.
+  if (specifier === 'cloudflare:workers') return next(new URL('stubs/cloudflare-workers.mjs', import.meta.url).href, context);
   if (specifier.startsWith('@/')) {
     const target = typescriptFile(new URL(specifier.slice(2), root));
     if (target) return next(target, context);

@@ -1,4 +1,4 @@
-import HaloIcon from '@/components/wafu/HaloIcon';
+import WreathEmblem from '@/components/wafu/opening/WreathEmblem';
 import { kikyoInner, kikyoOutline, kikyoStamen, snowCrystal, yukiwaOutline } from '@/lib/wafu/marks';
 
 /**
@@ -34,9 +34,8 @@ function Crest({ theme }: { theme: 'kikyo' | 'shigure' }) {
     </svg>
     {/* The brush: a bright point circling once while the crest is laid down. */}
     <i className="op-brush" />
-    {/* The halo: the finished artwork, turning into place when the loading completes. */}
-    <div className="op-halo"><HaloIcon theme={theme} size={200} spin={false} tone={theme === 'kikyo' ? 'paper' : 'dark'} /></div>
-    <i className="op-halo-ring" />
+    {/* The emblem (花の輪): when the loading completes the crest melts into its centre and the ring forms around it. */}
+    <div className="op-halo"><WreathEmblem theme={theme} /></div>
     <i className="op-ripple" />
   </div>;
 }

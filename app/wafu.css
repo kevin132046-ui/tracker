@@ -102,17 +102,9 @@
 :root[data-wafu] .wafu-nav-icon { display: block; }
 :root[data-wafu] .wafu-nav-halo { position: absolute; left: 50%; bottom: calc(100% + 1px); translate: -50% 0; pointer-events: none; will-change: translate; animation: wafuHaloFloat 3.8s ease-in-out infinite; }
 :root[data-wafu] .wafu-nav-halo .halo-ico { display: block; filter: drop-shadow(0 0 2px rgb(var(--wa-accent-rgb) / .5)); }
+@media (prefers-reduced-motion: reduce) { :root[data-wafu] .wafu-nav-halo { animation: none; } }
 @keyframes wafuHaloFloat { 50% { translate: -50% -2px; } }
 
-/* Halo icon strokes (shared with the settings card and, later, the AI button). */
-:root[data-wafu] .halo-ico { overflow: visible; }
-:root[data-wafu] .halo-ico .halo-rot { transform-box: view-box; animation: wafuHaloTurn 16s linear infinite; }
-@keyframes wafuHaloTurn { to { transform: rotate(360deg); } }
-:root[data-wafu] .halo-kikyo.tone-dark .h-glint { stroke: #4f86f0; fill: none; }
-:root[data-wafu] .halo-kikyo.tone-dark .h-ring { stroke: #c9d1df; fill: none; }
-:root[data-wafu] .halo-kikyo.tone-dark .h-eye { stroke: #c9d1df; fill: #26314d; }
-:root[data-wafu] .halo-kikyo.tone-dark .h-pupil { stroke: #8fb4ff; fill: none; }
-@media (prefers-reduced-motion: reduce) { :root[data-wafu] .halo-ico .halo-rot, :root[data-wafu] .wafu-nav-halo { animation: none; } }
 
 /* ---------- Hero: the title set vertically, like a hanging scroll ---------- */
 :root[data-wafu] .hero { display: flex; flex-direction: row-reverse; justify-content: flex-start; align-items: flex-end; gap: clamp(14px, 2vw, 26px); }
@@ -273,28 +265,22 @@
 
 :root[data-wafu] .company-logo img[hidden] { display: none !important; }
 
-/* Halo depth (HaloIcon): darker edge layers under the face, a thin highlight on top, a soft shadow. */
-.halo-ico { shape-rendering: geometricPrecision; }
-.halo-ico .h-depth path { stroke: var(--halo-edge, #2b3a6e) !important; fill: none !important; }
-.halo-kikyo .h-depth .h-eye, .halo-kikyo .h-shine .h-eye, .halo-kikyo .h-shine .h-pupil { display: none; }
-.halo-shigure .h-depth path { --halo-edge: #146a8f; }
-.halo-shigure { filter: drop-shadow(0 0 3px rgb(79 200 245 / .55)); }
-.halo-kikyo .h-depth .h-glint { --halo-edge: #1d3c86; }
-.halo-kikyo .h-depth .h-ring { --halo-edge: #5a6274; }
-.halo-kikyo.tone-paper .h-depth .h-ring { --halo-edge: #05070c; }
-.halo-ico .h-shine path { stroke: #ffffff !important; fill: none !important; opacity: .55; }
-.halo-kikyo.tone-paper .h-shine path { opacity: .35; }
-.halo-ico .h-shadow { color: #000; }
-.halo-ico.tone-paper .h-shadow { color: #3a2a14; opacity: .6; }
 
-/* Hand-drawn halo (HandHalo): brush strokes are filled bands; a fainter pencil line sits under them. */
-.hand-halo .hh-sketch { opacity: .4; fill: none !important; }
-.hand-halo.halo-kikyo .h-eye.hh-sketch, .hand-halo.halo-kikyo .h-pupil.hh-sketch { display: none; }
-.hand-halo .hh-brush { stroke: none !important; }
-.hand-halo.halo-kikyo .hh-brush.h-glint { fill: #4f86f0 !important; }
-.hand-halo.halo-kikyo .hh-brush.h-ring { fill: #c9d1df !important; }
-:root[data-tone='washi'] .hand-halo.halo-kikyo .hh-brush.h-ring, .hand-halo.halo-kikyo.tone-paper .hh-brush.h-ring { fill: #1d2230 !important; }
-:root[data-tone='washi'] .hand-halo.halo-kikyo .h-ring, :root[data-tone='washi'] .hand-halo.halo-kikyo .h-eye { stroke: #1d2230; }
-:root[data-tone='washi'] .hand-halo.halo-kikyo .h-eye { fill: #1d2230; }
-:root[data-tone='washi'] .hand-halo.halo-kikyo .hh-brush.h-glint { fill: #2f63c8 !important; }
-:root[data-tone='washi'] .hand-halo.halo-shigure { filter: drop-shadow(0 0 1px rgb(20 90 130 / .5)); }
+/* CrestMark: the themes' small mark (settings title, AI button, the wreath over the current item and the
+   assistant). Strokes keep a fixed screen width at every size (non-scaling-stroke). */
+.crest-mark { overflow: visible; }
+.crest-kikyo { --cm-fill: #a98be6; --cm-line: #f3eadb; --cm-gold: #e2bf6a; }
+.crest-shigure { --cm-fill: rgb(98 212 210 / .22); --cm-line: #dffbf9; --cm-gold: #9fe3e0; }
+.crest-mark path, .crest-mark circle { vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.crest-mark .cm-ring { fill: none; stroke: var(--cm-gold); stroke-width: 1.2px; }
+.crest-mark .cm-bead { fill: var(--cm-fill); stroke: var(--cm-line); stroke-width: .7px; }
+.crest-shigure .cm-bead { fill: none; stroke: var(--cm-gold); stroke-width: .9px; }
+.crest-mark .cm-crest { fill: var(--cm-fill); stroke: var(--cm-line); stroke-width: 1px; }
+.crest-mark .cm-detail { fill: none; stroke: var(--cm-gold); stroke-width: .8px; }
+.crest-mark.is-wreath .cm-ring { stroke-width: 1.4px; }
+/* At icon size the ring's small crests read as gold beads. */
+.crest-kikyo:not(.is-wreath) .cm-bead { fill: var(--cm-gold); stroke: none; }
+.crest-mark .cm-turn { transform-box: view-box; transform-origin: 50% 50%; animation: cm-turn 24s linear infinite; }
+@keyframes cm-turn { to { rotate: 360deg; } }
+:root[data-perf='lite'] .crest-mark .cm-turn { animation: none; }
+@media (prefers-reduced-motion: reduce) { .crest-mark .cm-turn { animation: none; } }

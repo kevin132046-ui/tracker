@@ -1019,7 +1019,7 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .dividend-credit-on button.active { color: var(--wa-ink); background: var(--wa-line-2); border-color: var(--wa-line-2); }
 .dividend-credit-on small { flex: 1 1 100%; color: var(--wa-muted); font-size: 10.5px; }
 .dividend-pending-total { margin: 10px 0 0; padding: 8px 10px; color: var(--wa-gold); background: var(--wa-gold-soft); border-radius: 9px; font-size: 11.5px; font-weight: 600; }
-.dividend-pay-list { display: grid; gap: 4px; margin-top: 10px; padding: 6px; background: var(--wa-panel); border: 1px solid var(--wa-line); border-radius: 12px; }
+.dividend-pay-list { container: dividend-pay / inline-size; display: grid; gap: 4px; margin-top: 10px; padding: 6px; background: var(--wa-panel); border: 1px solid var(--wa-line); border-radius: 12px; }
 .dividend-pay-row { display: grid; grid-template-columns: minmax(52px, .6fr) minmax(110px, 1fr) minmax(190px, 1.4fr) minmax(110px, 1fr); align-items: center; gap: 8px; min-height: 36px; padding: 4px 8px; border-radius: 8px; font-size: 11.5px; }
 .dividend-pay-row:nth-child(even) { background: var(--wa-accent-soft); }
 .dividend-pay-row strong { color: var(--wa-ink); }
@@ -1032,7 +1032,9 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .pay-source.is-manual { color: var(--wa-accent-2); }
 .dividend-pay-row .is-pending { color: var(--wa-gold); font-weight: 600; }
 .dividend-pay-row .is-credited { color: var(--wa-up); font-weight: 600; }
-@media (max-width: 620px) {
+/* The four columns need about 500px; a narrower list (the settings drawer, a phone, larger text) stacks
+   the pay date under each row instead of pushing the drawer wider. */
+@container dividend-pay (max-width: 520px) {
   .dividend-pay-row { grid-template-columns: 1fr auto; gap: 2px 8px; padding: 6px 8px; }
   .dividend-pay-row .dividend-pay-date { grid-column: 1 / -1; }
 }

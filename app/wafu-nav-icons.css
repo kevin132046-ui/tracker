@@ -1,14 +1,15 @@
 /*
- * Side navigation in the Swiss manner: a strict column of numbered rows on hairline rules, flat
- * geometric marks, one strong colour per destination, grotesque type; corners rounded like the other
- * panels. The current page is a solid block of its colour. No halo.
+ * Side navigation: a column of numbered rows on hairline rules, flat geometric marks. Each destination
+ * keeps a colour of its own, but in softened traditional tones (朱, 藍, 山吹, 若竹, 柿, 藤) mixed toward the
+ * theme's ink, so the column sits in the page instead of shouting over it. The current page is a soft wash
+ * of its colour with a thin bar at its edge, not a solid block. Type follows the theme.
  */
 :root[data-wafu] {
-  --sw-red: #e8412c; --sw-blue: #3d6ff0; --sw-yellow: #f2b705; --sw-green: #18a874;
-  --sw-orange: #f07b1d; --sw-violet: #8d63e6; --sw-ink: #e9eef0; --sw-on: #ffffff; --sw-on-light: #111111;
-  --sw-font: 'Helvetica Neue', Helvetica, Arial, 'Noto Sans TC', 'Noto Sans JP', sans-serif;
+  --sw-red: #d0654f; --sw-blue: #7f9be0; --sw-yellow: #d4aa52; --sw-green: #62ad8a;
+  --sw-orange: #d98a55; --sw-violet: #a48ad8; --sw-ink: var(--wa-ink-2); --sw-on: var(--wa-ink); --sw-on-light: var(--wa-ink);
+  --sw-font: var(--wa-f-body);
 }
-:root[data-wafu][data-tone='washi'] { --sw-blue: #2a55d6; --sw-yellow: #d99a00; --sw-green: #11865b; --sw-ink: #1d1d1d; }
+:root[data-wafu][data-tone='washi'] { --sw-red: #a8432f; --sw-blue: #3f5ea8; --sw-yellow: #9a7128; --sw-green: #2f7a5a; --sw-orange: #a85f2a; --sw-violet: #6d55a8; --sw-ink: #3a352c; }
 
 :root[data-wafu] .side-nav { counter-reset: swnav; gap: 0; padding: 5px; overflow: hidden; border: 1px solid var(--wa-line-2); border-radius: 16px; background: rgb(var(--wa-bg-rgb) / .78); box-shadow: none; }
 :root[data-wafu] .side-nav > a, :root[data-wafu] .side-nav > .settings-nav-button, :root[data-wafu] .side-nav .background-trigger {
@@ -30,25 +31,27 @@
 
 /* The row number, top left. */
 :root[data-wafu] .side-nav > a::before, :root[data-wafu] .side-nav > .settings-nav-button::before, :root[data-wafu] .side-nav .background-trigger::before {
-  content: counter(swnav, decimal-leading-zero); position: absolute; top: 6px; left: 7px; font: 700 9px/1 var(--sw-font); letter-spacing: .02em; color: currentColor; opacity: .5;
+  content: counter(swnav, decimal-leading-zero); position: absolute; top: 6px; left: 7px; font: 500 9px/1 var(--wa-f-mono); letter-spacing: .04em; color: currentColor; opacity: .38;
 }
-:root[data-wafu] .side-nav .wafu-nav-glyph { width: 26px; height: 26px; color: var(--sw); }
+/* Marks in the destination's tone, mixed toward the ink; full tone on the current page. */
+:root[data-wafu] .side-nav .wafu-nav-glyph { width: 26px; height: 26px; color: color-mix(in oklab, var(--sw) 72%, var(--wa-ink-2)); transition: color .15s ease; }
 :root[data-wafu] .side-nav .wafu-nav-icon { width: 24px; height: 24px; }
-:root[data-wafu] .side-nav span, :root[data-wafu] .side-nav .background-trigger span { font: 700 12px/1.1 var(--sw-font); letter-spacing: .04em; }
+:root[data-wafu] .side-nav span, :root[data-wafu] .side-nav .background-trigger span { font: 600 12px/1.1 var(--sw-font); letter-spacing: .08em; }
 
-/* Hover: a bar of the item's colour on the left edge. */
-:root[data-wafu] .side-nav :is(a, .settings-nav-button, .background-trigger):hover { color: var(--wa-ink); background: color-mix(in srgb, var(--sw) 10%, transparent); box-shadow: inset 4px 0 0 var(--sw); transform: none; }
-/* Current: a solid block. */
-:root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active), :root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active):hover { color: var(--sw-text); background: var(--sw); box-shadow: none; }
-:root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active) .wafu-nav-glyph { color: var(--sw-text); }
-:root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active)::before { opacity: .75; }
+/* Hover: a faint wash and a hairline bar of the item's tone on the left edge. */
+:root[data-wafu] .side-nav :is(a, .settings-nav-button, .background-trigger):hover { color: var(--wa-ink); background: color-mix(in oklab, var(--sw) 8%, transparent); box-shadow: inset 2px 0 0 color-mix(in oklab, var(--sw) 70%, transparent); transform: none; }
+:root[data-wafu] .side-nav :is(a, .settings-nav-button, .background-trigger):hover .wafu-nav-glyph { color: var(--sw); }
+/* Current: a soft wash of its tone with a thin bar, the mark in full tone, the label in ink. */
+:root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active), :root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active):hover { color: var(--wa-ink); background: color-mix(in oklab, var(--sw) 16%, transparent); box-shadow: inset 3px 0 0 var(--sw); }
+:root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active) .wafu-nav-glyph { color: var(--sw); }
+:root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active)::before { opacity: .6; }
 :root[data-wafu] .side-nav .wafu-nav-halo { display: none; }
 :root[data-wafu] .side-nav :is(a, .settings-nav-button, .background-trigger):focus-visible { outline: 2px solid var(--sw); outline-offset: -2px; }
 
 /* Rows become columns on tablets and phones. */
 @media (max-width: 1180px) {
   :root[data-wafu] .side-nav > :is(a, .settings-nav-button)::after { left: auto; top: 10px; bottom: 10px; right: 0; width: 1px; height: auto; }
-  :root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active) { box-shadow: none; }
+  :root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active), :root[data-wafu] .side-nav :is(a.active, .settings-nav-button.active):hover { box-shadow: inset 0 -3px 0 var(--sw); }
 }
 
 /* The mobile home bar keeps its own look; its icons take the item colours too. */

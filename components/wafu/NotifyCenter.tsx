@@ -74,11 +74,13 @@ export function ThemeIcon({ theme }: { theme: WafuTheme }) {
  * Notification center in the top bar: results out, market closures, earnings dates, options about to
  * expire and dividend payments, gathered in one list. Read and dismissed items are kept per browser.
  */
-export default function NotifyCenter({ items, openSignal = 0, bar = true, calendar }: {
+export default function NotifyCenter({ items, openSignal = 0, bar = true, count = true, calendar }: {
   theme: WafuTheme;
   calendar?: NoticeCalendar;
   /** Wide screens: show the notice bar in the top bar (off = only the round bell). */
   bar?: boolean;
+  /** The unread number on the bell (off = the bell only lights up). */
+  count?: boolean;
   items: NoticeItem[];
   /** Bumped from outside (the quick sheet) to open the panel. */
   openSignal?: number;
@@ -138,7 +140,7 @@ export default function NotifyCenter({ items, openSignal = 0, bar = true, calend
           ? <span className="wafu-notify-roll" aria-hidden="true"><i className="wafu-notify-lamp is-calm" /><b>通知</b><em>休市</em><span>下個休市 {md(nextClosure.key)} {nextClosure.label.replace(/休市|提前收盤/, '')} · {holidayName(nextClosure.name)}（{nextClosure.daysAway} 天後）</span></span>
           : <span className="wafu-notify-roll is-empty" aria-hidden="true"><i className="wafu-notify-lamp" /><b>通知</b><span>目前沒有新通知</span></span>)}
       <BellIcon />
-      {unread > 0 && <span className="wafu-notify-badge" aria-hidden="true">{unread > 9 ? '9+' : unread}</span>}
+      {count && unread > 0 && <span className="wafu-notify-badge" aria-hidden="true">{unread > 9 ? '9+' : unread}</span>}
     </button>
     {open && <div className="wafu-notify-panel ntc-pop" role="dialog" aria-label="通知中心">
       <header className="ntc-head">

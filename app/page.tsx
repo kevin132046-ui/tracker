@@ -240,23 +240,25 @@ const TradeReconcileDialog = lazy(loadReconcileDialog);
 const loadClearTradesDialog = () => import('@/components/ClearTradesDialog');
 const ClearTradesDialog = lazy(loadClearTradesDialog);
 
-// Allocation colours per theme: tonal steps of the theme's own accents (the largest holding in the
-// main accent), with the theme's gold as the one warm note. 桔梗: periwinkle → wisteria → indigo;
-// 時雨: teal → frost → lavender.
-const palettes: Record<WafuTheme, string[]> = {
-  kikyo: ['#9dbcf0', '#b3a5f0', '#7d93d6', '#8f7fd0', '#c9a45c', '#6479b4', '#a9b6dc', '#5c5a9e'],
-  shigure: ['#62d4d2', '#3fa7ae', '#9fd8e6', '#b69ae8', '#f0c24b', '#2f8590', '#c7e6ea', '#7c8fd6'],
+// Allocation colours: the donut shows the five largest holdings and 其他, so each palette is five clearly
+// different hues in the theme's mood, largest holding first, and a neutral for 其他. The order keeps every
+// pair that can touch apart (neighbours, and the last slice against the first for 3–6 slices), for
+// colour-blind eyes too (OKLab ΔE ≥ 7.5 simulated, ≥ 15 for normal vision); the % labels and the legend
+// carry the identity as well. 桔梗: kikyō violet, gold, celadon, vermilion, young bamboo.
+type AllocationPalette = { colors: string[]; other: string };
+const palettes: Record<WafuTheme, AllocationPalette> = {
+  kikyo: { colors: ['#b48ae6', '#e2a83f', '#3fb3a6', '#e8725a', '#9fc25a'], other: '#787c88' },
+  shigure: { colors: ['#4fc4c0', '#a98be6', '#e57c66', '#7f8ff0', '#e6b648'], other: '#787c88' },
 };
-// 色調 palettes: 燈籠 warm lantern steps with the theme's own accent as the second colour; 和紙 deeper
-// ink tones that hold up on paper.
-const tonePalettes: Record<Tone, Record<WafuTheme, string[]>> = {
+// 色調 palettes: 燈籠 leads with the warm lantern amber; 和紙 uses deeper ink tones that hold up on paper.
+const tonePalettes: Record<Tone, Record<WafuTheme, AllocationPalette>> = {
   lantern: {
-    kikyo: ['#e6b778', '#c9a8e6', '#d98f6a', '#a98fd0', '#f0d29a', '#b8735a', '#e2c7b0', '#8c7bb8'],
-    shigure: ['#e8b878', '#8fd0c4', '#d98f6a', '#5fb3ab', '#f0d29a', '#b8735a', '#c4e2da', '#7c9fd0'],
+    kikyo: { colors: ['#e8b06a', '#9f8fe0', '#3fb3a6', '#7f8ff0', '#e886b0'], other: '#787c88' },
+    shigure: { colors: ['#e8b06a', '#a98be6', '#3fb8ad', '#7f8ff0', '#e886b0'], other: '#787c88' },
   },
   washi: {
-    kikyo: ['#4f55a3', '#8a5aa8', '#b5533c', '#7d86c9', '#9a7128', '#3d4390', '#b9a0cf', '#6b5b4a'],
-    shigure: ['#2a7a7b', '#7a5aa8', '#b5533c', '#5fa7a3', '#9a7128', '#1f5f63', '#a6c9c4', '#6b5b4a'],
+    kikyo: { colors: ['#4f55a3', '#b5533c', '#0f7f7a', '#9a7128', '#b04a7a'], other: '#a39d8f' },
+    shigure: { colors: ['#0f7f7a', '#b5533c', '#4f55a3', '#9a7128', '#8a5aa8'], other: '#a39d8f' },
   },
 };
 const companyNames: Record<string, string> = {
@@ -2944,7 +2946,7 @@ export default function Home() {
     }
     const sorted = [...groups.values()].sort((a, b) => b.value - a.value);
     const total = sorted.reduce((sum, item) => sum + item.value, 0);
-    type AllocationGroupWithMembers = { label: string; value: number; tradeCount: number; estimated: boolean; members: string[] };
+    type AllocationGroupWithMembers = { label: string; value: number; tradeCount: number; estimated: boolean; members: string[]; other?: boolean };
     const top: AllocationGroupWithMembers[] = sorted.slice(0, 5).map((item) => ({ ...item, members: [item.label] }));
     if (sorted.length > 5) {
       top.push(sorted.slice(5).reduce<AllocationGroupWithMembers>((other, item) => ({
@@ -2953,10 +2955,11 @@ export default function Home() {
         tradeCount: other.tradeCount + item.tradeCount,
         estimated: other.estimated || item.estimated,
         members: [...other.members, item.label],
-      }), { label: '其他', value: 0, tradeCount: 0, estimated: false, members: [] as string[] }));
+        other: true,
+      }), { label: '其他', value: 0, tradeCount: 0, estimated: false, members: [] as string[], other: true }));
     }
     return {
-      items: top.map((item, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: allocationColors[index % allocationColors.length] })),
+      items: top.map(({ other, ...item }, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: other ? allocationColors.other : allocationColors.colors[index % allocationColors.colors.length] })),
       total,
       tradeCount: current ? openTrades.length : allocationHistory?.date === allocationDate ? allocationHistory.tradeCount : 0,
       estimatedTickers: current ? [] : allocationHistory?.date === allocationDate ? allocationHistory.estimatedTickers : [],

@@ -216,7 +216,9 @@ const translations: ReadonlyArray<readonly [string, string | null, string | null
   // Guide bar, quick sheet, tabbed settings and the research drawer.
   ['左右滑切換區塊，點一下回頂部，往上滑或長按開啟快捷面板', '左右スワイプでセクション切替、タップで先頭へ、上スワイプか長押しでクイックメニュー', 'Swipe left or right to switch sections, tap for the top, swipe up or hold for the quick menu'],
   ['匯入 CSV／截圖', 'CSV・画像取込', 'Import CSV / screenshot'], ['AI 助手', 'AI アシスタント', 'AI assistant'], ['個股研究', '銘柄リサーチ', 'Stock research'], ['通知與休市', '通知・休場', 'Notices & closures'],
-  ['底部導覽', 'ボトムナビ', 'Bottom navigation'], ['引導條（預設）', 'ホームバー（既定）', 'Guide bar (default)'], ['選單列（手機）', 'メニューバー（スマホ）', 'Menu bar (phone)'], ['引導條', 'ホームバー', 'Guide bar'], ['選單列', 'メニューバー', 'Menu bar'],
+  ['底部導覽', 'ボトムナビ', 'Bottom navigation'], ['引導條（預設）', 'ホームバー（既定）', 'Guide bar (default)'], ['關閉（預設）', 'オフ（既定）', 'Off (default)'],
+  ['歷史紀錄', '履歴', 'History'], ['全部已平倉', '決済済みすべて', 'All closed'], ['全部交易', '全取引', 'All trades'], ['所有交易（含未平倉）', '全取引（保有中を含む）', 'All trades (open included)'], ['只看已平倉', '決済済みのみ', 'Closed only'],
+ ['選單列（手機）', 'メニューバー（スマホ）', 'Menu bar (phone)'], ['引導條', 'ホームバー', 'Guide bar'], ['選單列', 'メニューバー', 'Menu bar'],
   ['匯入與匯出', '取込と書出', 'Import and export'], ['外觀', '外観', 'Look'], ['模組', 'モジュール', 'Modules'], ['資料', 'データ', 'Data'], ['音樂', '音楽', 'Music'],
   ['技術面', 'テクニカル', 'Technical'], ['基本面', 'ファンダメンタルズ', 'Fundamentals'], ['DCF 估值', 'DCF 評価', 'DCF valuation'], ['購買紀錄', '購入履歴', 'Purchase lots'], ['關閉個股研究', '銘柄リサーチを閉じる', 'Close stock research'],
   ['平均取得', '平均取得', 'Avg cost'], ['效能模式', 'パフォーマンスモード', 'Performance mode'],

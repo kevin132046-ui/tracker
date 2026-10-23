@@ -252,14 +252,23 @@ const palettes: Record<WafuTheme, AllocationPalette> = {
 };
 // 色調 palettes: 燈籠 leads with the warm lantern amber; 和紙 uses deeper ink tones that hold up on paper.
 const tonePalettes: Record<Tone, Record<WafuTheme, AllocationPalette>> = {
+  // 燈籠: deeper, lamp-lit tones (OKLCH L .56–.66) so the donut does not glare on the warm night.
   lantern: {
-    kikyo: { colors: ['#e8b06a', '#9f8fe0', '#3fb3a6', '#7f8ff0', '#e886b0'], other: '#787c88' },
-    shigure: { colors: ['#e8b06a', '#a98be6', '#3fb8ad', '#7f8ff0', '#e886b0'], other: '#787c88' },
+    kikyo: { colors: ['#c28336', '#8d6cc2', '#059488', '#546fc0', '#bb5c84'], other: '#5c564e' },
+    shigure: { colors: ['#c28336', '#8d6cc2', '#059488', '#546fc0', '#bb5c84'], other: '#5c564e' },
   },
   washi: {
     kikyo: { colors: ['#4f55a3', '#b5533c', '#0f7f7a', '#9a7128', '#b04a7a'], other: '#a39d8f' },
     shigure: { colors: ['#0f7f7a', '#b5533c', '#4f55a3', '#9a7128', '#8a5aa8'], other: '#a39d8f' },
   },
+};
+/** The ink for a slice's percentage: dark or light, whichever reads better on that slice (WCAG contrast). */
+const labelInkOn = (color: string): string | undefined => {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return undefined;
+  const channel = (offset: number) => { const value = parseInt(color.slice(offset, offset + 2), 16) / 255; return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4; };
+  const luminance = .2126 * channel(1) + .7152 * channel(3) + .0722 * channel(5);
+  // #14110d and #fbf6ec: relative luminance about .006 and .92.
+  return (luminance + .05) / .056 >= .97 / (luminance + .05) ? '#14110d' : '#fbf6ec';
 };
 const companyNames: Record<string, string> = {
   AAPL: 'Apple', AMZN: 'Amazon', AXP: 'American Express', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
@@ -279,6 +288,7 @@ const holidayNoticeDismissedKey = 'optionflow-holiday-notice-dismissed';
 const aiEnabledKey = 'optionflow-ai-enabled';
 const notifyCenterKey = 'optionflow-notify-center';
 const notifyBarKey = 'optionflow-notify-bar';
+const notifyCountKey = 'optionflow-notify-count';
 // The 益損 tab in 交易與持倉 ('off' hides it).
 const gainsTabKey = 'optionflow-gains-tab';
 const bottomNavKey = 'optionflow-bottom-nav';
@@ -553,7 +563,7 @@ const AllocationDonut = memo(function AllocationDonut({ items, total, loading, a
           if (event.key === 'Escape') { event.preventDefault(); onPin(null); onHover(null); }
         }}
       />)}
-      {segments.filter((item) => item.share >= .03).map((item) => <text key={`label-${item.label}`} x={item.labelX} y={item.labelY} className={`donut-svg-label ${item.share < .04 ? 'is-small' : ''}`}>{percent.format(item.share)}</text>)}
+      {segments.filter((item) => item.share >= .03).map((item) => <text key={`label-${item.label}`} x={item.labelX} y={item.labelY} className={`donut-svg-label ${item.share < .04 ? 'is-small' : ''}`} style={{ fill: labelInkOn(item.color) }}>{percent.format(item.share)}</text>)}
     </svg>
     <span className={`donut-center ${active ? 'has-active-segment' : ''}`}>
       <strong>{loading ? '讀取中…' : active ? active.label : money.format(total)}</strong>
@@ -914,7 +924,7 @@ const StockTechnicalPanel = memo(function StockTechnicalPanel({ view, symbol, ra
   onDeleteLot: (trade: Trade) => void;
 }) {
   const [priceHoverIndex, setPriceHoverIndex] = useState<number | null>(null);
-  const [priceChartMode, setPriceChartMode] = useState<PriceChartMode>('line');
+  const [priceChartMode, setPriceChartMode] = useState<PriceChartMode>('candles');
   const [customRangeOpen, setCustomRangeOpen] = useState(range === 'custom');
   const [draftFrom, setDraftFrom] = useState(customFrom);
   const [draftTo, setDraftTo] = useState(customTo);
@@ -1157,6 +1167,8 @@ export default function Home() {
   const [notifyEnabled, setNotifyEnabled] = useState(true);
   // The notice bar in the middle of the top bar (wide screens); can be turned off in the settings.
   const [notifyBar, setNotifyBar] = useState(true);
+  // The unread number on the bell; off → the bell only lights up.
+  const [notifyCount, setNotifyCount] = useState(true);
   const [gainsTab, setGainsTab] = useState(true);
   // Which 益損 tab to open on, and a counter so the same request reopens it.
   const [gainsStart, setGainsStart] = useState<{ tab: 'this' | 'last' | 'open'; n: number }>({ tab: 'this', n: 0 });
@@ -1406,6 +1418,7 @@ export default function Home() {
       if (window.localStorage.getItem(holidayNoticeKey) === 'off') queueMicrotask(() => setHolidayNoticeEnabled(false));
       if (window.localStorage.getItem(notifyCenterKey) === 'off') queueMicrotask(() => setNotifyEnabled(false));
       if (window.localStorage.getItem(notifyBarKey) === 'off') queueMicrotask(() => setNotifyBar(false));
+      if (window.localStorage.getItem(notifyCountKey) === 'off') queueMicrotask(() => setNotifyCount(false));
       if (window.localStorage.getItem(gainsTabKey) === 'off') queueMicrotask(() => setGainsTab(false));
       const storedNav = window.localStorage.getItem(bottomNavKey);
       if (storedNav === 'menu' || storedNav === 'off') queueMicrotask(() => setBottomNav(storedNav));
@@ -1633,6 +1646,12 @@ export default function Home() {
   const toggleNotifyBar = useCallback(() => {
     setNotifyBar((current) => {
       try { window.localStorage.setItem(notifyBarKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
+      return !current;
+    });
+  }, []);
+  const toggleNotifyCount = useCallback(() => {
+    setNotifyCount((current) => {
+      try { window.localStorage.setItem(notifyCountKey, current ? 'off' : 'on'); } catch { /* storage unavailable */ }
       return !current;
     });
   }, []);
@@ -2998,6 +3017,10 @@ export default function Home() {
       items: top.map(({ other, ...item }, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: other ? allocationColors.other : allocationColors.colors[index % allocationColors.colors.length] })),
       total,
       tradeCount: current ? openTrades.length : allocationHistory?.date === allocationDate ? allocationHistory.tradeCount : 0,
+      // How many names (companies) are held — stocks and options counted by their ticker, cash left out — not how many trades.
+      nameCount: current
+        ? new Set(openTrades.filter((item) => !isCashTrade(item.trade) && item.trade.ticker).map((item) => (item.trade.ticker ?? '').toUpperCase())).size
+        : allocationHistory?.date === allocationDate ? allocationHistory.positions.filter((position) => !['USD', 'JPY', '其他'].includes(position.label.toUpperCase())).length : 0,
       estimatedTickers: current ? [] : allocationHistory?.date === allocationDate ? allocationHistory.estimatedTickers : [],
     };
   }, [allocationColors, allocationDate, allocationHistory, currentAllocationDate, openTrades]);
@@ -3516,7 +3539,7 @@ export default function Home() {
           </a>
           <HeaderMarketCalendar />
         </div>
-        {notifyEnabled && <div className="topbar-notice"><NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} bar={notifyBar} calendar={noticeCalendar} /></div>}
+        {notifyEnabled && <div className="topbar-notice"><NotifyCenter theme={wafuTheme} items={noticeItems} openSignal={notifySignal} bar={notifyBar} count={notifyCount} calendar={noticeCalendar} /></div>}
         <div className="header-actions">
           <LanguageSwitcher />
           {wafuMedia.musicDock && <MusicDock theme={wafuTheme} />}
@@ -3601,7 +3624,8 @@ export default function Home() {
             <div className="wafu-perf-main">
               {returnView === 'heat' ? <MonthlyHeatmap grid={heatGrid} loading={priceHistoryPending} />
                 : <PerfChart mode={returnView} labels={perfLabels} series={perfSeries} visible={perfVisible} colors={lineColors} names={perfNames} ddColor={chartColors.mine ?? 'var(--wa-down)'} />}
-              <p className="return-method-note">時間加權報酬：每日損益 ÷ 當日占用資本（個股市值＋max（BOXX, 賣權擔保金））；股票用 Yahoo 收盤並還原分割、含股息，選擇權以內含價值＋時間價值逐日估值{returnEstimateNote}</p>
+              {/* How the return is worked out is in 設定 → 資料 → 計算與標示說明; only a data warning stays here. */}
+              {returnEstimateNote && <p className="return-method-note">{returnEstimateNote}</p>}
             </div>
             <aside className="wafu-perf-side" aria-label="績效與風險指標">
               {riskMetrics ? <MetricsGrid m={riskMetrics} mode={rangeMode} /> : <p className="wafu-perf-empty"><b>績效與風險指標</b>開始交易後就會計算報酬、波動與回撤。</p>}
@@ -3615,7 +3639,7 @@ export default function Home() {
 
         <section className="content-grid wafu-pair-grid">
           <article className="panel allocation-panel" id="allocation">
-            <div className="panel-heading"><div><p className="eyebrow">Holdings</p><h2>持倉配置</h2></div><div className="allocation-heading-actions"><div className="allocation-chart-switch" role="group" aria-label="持倉配置圖表類型"><button type="button" className={allocationChartMode === 'donut' ? 'active' : ''} aria-pressed={allocationChartMode === 'donut'} onClick={() => setAllocationChartMode('donut')}>圓餅圖</button><button type="button" className={allocationChartMode === 'bars' ? 'active' : ''} aria-pressed={allocationChartMode === 'bars'} onClick={() => setAllocationChartMode('bars')}>長條圖</button></div><span className="count-badge">{allocationSnapshot.tradeCount} positions</span></div></div>
+            <div className="panel-heading"><div><p className="eyebrow">Holdings</p><h2>持倉配置</h2></div><div className="allocation-heading-actions"><div className="allocation-chart-switch" role="group" aria-label="持倉配置圖表類型"><button type="button" className={allocationChartMode === 'donut' ? 'active' : ''} aria-pressed={allocationChartMode === 'donut'} onClick={() => setAllocationChartMode('donut')}>圓餅圖</button><button type="button" className={allocationChartMode === 'bars' ? 'active' : ''} aria-pressed={allocationChartMode === 'bars'} onClick={() => setAllocationChartMode('bars')}>長條圖</button></div><span className="count-badge" title="持有的標的數（股票與選擇權按代號計，不含現金）">{allocationSnapshot.nameCount} positions</span></div></div>
             <div className="allocation-history-controls" aria-label="持倉配置歷史日期">
               <div>{allocationPresets.map((preset) => <button key={preset.label} className={allocationDate === preset.date ? 'active' : ''} onClick={() => selectAllocationDate(preset.date)}>{preset.label}</button>)}</div>
               <label><span>歷史日期</span><input type="date" min={earliestAllocationDate} max={currentAllocationDate} value={allocationDate} onChange={(event) => selectAllocationDate(event.target.value || currentAllocationDate)} /></label>
@@ -3637,9 +3661,8 @@ export default function Home() {
               {!allocationLoading && !allocation.length && <p className="allocation-empty">這個日期沒有持倉紀錄</p>}
               {!allocationLoading && allocation.map((item) => <button type="button" className={`allocation-bar-row ${(drilledTicker === item.label || allocationGroupSelection?.label === item.label) ? 'is-selected' : ''}`} role="listitem" key={item.label} onClick={() => selectAllocationItem(item)} aria-label={`查看 ${item.label}，${money.format(item.value)}，占 ${percent.format(item.share)}`}><div><span><i style={{ background: item.color }} />{item.label}</span><b>{money.format(item.value)}</b><strong>{percent.format(item.share)}</strong></div><span className="allocation-bar-track" aria-hidden="true"><i style={{ width: `${item.share > 0 ? Math.max(1.5, Math.min(100, item.share * 100)) : 0}%`, background: item.color }} /></span></button>)}
             </div>}
-            <p className="panel-note">{allocationDate === currentAllocationDate
-              ? '股票按目前價格、選擇權按擔保金、現金按原幣餘額計算；日圓部位會換算為 USD。'
-              : `股票使用所選日期以前最近一個交易日的收盤價，選擇權按當時擔保金、現金按當時餘額計算${allocationSnapshot.estimatedTickers.length ? `；${allocationSnapshot.estimatedTickers.join('、')} 因缺少歷史報價而以成交價估算` : ''}。`}</p>
+            {/* How the allocation is valued is in 設定 → 資料 → 計算與標示說明; only a data warning stays here. */}
+            {allocationDate !== currentAllocationDate && allocationSnapshot.estimatedTickers.length > 0 && <p className="panel-note">{allocationSnapshot.estimatedTickers.join('、')} 因缺少歷史報價而以成交價估算。</p>}
           </article>
           <article className="panel macro-panel" aria-labelledby="macro-market-title">
             <div className="panel-heading">
@@ -3760,7 +3783,6 @@ export default function Home() {
               </tbody>
             </table>
           </div>}
-          {positionView !== 'gains' && positionView !== 'cashflows' && <footer className="table-footer"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span><p>現金不用查股價。股息會照你持有的期間和除息日，扣掉設定裡的外國人預扣稅後自動估算。</p></footer>}
         </section>
         </div>
       </div>
@@ -3866,6 +3888,10 @@ export default function Home() {
               {notifyEnabled && <div className="settings-feature-actions">
                 <span>頂欄中央的通知條（寬螢幕）；關閉後只留右側的鈴鐺。</span>
                 <button type="button" className={`settings-toggle ${notifyBar ? 'is-on' : ''}`} role="switch" aria-checked={notifyBar} aria-label="頂欄通知條" onClick={toggleNotifyBar}><i /><b>{notifyBar ? '開啟' : '關閉'}</b></button>
+              </div>}
+              {notifyEnabled && <div className="settings-feature-actions">
+                <span>鈴鐺上的未讀數字；關閉後不顯示數字，有新通知時鈴鐺仍會亮起。</span>
+                <button type="button" className={`settings-toggle ${notifyCount ? 'is-on' : ''}`} role="switch" aria-checked={notifyCount} aria-label="未讀數字" onClick={toggleNotifyCount}><i /><b>{notifyCount ? '開啟' : '關閉'}</b></button>
               </div>}
             </section>
             <section className={`settings-feature-card ${gainsTab ? 'is-enabled' : ''}`}>
@@ -3986,6 +4012,15 @@ export default function Home() {
                 <div><b>清除所有交易資料</b><span>刪除全部交易，方便重新匯入更新後的資料；會先自動下載備份 CSV。設定、素材與 DCF 情境不受影響。</span></div>
                 <button type="button" className="settings-danger-button" disabled={!trades.some((trade) => !trade.derived)} onClick={() => { setSettingsOpen(false); void loadClearTradesDialog(); setClearOpen(true); }}>清除…</button>
               </div>
+            </section>
+            <section className="settings-feature-card is-enabled">
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">註</span><div><p>How it&apos;s worked out</p><h3>計算與標示說明</h3></div></div>
+              <dl className="settings-help">
+                <div><dt>收益走勢・時間加權報酬</dt><dd>每日損益 ÷ 當日占用資本（個股市值＋max（BOXX, 賣權擔保金））；股票用 Yahoo 收盤並還原分割、含股息，選擇權以內含價值＋時間價值逐日估值。</dd></div>
+                <div><dt>六項指標</dt><dd>交易統計：已平倉的個股 FIFO 批次（不含 BOXX）與選擇權交易；大賺＝個股報酬 ≥ 20%、選擇權獲利 ≥ $100。淨值與回撤：每個交易日以收盤估值，股價還原分割與分拆、含股息，選擇權以內含價值＋時間價值（隨 √剩餘天數 遞減）估值；時間加權報酬的資本＝個股市值＋max（BOXX, 賣權擔保金）。回撤百分比從資本第一次達到最高的 10% 起算，避免初期小部位放大百分比。</dd></div>
+                <div><dt>持倉配置</dt><dd>股票按目前價格、選擇權按擔保金、現金按原幣餘額計算；日圓部位會換算為 USD。選擇過去的日期時，股票使用該日以前最近一個交易日的收盤價，選擇權按當時擔保金、現金按當時餘額計算；缺少歷史報價的標的以成交價估算（會在圖下標出）。</dd></div>
+                <div><dt>交易明細的標示</dt><dd><span className="settings-help-legend"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span></span>現金不用查股價。股息會照你持有的期間和除息日，扣掉設定裡的外國人預扣稅後自動估算。</dd></div>
+              </dl>
             </section>
             <p className="settings-disclaimer"><i>i</i><span>目前為手動聚合與試算工具，不會登入券商、讀取券商帳密或送出真實訂單。</span></p>
             </>}

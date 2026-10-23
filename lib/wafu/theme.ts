@@ -11,7 +11,9 @@ export type WafuTheme = 'kikyo' | 'shigure';
 export const wafuPreferenceKey = 'optionflow-wafu-theme';
 const sessionPickKey = 'optionflow-wafu-random';
 export const defaultWafuPreference: WafuPreference = 'kikyo';
-export const wafuFontsHref = 'https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Shippori+Mincho+B1:wght@500;700;800&family=Kaisei+Decol:wght@400;700&family=Yuji+Syuku&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap';
+// Only the weights the pages use: Shippori Mincho B1 800 and Source Serif 4 500 never loaded in either theme,
+// and each listed weight of a Japanese face adds about a hundred @font-face rules to the stylesheet.
+export const wafuFontsHref = 'https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Shippori+Mincho+B1:wght@500;700&family=Kaisei+Decol:wght@400;700&family=Yuji+Syuku&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap';
 
 // A saved 'classic' (the old light page, now removed) falls back to the default.
 export const isWafuPreference = (value: unknown): value is WafuPreference => value === 'kikyo' || value === 'shigure' || value === 'random';

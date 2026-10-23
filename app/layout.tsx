@@ -38,6 +38,9 @@ export async function generateMetadata(): Promise<Metadata> {
 // Installable on Android (manifest) and iOS (Add to Home Screen: full screen, dark status bar). Written into
 // <head> directly because the metadata API streams these tags into <body>, where browsers may ignore them.
 const appHead = <>
+  {/* The web fonts come from Google: open both connections while the stylesheet is still being fetched. */}
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
   <meta name="mobile-web-app-capable" content="yes" />

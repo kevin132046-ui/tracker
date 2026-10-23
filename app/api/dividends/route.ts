@@ -186,8 +186,9 @@ async function fetchDividendEvents(ticker: string, startDate: string, endDate: s
 
 async function handleGET(request: Request) {
   try {
-    const settings = await readSettings();
-    let adjustments = await readAdjustments();
+    // Independent reads go out together: each is a round trip to D1.
+    const [settings, storedAdjustments] = await Promise.all([readSettings(), readAdjustments()]);
+    let adjustments = storedAdjustments;
     if (new URL(request.url).searchParams.get('settings') === '1' || !settings.enabled) {
       return NextResponse.json({ settings, cash: { USD: emptyCash(), JPY: emptyCash() }, pending: { USD: emptyCash(), JPY: emptyCash() }, events: [], adjustmentCount: Object.keys(adjustments).length, failedTickers: [], updatedAt: new Date().toISOString() }, { headers: responseHeaders });
     }
@@ -209,18 +210,23 @@ async function handleGET(request: Request) {
     }));
 
     // Pay dates for tickers with a dividend recent enough to be unpaid; older ones are paid by now.
-    const manualPayDates = await readPayDates();
     const recentFrom = addDaysToKey(endDate, -payLookupDays);
     const budget: RequestBudget = { remaining: maxPayLookups };
     const paySources = new Map<string, { nasdaq: KnownPayDate[]; yahoo: KnownPayDate[] }>();
-    for (const item of settled) {
-      if (item.status !== 'fulfilled' || !item.value.dividends.some((dividend) => dividend.date >= recentFrom)) continue;
-      const { ticker } = item.value;
-      const nasdaq = ticker.endsWith('.T') ? [] : await nasdaqPayDates(ticker, budget);
-      const latest = item.value.dividends.at(-1)!.date;
-      const yahoo = nasdaq.some((entry) => Math.abs(Date.parse(entry.exDate) - Date.parse(latest)) <= 3 * 86_400_000) ? [] : await yahooNextPayDate(ticker, budget);
-      paySources.set(ticker, { nasdaq, yahoo });
-    }
+    // The tickers are looked up together rather than one after another: a slow source can take its full
+    // timeout (5 s) per ticker, which added up to tens of seconds. Each lookup takes from the budget
+    // before its request goes out, so the budget still caps the total.
+    const [manualPayDates] = await Promise.all([
+      readPayDates(),
+      ...settled.map(async (item) => {
+        if (item.status !== 'fulfilled' || !item.value.dividends.some((dividend) => dividend.date >= recentFrom)) return;
+        const { ticker } = item.value;
+        const nasdaq = ticker.endsWith('.T') ? [] : await nasdaqPayDates(ticker, budget);
+        const latest = item.value.dividends.at(-1)!.date;
+        const yahoo = nasdaq.some((entry) => Math.abs(Date.parse(entry.exDate) - Date.parse(latest)) <= 3 * 86_400_000) ? [] : await yahooNextPayDate(ticker, budget);
+        paySources.set(ticker, { nasdaq, yahoo });
+      }),
+    ]);
 
     const calculatedEvents: DividendEvent[] = [];
     const failedTickers: string[] = [];

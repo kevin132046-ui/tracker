@@ -658,3 +658,26 @@
 .wafu-six-table td.positive { color: var(--wa-up); }
 .wafu-six-table td.negative { color: var(--wa-down); }
 @media (max-width: 720px) { .wafu-six-panel .panel-heading { flex-direction: column; align-items: stretch; gap: 10px; } }
+
+/* ---------- 印章 everywhere (TickerSeal / CashSeal): the 圖形持倉 seal at list sizes, in place of the company logos ---------- */
+:root[data-wafu] .hanko.seal-40 { width: 40px; height: 40px; border-radius: 8px; }
+:root[data-wafu] .hanko.seal-40 b { margin: 2px 0 0; font-size: 11px; }
+:root[data-wafu] .hanko.seal-40 b.is-long { font-size: 9.5px; }
+:root[data-wafu] .hanko.seal-40 .hanko-market { top: 2px; right: 3px; font-size: 7.5px; }
+:root[data-wafu] .hanko.seal-56 { width: 56px; height: 56px; }
+:root[data-wafu] .hanko.seal-56 b { font-size: 15px; }
+:root[data-wafu] .hanko.seal-18 { width: 18px; height: 18px; border-width: 1.2px; border-radius: 4px; }
+:root[data-wafu] .hanko.is-word b { margin: 0; font-family: var(--wa-f-title); font-weight: 400; }
+:root[data-wafu] .hanko.seal-18.is-word b { font-size: 11px; }
+:root[data-wafu] .hanko.seal-40.is-word b { font-size: 19px; }
+.symbol-cell > .hanko, .stock-lot-identity > .hanko, .technical-title > .hanko, .dividend-adjustment-source > .hanko { flex: none; }
+
+/* ---------- 交易與持倉: 未平倉 · 現金 | 歷史紀錄, then 全部 / 股票 / 選擇權 ---------- */
+.filter-row .filter-sep { flex: 0 0 1px; align-self: center; width: 1px; height: 20px; margin: 0 6px; background: var(--wa-line-2); }
+.filter-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -6px; padding: 0 28px 15px; }
+.filter-sub button { min-height: 30px; padding: 0 12px; color: var(--wa-ink-2); background: transparent; border: 1px solid var(--wa-line); border-radius: 999px; font-size: 12.5px; cursor: pointer; }
+.filter-sub button:hover { border-color: var(--wa-line-2); }
+.filter-sub button.active { color: var(--wa-accent); border-color: var(--wa-accent); background: var(--wa-accent-soft); }
+.filter-sub .filter-sub-link { margin-left: auto; border: 0; background: none; color: var(--wa-muted); text-decoration: underline; text-underline-offset: 3px; }
+.filter-sub .filter-sub-link[aria-pressed='true'] { color: var(--wa-accent); background: none; }
+@media (max-width: 720px) { .filter-sub { padding: 0 17px 13px; } .filter-sub .filter-sub-link { margin-left: 0; } }

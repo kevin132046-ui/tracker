@@ -1,0 +1,209 @@
+/*
+ * 色調 → NASA (lib/wafu/tone.ts): the page as 1970s spacecraft hardware in daylight. A pale hull; every
+ * block is a white panel with seams and two rivets; small stencilled labels (panel numbers, all-caps mono);
+ * one four-colour stripe across the top and the theme's crest as a round mission patch are the only
+ * identity; the one bright colour, red, is kept for 新增交易. Gains are olive, losses brick. The backdrop
+ * picture sits in a framed viewport beside the title instead of behind the page. No wear marks.
+ * Layout and behaviour are unchanged. Everything is scoped to <html data-tone='nasa'>.
+ */
+:root[data-wafu][data-tone='nasa'] {
+  color-scheme: light;
+  --nasa-hull: #ece5d6; --nasa-white: #f6f4ee; --nasa-seam: #bdb5a4; --nasa-ink: #1b1b1b;
+  --nasa-b1: #4c5a68; --nasa-b2: #7a7f4e; --nasa-b3: #d2a85e; --nasa-b4: #a8432f; --nasa-red: #d63a2c;
+  --nasa-stripe: linear-gradient(90deg, var(--nasa-b1) 0 25%, var(--nasa-b2) 25% 50%, var(--nasa-b3) 50% 75%, var(--nasa-b4) 75%);
+  --nasa-seams: inset 0 0 0 1px var(--nasa-seam), inset 1px 1px 0 2px rgb(255 255 255 / .7), 0 1px 0 rgb(27 27 27 / .06);
+  --nasa-rivets:
+    radial-gradient(circle at 10px 10px, var(--nasa-hull) 2.4px, var(--nasa-seam) 3px, transparent 3.6px),
+    radial-gradient(circle at calc(100% - 10px) 10px, var(--nasa-hull) 2.4px, var(--nasa-seam) 3px, transparent 3.6px);
+  --nasa-hazard: repeating-linear-gradient(45deg, var(--nasa-ink) 0 9px, var(--nasa-white) 9px 18px);
+  --nasa-label: 500 10px/1.2 var(--wa-f-mono);
+
+  --wa-bg: #ece5d6; --wa-bg-rgb: 236 229 214;
+  --wa-panel: #f6f4ee; --wa-panel-solid: #f6f4ee; --wa-panel-hi: #fbfaf6;
+  --wa-raise: rgb(27 27 27 / .04); --wa-raise-rgb: 27 27 27;
+  --wa-line: #c9c1b0; --wa-line-2: rgb(27 27 27 / .42); --wa-line-2-rgb: 27 27 27;
+  --wa-ink: #1b1b1b; --wa-ink-rgb: 27 27 27; --wa-ink-2: #3a3833; --wa-ink-2-rgb: 58 56 51;
+  --wa-muted: #5f5a4f; --wa-muted-rgb: 95 90 79;
+  --wa-accent: #1b1b1b; --wa-accent-rgb: 27 27 27; --wa-accent-strong: #000; --wa-accent-soft: rgb(27 27 27 / .07); --wa-on-accent: #f6f4ee;
+  --wa-accent-2: #4c5a68; --wa-accent-2-rgb: 76 90 104; --wa-accent-2-soft: rgb(76 90 104 / .1);
+  --wa-gold: #7a7f4e; --wa-gold-rgb: 122 127 78; --wa-gold-soft: rgb(122 127 78 / .12);
+  --wa-up: #4f5a2c; --wa-up-rgb: 79 90 44; --wa-up-soft: rgb(79 90 44 / .1);
+  --wa-down: #9a3b29; --wa-down-rgb: 154 59 41; --wa-down-soft: rgb(154 59 41 / .1);
+  --wa-seal: #1b1b1b;
+  --wa-r: 2px; --wa-r-lg: 2px;
+  --wa-f-display: 'Archivo', 'Noto Sans TC', 'Helvetica Neue', sans-serif;
+  --wa-f-title: 'Noto Sans TC', 'Archivo', sans-serif;
+  --wa-f-body: 'Noto Sans TC', 'Archivo', 'Hiragino Sans', system-ui, sans-serif;
+  --wa-f-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --wa-shell-bg: radial-gradient(rgb(27 27 27 / .045) 1px, transparent 1.2px) 0 0 / 6px 6px, linear-gradient(#ece5d6, #ece5d6);
+  /* The SPY line in 收益分析 (page.tsx perfColors): the stripe's slate, apart from the ink of 我的組合. */
+  --wa-chart-spy: #4c5a68;
+  /* Side navigation marks: all ink. */
+  --sw-red: #1b1b1b; --sw-blue: #1b1b1b; --sw-yellow: #1b1b1b; --sw-green: #1b1b1b; --sw-orange: #1b1b1b; --sw-violet: #1b1b1b; --sw-ink: #1b1b1b; --sw-on: #1b1b1b; --sw-on-light: #1b1b1b;
+  --sw-font: var(--wa-f-body);
+}
+
+/* ---------- Type: a wide grotesque for figures, stencilled mono for labels ---------- */
+:root[data-wafu][data-tone='nasa'] :is(.metric-card strong, .return-summary > strong, .donut-center strong, .summary-result strong) { font-stretch: 112%; font-weight: 700; letter-spacing: -.01em; }
+:root[data-wafu][data-tone='nasa'] :is(.hero h1, .panel h2, .trade-modal h2, .settings-panel h2, .settings-feature-heading h3) { font-weight: 700; letter-spacing: .04em; }
+:root[data-wafu][data-tone='nasa'] .eyebrow { color: var(--wa-muted); font: var(--nasa-label); letter-spacing: .1em; }
+:root[data-wafu][data-tone='nasa'] .panel .eyebrow::before { content: 'B-' counter(nasa-panel, decimal-leading-zero) '\00a0·\00a0'; display: inline; width: auto; height: auto; margin: 0; border-radius: 0; background: none; box-shadow: none; vertical-align: baseline; }
+:root[data-wafu][data-tone='nasa'] .dashboard { counter-reset: nasa-panel; }
+:root[data-wafu][data-tone='nasa'] .dashboard .panel { counter-increment: nasa-panel; }
+
+/* ---------- The hull and its panels ---------- */
+:root[data-wafu][data-tone='nasa'] .wafu-bd-photo, :root[data-wafu][data-tone='nasa'] .wafu-bd-beam, :root[data-wafu][data-tone='nasa'] .wafu-bd-lantern, :root[data-wafu][data-tone='nasa'] .wafu-bd-snow { display: none; }
+:root[data-wafu][data-tone='nasa'] .wafu-bd, :root[data-wafu][data-tone='nasa'] .wafu-bd.has-photo .wafu-bd-shade { background: var(--wa-shell-bg); }
+:root[data-wafu][data-tone='nasa'] .wafu-bd-shade::after { display: none; }
+:root[data-wafu][data-tone='nasa'] :is(.metric-card, .panel, .metric-grid > .metric-card, .metric-grid > .metric-card:not(:hover)) {
+  background: var(--nasa-rivets), var(--nasa-white); border: 0; border-radius: 2px; box-shadow: var(--nasa-seams); outline: 0; backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+:root[data-wafu][data-tone='nasa'] .metric-card::after { display: none; }
+:root[data-wafu][data-tone='nasa'] .metric-grid > .metric-card :is(p, strong, span, small) { text-shadow: none !important; }
+:root[data-wafu][data-tone='nasa'] .metric-grid { counter-reset: nasa-card; }
+:root[data-wafu][data-tone='nasa'] .metric-grid > .metric-card { counter-increment: nasa-card; padding-top: 30px; }
+:root[data-wafu][data-tone='nasa'] .metric-grid > .metric-card > p::before { content: 'A-1' counter(nasa-card); position: absolute; top: 6px; left: 22px; font: var(--nasa-label); letter-spacing: .1em; color: var(--wa-muted); font-weight: 500; }
+:root[data-wafu][data-tone='nasa'] .metric-card p { color: var(--wa-ink); font-weight: 700; letter-spacing: .04em; }
+:root[data-wafu][data-tone='nasa'] .metric-card strong { color: var(--wa-ink); }
+:root[data-wafu][data-tone='nasa'] .metric-card strong.positive, :root[data-wafu][data-tone='nasa'] .metric-card > span.metric-return.positive { color: var(--wa-up); }
+:root[data-wafu][data-tone='nasa'] .metric-card strong.negative, :root[data-wafu][data-tone='nasa'] .metric-card > span.metric-return.negative { color: var(--wa-down); }
+:root[data-wafu][data-tone='nasa'] .metric-card > span.metric-return { font-family: var(--wa-f-display); font-stretch: 112%; font-weight: 700; }
+:root[data-wafu][data-tone='nasa'] .metric-card-link:hover { box-shadow: inset 0 0 0 1.5px var(--nasa-ink), inset 1px 1px 0 2px rgb(255 255 255 / .7); }
+:root[data-wafu][data-tone='nasa'] .metric-card-link:active { transform: translateY(1px); box-shadow: inset 0 0 0 2px var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .metric-card-link::before { display: none; }
+:root[data-wafu][data-tone='nasa'] .metric-card-action { color: var(--wa-ink); background: transparent; border: 0; box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] .metric-card-action > span { color: var(--wa-ink); background: var(--nasa-white) !important; border: 1px solid var(--nasa-ink); border-radius: 0; box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] :is(.metric-card-action:hover, .metric-card-action:focus-visible) > span { color: var(--nasa-white); background: var(--nasa-ink) !important; }
+
+/* ---------- Top bar: the stripe, the patch, the switches; red only on 新增交易 ---------- */
+:root[data-wafu][data-tone='nasa'] .topbar {
+  color: var(--wa-ink); border-bottom: 0;
+  background: var(--nasa-stripe) 0 0 / 100% 7px no-repeat, var(--nasa-white);
+  box-shadow: inset 0 -1px 0 var(--nasa-seam), 0 1px 0 rgb(255 255 255 / .8); backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+:root[data-wafu][data-tone='nasa'] .brand-crest {
+  color: var(--nasa-ink); background: var(--nasa-white); border: 0; border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--nasa-ink), 0 0 0 4px var(--nasa-white), 0 0 0 5px var(--nasa-seam);
+}
+:root[data-wafu][data-tone='nasa'] .brand-crest svg { filter: none; }
+:root[data-wafu][data-tone='nasa'] .brand > span { font-family: 'Archivo', var(--wa-f-body); font-stretch: 125%; font-weight: 800; letter-spacing: .06em; }
+:root[data-wafu][data-tone='nasa'] .brand-calendar { border-color: var(--nasa-seam); }
+:root[data-wafu][data-tone='nasa'] :is(.market-calendar-tags em, .market-pill) { color: var(--wa-ink); background: var(--nasa-white); border: 1px solid var(--nasa-seam); border-radius: 0; font-family: var(--wa-f-mono); letter-spacing: .04em; }
+:root[data-wafu][data-tone='nasa'] .market-pill > span { background: transparent; box-shadow: inset 0 0 0 1.5px var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .market-pill.is-open > span { background: var(--wa-up); box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] :is(.market-pill.is-pre, .market-pill.is-post) > span { background: var(--nasa-b3); box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] .secondary-button { color: var(--wa-ink); background: var(--nasa-white); border: 1px solid var(--nasa-ink); border-radius: 0; }
+:root[data-wafu][data-tone='nasa'] .secondary-button:hover { color: var(--nasa-white); background: var(--nasa-ink); border-color: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] :is(.primary-button, .topbar .primary-button) { color: var(--nasa-white); background: var(--nasa-ink); border-radius: 0; box-shadow: none; letter-spacing: .06em; }
+:root[data-wafu][data-tone='nasa'] :is(.primary-button, .topbar .primary-button):hover { background: #000; }
+/* The one bright colour. */
+:root[data-wafu][data-tone='nasa'] .topbar .primary-button, :root[data-wafu][data-tone='nasa'] .topbar .primary-button:hover { background: var(--nasa-red); }
+:root[data-wafu][data-tone='nasa'] .wafu-notify-badge { color: var(--nasa-white); background: var(--nasa-ink); border-radius: 0; box-shadow: none; }
+
+/* ---------- Side navigation: a column of numbered panel buttons ---------- */
+:root[data-wafu][data-tone='nasa'] .side-nav { gap: 4px; padding: 26px 6px 6px; background: var(--nasa-rivets), var(--nasa-white); border: 0; border-radius: 2px; box-shadow: var(--nasa-seams); backdrop-filter: none; -webkit-backdrop-filter: none; }
+:root[data-wafu][data-tone='nasa'] .side-nav > :is(a, .settings-nav-button), :root[data-wafu][data-tone='nasa'] .side-nav .background-trigger { border-radius: 0; box-shadow: inset 0 0 0 1px var(--nasa-seam); }
+:root[data-wafu][data-tone='nasa'] .side-nav > :is(a, .settings-nav-button)::after { display: none; }
+:root[data-wafu][data-tone='nasa'] .side-nav :is(a, .settings-nav-button, .background-trigger):hover { color: var(--wa-ink); background: var(--wa-accent-soft); box-shadow: inset 0 0 0 1px var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .side-nav :is(a.active, .settings-nav-button.active), :root[data-wafu][data-tone='nasa'] .side-nav :is(a.active, .settings-nav-button.active):hover { --sw: var(--nasa-white); color: var(--nasa-white); background: var(--nasa-ink); box-shadow: inset 0 0 0 1px var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .side-nav :is(a.active, .settings-nav-button.active) .wafu-nav-glyph { color: var(--nasa-white); }
+
+/* ---------- Title: the picture in a framed viewport, the name on a plate, the clock beside it ---------- */
+:root[data-wafu][data-tone='nasa'] .hero {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); grid-template-rows: minmax(0, 1fr) auto; gap: 8px; align-items: stretch;
+}
+:root[data-wafu][data-tone='nasa'] .hero::before {
+  content: ''; grid-column: 1; grid-row: 1 / span 2; min-height: clamp(220px, 30vw, 360px);
+  border: 10px solid var(--nasa-white); box-shadow: var(--nasa-seams), inset 0 0 0 1.5px var(--nasa-ink);
+  background:
+    linear-gradient(rgb(246 244 238 / .14) 1px, transparent 1px) -1px -1px / 64px 64px,
+    linear-gradient(90deg, rgb(246 244 238 / .14) 1px, transparent 1px) -1px -1px / 64px 64px,
+    var(--wafu-photo, var(--nasa-hazard)) 28% 34% / cover no-repeat, #3a3833;
+  filter: saturate(.55) contrast(1.05);
+}
+:root[data-wafu][data-tone='nasa'] .hero::after {
+  content: 'VIEWPORT · 背景'; grid-column: 1; grid-row: 1; align-self: start; justify-self: start; margin: 22px; padding: 4px 8px;
+  color: var(--wa-ink); background: var(--nasa-white); box-shadow: 0 0 0 1px var(--nasa-ink); font: var(--nasa-label); letter-spacing: .1em; text-transform: uppercase; z-index: 1;
+}
+:root[data-wafu][data-tone='nasa'] .hero > div:first-child {
+  grid-column: 2; grid-row: 1; align-self: stretch; position: relative; padding: 30px 22px 22px;
+  background: var(--nasa-rivets), var(--nasa-white); box-shadow: var(--nasa-seams);
+}
+:root[data-wafu][data-tone='nasa'] .hero > div:first-child::before { content: 'A-01 · CREW'; position: absolute; top: 6px; left: 22px; font: var(--nasa-label); letter-spacing: .1em; color: var(--wa-muted); }
+:root[data-wafu][data-tone='nasa'] .wafu-hero-title { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 0; }
+:root[data-wafu][data-tone='nasa'] .hero > div:first-child::after { content: ''; position: absolute; left: 22px; right: 22px; bottom: 18px; height: 9px; opacity: .55; background: repeating-linear-gradient(90deg, var(--nasa-ink) 0 1px, transparent 1px 8px) 0 100% / 100% 5px no-repeat, repeating-linear-gradient(90deg, var(--nasa-ink) 0 1.5px, transparent 1.5px 40px) 0 100% / 100% 9px no-repeat; }
+:root[data-wafu][data-tone='nasa'] .hero-title-display { writing-mode: horizontal-tb; text-orientation: mixed; }
+:root[data-wafu][data-tone='nasa'] .hero h1 { color: var(--wa-ink); font-size: clamp(34px, 3.4vw, 50px); line-height: 1.05; letter-spacing: .06em; text-shadow: none; }
+:root[data-wafu][data-tone='nasa'] .hero .hero-title-accent { color: var(--wa-ink); }
+:root[data-wafu][data-tone='nasa'] .hero-title-edit-icon { position: static; margin-left: 10px; writing-mode: horizontal-tb; background: var(--nasa-white); border-color: var(--nasa-seam); }
+:root[data-wafu][data-tone='nasa'] :is(.hero-sub, .wafu-hero-sub) { margin-top: 10px; color: var(--wa-ink-2); writing-mode: horizontal-tb; text-shadow: none; letter-spacing: .08em; }
+:root[data-wafu][data-tone='nasa'] .hero .as-of { grid-column: 2; grid-row: 2; position: relative; margin: 0; border: 0; padding: 30px 18px 14px; background: var(--nasa-rivets), var(--nasa-white); border-radius: 0; box-shadow: var(--nasa-seams); backdrop-filter: none; -webkit-backdrop-filter: none; }
+:root[data-wafu][data-tone='nasa'] .hero .as-of::before { content: 'A-02 · MARKET CLOCK'; position: absolute; top: 6px; left: 22px; font: var(--nasa-label); letter-spacing: .1em; color: var(--wa-muted); }
+:root[data-wafu][data-tone='nasa'] :is(.hero .as-of, .hero .as-of p, .clock-stack-heading > span) { color: var(--wa-ink-2); }
+:root[data-wafu][data-tone='nasa'] .stacked-clock-card { background: var(--nasa-hull); border: 0; border-radius: 0; outline: 0; box-shadow: inset 0 0 0 1px var(--nasa-seam), inset 0 2px 0 rgb(27 27 27 / .06); backdrop-filter: none; -webkit-backdrop-filter: none; }
+:root[data-wafu][data-tone='nasa'] .stacked-clock-card > span { color: var(--wa-ink); border-color: var(--nasa-seam); }
+:root[data-wafu][data-tone='nasa'] .stacked-clock-card strong { color: var(--wa-ink); font-weight: 600; }
+:root[data-wafu][data-tone='nasa'] .stacked-clock-card > b { color: var(--wa-ink); background: transparent; border: 1px solid var(--nasa-ink); border-radius: 0; }
+:root[data-wafu][data-tone='nasa'] .stacked-clock-card .clock-jikan { color: var(--wa-muted); }
+@media (max-width: 860px) {
+  :root[data-wafu][data-tone='nasa'] .hero { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; }
+  :root[data-wafu][data-tone='nasa'] .hero::before { grid-row: 1; min-height: 220px; }
+  :root[data-wafu][data-tone='nasa'] .hero > div:first-child { grid-column: 1; grid-row: 2; }
+  :root[data-wafu][data-tone='nasa'] .hero .as-of { grid-column: 1; grid-row: 3; }
+}
+
+/* ---------- Switches and tabs: stencilled toggles, the current one inked ---------- */
+:root[data-wafu][data-tone='nasa'] :is(.segmented, .view-switch, .allocation-chart-switch, .clock-zone-switch) { gap: 0; padding: 0; background: var(--nasa-white); border: 0; border-radius: 0; box-shadow: 0 0 0 1px var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] :is(.segmented, .view-switch, .allocation-chart-switch, .clock-zone-switch) button { color: var(--wa-ink); background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] :is(.segmented, .view-switch, .allocation-chart-switch, .clock-zone-switch) button::after { display: none; }
+:root[data-wafu][data-tone='nasa'] :is(.segmented button.selected, .view-switch button.active, .allocation-chart-switch button.active, .clock-zone-switch button.active) { color: var(--nasa-white); background: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .count-badge { color: var(--wa-ink); background: var(--nasa-white); border: 1.5px solid var(--nasa-ink); border-radius: 0; font-family: var(--wa-f-mono); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+
+/* ---------- Charts: ink lines on ruled grounds ---------- */
+:root[data-wafu][data-tone='nasa'] .donut-segment, :root[data-wafu][data-tone='nasa'] .donut-segment-active { stroke: var(--nasa-white); }
+:root[data-wafu][data-tone='nasa'] :is(.donut-segment, .donut-segment-active).is-other { fill: url(#donut-hatch); }
+:root[data-wafu][data-tone='nasa'] .donut-hatch-ground { fill: var(--nasa-white); }
+:root[data-wafu][data-tone='nasa'] .donut-hatch-line { fill: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .donut-svg-label.is-other { fill: var(--nasa-ink) !important; paint-order: stroke; stroke: var(--nasa-white); stroke-width: 2.2px; stroke-linejoin: round; }
+:root[data-wafu][data-tone='nasa'] .donut-track { stroke: var(--nasa-hull); }
+:root[data-wafu][data-tone='nasa'] .donut-center { background: var(--nasa-white); box-shadow: inset 0 0 0 1px var(--nasa-seam); }
+
+/* ---------- Ticker seals become stencilled cargo tags ---------- */
+:root[data-wafu][data-tone='nasa'] .hanko { color: var(--wa-ink); background: var(--nasa-white); border: 1.5px solid var(--nasa-ink); border-radius: 0; box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] .hanko b { color: var(--wa-ink); font-family: var(--wa-f-mono); font-weight: 600; letter-spacing: 0; }
+:root[data-wafu][data-tone='nasa'] .hanko i, :root[data-wafu][data-tone='nasa'] .hanko .hanko-market { color: var(--wa-muted); }
+:root[data-wafu][data-tone='nasa'] .hanko.is-option { background: conic-gradient(var(--nasa-ink) 25%, transparent 0 50%, var(--nasa-ink) 0 75%, transparent 0) 0 100% / 6px 6px no-repeat, var(--nasa-white); border-color: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .hanko.is-option.seal-56 { background-size: 8px 8px; }
+:root[data-wafu][data-tone='nasa'] .hanko.is-cash { background: var(--nasa-white); border-style: dashed; border-color: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .hanko.is-word b { font-family: 'Archivo', var(--wa-f-body); font-weight: 800; }
+
+/* ---------- Settings: panels; the one destructive action behind hazard stripes ---------- */
+:root[data-wafu][data-tone='nasa'] .settings-panel { background: var(--wa-shell-bg); }
+:root[data-wafu][data-tone='nasa'] .settings-feature-card { background: var(--nasa-rivets), var(--nasa-white); border: 0; border-radius: 2px; box-shadow: var(--nasa-seams); }
+:root[data-wafu][data-tone='nasa'] .settings-feature-icon { color: var(--wa-ink); background: transparent; border: 1.5px solid var(--nasa-ink); border-radius: 0; box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] .settings-feature-status { color: var(--nasa-white); background: var(--nasa-ink); border: 0; border-radius: 0; font-family: var(--wa-f-mono); letter-spacing: .06em; }
+:root[data-wafu][data-tone='nasa'] .wafu-intro-choices button { color: var(--wa-ink); background: var(--nasa-white); border: 1px solid var(--nasa-ink); border-radius: 0; box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] .wafu-intro-choices button.active { color: var(--nasa-white); background: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .settings-danger { position: relative; padding-top: 24px; border: 1.5px solid var(--nasa-ink); border-radius: 0; background: var(--nasa-white); }
+:root[data-wafu][data-tone='nasa'] .settings-danger::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 10px; background: var(--nasa-hazard); }
+:root[data-wafu][data-tone='nasa'] .settings-danger-button { color: var(--wa-ink); background: var(--nasa-white); border: 1px solid var(--nasa-ink); border-radius: 0; }
+
+/* ---------- The opening stays 水墨: it keeps the theme's own night ---------- */
+:root[data-wafu='kikyo'][data-tone='nasa'] #wafu-opening { --wa-bg: #0c0d11; }
+:root[data-wafu='shigure'][data-tone='nasa'] #wafu-opening { --wa-bg: #07141a; }
+:root[data-wafu='kikyo'][data-tone='nasa'][data-wafu-intro] body::after { background: #0c0d11; }
+:root[data-wafu='shigure'][data-tone='nasa'][data-wafu-intro] body::after { background: #07141a; }
+
+/* ---------- Hard edges: controls and boxes lose their rounding (dots, rings and the patch stay round) ---------- */
+:root[data-wafu][data-tone='nasa'] :is(.topbar, .dashboard, .settings-panel, .trade-modal) :is(button, input, select, textarea, label, div, section, article, dl, p, span.wafu-perf-legend-item):not(.wafu-color-dot, .donut, .donut-center, .wafu-six-gauge) { border-radius: 0; }
+:root[data-wafu][data-tone='nasa'] :is(.primary-button, .secondary-button, .toolbar-io-button) { white-space: nowrap; }
+:root[data-wafu][data-tone='nasa'] .topbar-notice .wafu-notify-toggle { color: var(--wa-ink); background: var(--nasa-hull); border: 1px solid var(--nasa-seam); }
+:root[data-wafu][data-tone='nasa'] :is(.language-picker-toggle, .wafu-music-toggle) { color: var(--wa-ink); background: var(--nasa-white); border: 1px solid var(--nasa-ink); box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] :is(.toolbar-io-button, .macro-refresh-button, .recon-banner button) { color: var(--wa-ink); background: var(--nasa-white); border: 1px solid var(--nasa-ink); box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] :is(.toolbar-io-button, .macro-refresh-button, .recon-banner button):hover { color: var(--nasa-white); background: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .recon-banner { background: var(--nasa-hull); border: 0; box-shadow: inset 0 0 0 1px var(--nasa-seam); }
+:root[data-wafu][data-tone='nasa'] :is(.option-risk-strip, .wafu-concentration, .allocation-history-controls) { background: var(--nasa-hull); border-color: var(--nasa-seam); box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] .macro-market-card { background: var(--nasa-hull); border: 0; box-shadow: inset 0 0 0 1px var(--nasa-seam); }
+:root[data-wafu][data-tone='nasa'] .settings-panel > header { background: var(--nasa-stripe) 0 0 / 100% 7px no-repeat, var(--nasa-white); box-shadow: inset 0 -1px 0 var(--nasa-seam); backdrop-filter: none; -webkit-backdrop-filter: none; }
+:root[data-wafu][data-tone='nasa'] .eyebrow { white-space: nowrap; }
+:root[data-wafu][data-tone='nasa'] .hero > div:first-child { padding-bottom: 46px; }

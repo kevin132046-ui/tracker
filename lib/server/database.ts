@@ -48,8 +48,21 @@ export function getDatabase() {
   return env.DB;
 }
 
+// Set once the tables exist in this isolate: later requests skip the setup and go straight to their own
+// query. Each setup is three round trips to D1 (hundreds of milliseconds from the edge), and the page asks
+// for data from several routes at once, so repeating it on every request made each one several times slower.
+// Concurrent first requests may each run the setup; every statement in it is idempotent.
+let databaseReady = false;
+
 export async function ensureDatabase() {
   const db = getDatabase();
+  if (databaseReady) return db;
+  await setUpDatabase(db);
+  databaseReady = true;
+  return db;
+}
+
+async function setUpDatabase(db: D1Database) {
   await db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS trades (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,8 +125,8 @@ export async function ensureDatabase() {
     await db.batch(statements);
   }
 
+  // Refreshes the query planner's statistics; once per isolate is plenty.
   await db.prepare('PRAGMA optimize').run();
-  return db;
 }
 
 export const tradeSelect = `SELECT

@@ -13,11 +13,14 @@ const fail = (error: string, status: number) => NextResponse.json({ error }, { s
 // A Cloudflare Preview only has the bindings listed in the config's previews block.
 const noBucket = () => env.BACKGROUND_IMAGES ? null : fail('這個網址沒有連到 R2 儲存空間（BACKGROUND_IMAGES 未綁定），無法存取和風素材。', 503);
 
-async function listSlot(slot?: WafuAssetSlot) {
+/** The stored files, with their type and name when withMetadata is set (one listing instead of a lookup per file). */
+async function listSlot(slot?: WafuAssetSlot, withMetadata = false) {
   const objects: R2Object[] = [];
   let cursor: string | undefined;
   do {
-    const page = await env.BACKGROUND_IMAGES.list({ prefix: slot ? `${prefix}${slot}/` : prefix, cursor });
+    // `include` is part of the R2 API (compatibility date 2022-08-04 on); these typings predate it.
+    const options = { prefix: slot ? `${prefix}${slot}/` : prefix, cursor, ...(withMetadata ? { include: ['httpMetadata', 'customMetadata'] } : {}) } as R2ListOptions;
+    const page = await env.BACKGROUND_IMAGES.list(options);
     objects.push(...page.objects);
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
@@ -47,10 +50,8 @@ async function handleGET(request: Request) {
     const slot = url.searchParams.get('slot');
     if (!slot) {
       const assets: WafuAssets = {};
-      // Listings carry no metadata here, so each file (six at most) is read with head().
-      const heads = await Promise.all((await listSlot()).map((object) => env.BACKGROUND_IMAGES.head(object.key)));
-      for (const object of heads) {
-        const asset = object && describe(object);
+      for (const object of await listSlot(undefined, true)) {
+        const asset = describe(object);
         // Newest version wins if an older one was not cleaned up.
         if (asset && (!assets[asset.slot] || assets[asset.slot]!.version < asset.version)) assets[asset.slot] = asset;
       }
@@ -60,32 +61,35 @@ async function handleGET(request: Request) {
     const version = url.searchParams.get('v') ?? '';
     if (!isWafuAssetSlot(slot) || !assetVersionPattern.test(version)) return new Response(null, { status: 400, headers: noStore });
     const key = `${prefix}${slot}/${version}`;
-    const head = await env.BACKGROUND_IMAGES.head(key);
-    if (!head) return new Response(null, { status: 404, headers: noStore });
-
-    const headers = new Headers({
-      'Content-Type': head.httpMetadata?.contentType ?? 'application/octet-stream',
+    const fileHeaders = (object: R2Object) => new Headers({
+      'Content-Type': object.httpMetadata?.contentType ?? 'application/octet-stream',
       'Cache-Control': 'private, max-age=31536000, immutable',
       'Accept-Ranges': 'bytes',
-      'ETag': head.httpEtag,
+      'ETag': object.httpEtag,
       'X-Content-Type-Options': 'nosniff',
     });
     const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') ?? '');
-    if (range && (range[1] || range[2])) {
-      const size = head.size;
-      const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
-      const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
-      if (start >= size || start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
-      const object = await env.BACKGROUND_IMAGES.get(key, { range: { offset: start, length: end - start + 1 } });
+    if (!range || !(range[1] || range[2])) {
+      // The whole file (images, and audio before seeking): one read, no separate size lookup.
+      const object = await env.BACKGROUND_IMAGES.get(key);
       if (!object) return new Response(null, { status: 404, headers: noStore });
-      headers.set('Content-Range', `bytes ${start}-${end}/${size}`);
-      headers.set('Content-Length', String(end - start + 1));
-      return new Response(object.body, { status: 206, headers });
+      const headers = fileHeaders(object);
+      headers.set('Content-Length', String(object.size));
+      return new Response(object.body, { headers });
     }
-    const object = await env.BACKGROUND_IMAGES.get(key);
+    // A part of the file (audio seeking): the size comes first, to resolve and check the range.
+    const head = await env.BACKGROUND_IMAGES.head(key);
+    if (!head) return new Response(null, { status: 404, headers: noStore });
+    const headers = fileHeaders(head);
+    const size = head.size;
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start >= size || start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+    const object = await env.BACKGROUND_IMAGES.get(key, { range: { offset: start, length: end - start + 1 } });
     if (!object) return new Response(null, { status: 404, headers: noStore });
-    headers.set('Content-Length', String(object.size));
-    return new Response(object.body, { headers });
+    headers.set('Content-Range', `bytes ${start}-${end}/${size}`);
+    headers.set('Content-Length', String(end - start + 1));
+    return new Response(object.body, { status: 206, headers });
   } catch (error) {
     return fail(error instanceof Error ? error.message : '和風素材無法讀取', 500);
   }

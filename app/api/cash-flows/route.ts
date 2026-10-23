@@ -7,9 +7,12 @@ export const dynamic = 'force-dynamic';
 
 const select = 'SELECT id, date, kind, amount, currency, note, created_at AS createdAt, updated_at AS updatedAt FROM cash_flows';
 
-// Its own table, created on first use, so trade requests keep their query budget.
+// Its own table, created on first use, so trade requests keep their query budget. Once it exists in this
+// isolate, later requests skip the setup (one round trip to D1 each).
+let cashFlowsReady = false;
 async function ensureCashFlows() {
   const db = getDatabase();
+  if (cashFlowsReady) return db;
   await db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS cash_flows (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,6 +26,7 @@ async function ensureCashFlows() {
     )`),
     db.prepare('CREATE INDEX IF NOT EXISTS idx_cash_flows_date ON cash_flows(date)'),
   ]);
+  cashFlowsReady = true;
   return db;
 }
 

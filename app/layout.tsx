@@ -10,6 +10,7 @@ import './wafu-sections.css';
 import './wafu-tone.css';
 import './wafu-editor.css';
 import './wafu-nav-icons.css';
+import './wafu-nasa.css';
 import { wafuBootScript, wafuFontsHref } from '@/lib/wafu/theme';
 import StaticOpening from '@/components/wafu/opening/StaticOpening';
 

@@ -135,7 +135,7 @@ type AllocationHistory = {
   tradeCount: number;
   estimatedTickers: string[];
 };
-type AllocationItem = { label: string; value: number; tradeCount: number; estimated: boolean; members: string[]; share: number; color: string };
+type AllocationItem = { label: string; value: number; tradeCount: number; estimated: boolean; members: string[]; share: number; color: string; /** The 其他 slice (everything past the top five). */ other?: boolean };
 type TechnicalRange = '1d' | '1w' | '1mo' | '3mo' | '6mo' | '1y' | 'custom';
 type PriceChartMode = 'line' | 'candles';
 type TechnicalPoint = {
@@ -263,6 +263,12 @@ const tonePalettes: Record<Tone, Record<WafuTheme, AllocationPalette>> = {
     kikyo: { colors: ['#4f55a3', '#b5533c', '#0f7f7a', '#9a7128', '#b04a7a'], other: '#a39d8f' },
     shigure: { colors: ['#0f7f7a', '#b5533c', '#4f55a3', '#9a7128', '#8a5aa8'], other: '#a39d8f' },
   },
+  // NASA: ink, then the stripe's four paints in stripe order (adjacent slices ΔE ≥ 14 for colour-blind eyes);
+  // 其他 is drawn hatched (.donut-segment.is-other) with this grey as its plain colour elsewhere.
+  nasa: {
+    kikyo: { colors: ['#1b1b1b', '#4c5a68', '#7a7f4e', '#d2a85e', '#a8432f'], other: '#8f887a' },
+    shigure: { colors: ['#1b1b1b', '#4c5a68', '#7a7f4e', '#d2a85e', '#a8432f'], other: '#8f887a' },
+  },
 };
 /** The ink for a slice's percentage: dark or light, whichever reads better on that slice (WCAG contrast). */
 const labelInkOn = (color: string): string | undefined => {
@@ -308,7 +314,7 @@ const localBackgroundPattern = /^data:image\/jpeg;base64,/i;
 const serverBackgroundPattern = /^\/api\/background\?image=1&version=\d{10,16}-[0-9a-f-]{36}$/i;
 const isLocalBackground = (value: string) => localBackgroundPattern.test(value);
 const isServerBackground = (value: string) => serverBackgroundPattern.test(value);
-const perfColors = { mine: 'var(--wa-accent)', spy: 'var(--wa-ink-2)', boxx: 'var(--wa-gold)' };
+const perfColors = { mine: 'var(--wa-accent)', spy: 'var(--wa-chart-spy, var(--wa-ink-2))', boxx: 'var(--wa-gold)' };
 const perfNames = { mine: '我的組合', spy: 'SPY', boxx: 'BOXX' };
 const isStoredBackground = (value: string) => isLocalBackground(value) || isServerBackground(value);
 const initialUsdJpyRate = () => {
@@ -523,9 +529,11 @@ const AllocationDonut = memo(function AllocationDonut({ items, total, loading, a
   const activate = (item: typeof segments[number]) => { onPin(item.label); onSelect(item); };
   return <div className={`donut ${loading ? 'is-loading' : ''} ${items.length ? 'has-items' : ''}`}>
     <svg className="donut-svg" viewBox="0 0 100 100" role="group" aria-label="按標的計算的互動持倉圓環">
+      {/* Hatching for 其他, used by the NASA 色調 (wafu-tone.css). */}
+      <defs><pattern id="donut-hatch" width="2.6" height="2.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.6" height="2.6" className="donut-hatch-ground" /><rect width="1.05" height="2.6" className="donut-hatch-line" /></pattern></defs>
       <circle cx="50" cy="50" r="39" className="donut-track" />
-      {segments.map((item) => <path key={`base-${item.label}`} d={item.path} className="donut-segment" fill={item.color} stroke={item.color} />)}
-      {active && <><path d={active.path} className="donut-segment-outline" fill="none" stroke="white" /><path d={active.path} className="donut-segment-active" fill={active.color} stroke={active.color} /></>}
+      {segments.map((item) => <path key={`base-${item.label}`} d={item.path} className={`donut-segment${item.other ? ' is-other' : ''}`} fill={item.color} stroke={item.color} />)}
+      {active && <><path d={active.path} className="donut-segment-outline" fill="none" stroke="white" /><path d={active.path} className={`donut-segment-active${active.other ? ' is-other' : ''}`} fill={active.color} stroke={active.color} /></>}
       {segments.map((item) => <path
         key={`hit-${item.label}`}
         d={item.path}
@@ -546,7 +554,7 @@ const AllocationDonut = memo(function AllocationDonut({ items, total, loading, a
           if (event.key === 'Escape') { event.preventDefault(); onPin(null); onHover(null); }
         }}
       />)}
-      {segments.filter((item) => item.share >= .03).map((item) => <text key={`label-${item.label}`} x={item.labelX} y={item.labelY} className={`donut-svg-label ${item.share < .04 ? 'is-small' : ''}`} style={{ fill: labelInkOn(item.color) }}>{percent.format(item.share)}</text>)}
+      {segments.filter((item) => item.share >= .03).map((item) => <text key={`label-${item.label}`} x={item.labelX} y={item.labelY} className={`donut-svg-label ${item.share < .04 ? 'is-small' : ''}${item.other ? ' is-other' : ''}`} style={{ fill: labelInkOn(item.color) }}>{percent.format(item.share)}</text>)}
     </svg>
     <span className={`donut-center ${active ? 'has-active-segment' : ''}`}>
       <strong>{loading ? '讀取中…' : active ? active.label : money.format(total)}</strong>
@@ -3001,7 +3009,7 @@ export default function Home() {
       }), { label: '其他', value: 0, tradeCount: 0, estimated: false, members: [] as string[], other: true }));
     }
     return {
-      items: top.map(({ other, ...item }, index) => ({ ...item, share: total > 0 ? item.value / total : 0, color: other ? allocationColors.other : allocationColors.colors[index % allocationColors.colors.length] })),
+      items: top.map(({ other, ...item }, index) => ({ ...item, other: Boolean(other), share: total > 0 ? item.value / total : 0, color: other ? allocationColors.other : allocationColors.colors[index % allocationColors.colors.length] })),
       total,
       tradeCount: current ? openTrades.length : allocationHistory?.date === allocationDate ? allocationHistory.tradeCount : 0,
       // How many names (companies) are held — stocks and options counted by their ticker, cash left out — not how many trades.
@@ -3819,8 +3827,8 @@ export default function Home() {
               </div>
             </section>
             <section className={`settings-feature-card ${toneSetting !== 'off' ? 'is-enabled' : ''}`}>
-              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">燈</span><div><p>Warm tone</p><h3>色調</h3></div><span className="settings-feature-status">{toneChoices.find(([value]) => value === toneSetting)?.[1] ?? '現行'}</span></div>
-              <p>在桔梗與時雨之上換成柔和暖色：燈籠是暖色夜晚，和紙是白天的紙本帳簿。暖色自動會在 06:00–18:00 用和紙、其餘時間用燈籠。只換顏色與質感，版面與功能不變。</p>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">燈</span><div><p>Tone</p><h3>色調</h3></div><span className="settings-feature-status">{toneChoices.find(([value]) => value === toneSetting)?.[1] ?? '現行'}</span></div>
+              <p>在桔梗與時雨之上換顏色與質感：燈籠是暖色夜晚，和紙是白天的紙本帳簿，NASA 是 70 年代航太設備的白色外殼（面板、接縫、小標籤，紅色只留給新增交易）。暖色自動會在 06:00–18:00 用和紙、其餘時間用燈籠。版面與功能不變。</p>
               <div className="wafu-intro-row">
                 <span id="tone-label">色調</span>
                 <div className="wafu-intro-choices" role="radiogroup" aria-labelledby="tone-label">

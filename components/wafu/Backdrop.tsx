@@ -41,6 +41,14 @@ export default function Backdrop({ theme, paused, hidePhoto = false }: {
     root.dataset.wafuBackdrop = '1';
     return () => { delete root.dataset.wafuBackdrop; };
   }, [shown]);
+  // The picture is also offered to the page (--wafu-photo): the NASA 色調 shows it in a framed window over the
+  // title instead of behind the whole page.
+  useEffect(() => {
+    if (!shown || !photo) return;
+    const root = document.documentElement;
+    root.style.setProperty('--wafu-photo', `url("${photo}")`);
+    return () => { root.style.removeProperty('--wafu-photo'); };
+  }, [shown, photo]);
 
   // A little parallax on the picture (not on touch screens, where it costs more than it adds, nor in 效能模式).
   useEffect(() => {

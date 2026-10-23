@@ -21,6 +21,7 @@ import { chatRequest, chatSearchEstimate, cleanSnapshot, cleanTurns, completeCha
 import { analysisRequest, completeFilingRequest, followUpRequest, type FilingContext } from '@/lib/server/filing-analysis';
 import { checkOpenAiQuota, quotaReport, recordOpenAiUsage } from '@/lib/server/openai-quota';
 import { SecNotConfigured, filingText, findFiling, isAccession, lookupCik, quarterlyFigures } from '@/lib/server/sec';
+import { crossSiteWrite } from '@/lib/server/same-origin';
 
 export const dynamic = 'force-dynamic';
 
@@ -126,6 +127,9 @@ function cleanOpenTrades(value: unknown): OpenTradeHint[] {
 }
 
 export async function POST(request: Request) {
+  // Another site must not spend the Worker's AI keys through a signed-in browser.
+  const crossSite = crossSiteWrite(request);
+  if (crossSite) return crossSite;
   const gate = await aiGate(request);
   if (byokLimited(request, gate, 'ask', 40)) return fail('AI 請求太頻繁，請十分鐘後再試。', 429);
 

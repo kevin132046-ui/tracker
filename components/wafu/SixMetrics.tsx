@@ -368,8 +368,6 @@ export default function SixMetrics({ trades, book, spy, cashFlows, usdJpyRate, t
       {view === 'equity' && curve && <span className="wafu-six-legend-note">累積損益（美元），含已實現、未實現與股息</span>}
     </div>
     {curve ? (view === 'monthly' ? <MonthTable curve={curve} /> : <SixChart curve={curve} view={view} colors={colors} />) : <p className="wafu-heat-empty">還沒有可計算的期間</p>}
-    <p className="return-method-note">
-      交易統計：已平倉的個股 FIFO 批次（不含 BOXX）與選擇權交易；大賺＝個股報酬 ≥ 20%、選擇權獲利 ≥ $100。淨值與回撤：每個交易日以收盤估值，股價還原分割與分拆、含股息，選擇權以內含價值＋時間價值（隨 √剩餘天數 遞減）估值；時間加權報酬的資本＝個股市值＋max（BOXX, 賣權擔保金）。回撤百分比從資本第一次達到最高的 10% 起算，避免初期小部位放大百分比。
-    </p>
+    {/* How these are worked out: 設定 → 資料 → 計算與標示說明. */}
   </article>;
 }

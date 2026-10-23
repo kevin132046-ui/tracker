@@ -1041,3 +1041,5 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .import-flow { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 650; }
 .import-flow.deposit { color: var(--wa-up); background: var(--wa-up-soft); }
 .import-flow.withdrawal { color: var(--wa-down); background: var(--wa-down-soft); }
+/* 交易明細: the row that stands for the rows not drawn yet (drawn as it scrolls into view). */
+.trade-rows-more td { padding: 18px 17px; color: var(--wa-muted); font-size: 12px; letter-spacing: .04em; text-align: center; }

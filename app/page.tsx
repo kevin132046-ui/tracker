@@ -1,6 +1,6 @@
 'use client';
 
-import type { ChangeEvent, CSSProperties } from 'react';
+import type { ChangeEvent, CSSProperties, ReactNode } from 'react';
 import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BrokerWorkspace } from '@/lib/broker-workspace';
 import {
@@ -452,6 +452,42 @@ const CompanyLogo = memo(function CompanyLogo({ ticker, compact = false }: { tic
     />
   </span>;
 });
+
+type EnrichedTrade = { trade: Trade } & ReturnType<typeof metrics>;
+
+// 交易明細 draws its rows a chunk at a time: a switch to a long list (全部, 股票) answers at once with the
+// first rows, and the next chunk is drawn only as the reader scrolls near the end of the drawn rows,
+// instead of one long task that freezes the page for every row at once.
+const ROW_CHUNK = 30;
+const TradeRowChunk = memo(function TradeRowChunk({ items, renderRow }: { items: EnrichedTrade[]; renderRow: (item: EnrichedTrade) => ReactNode }) {
+  return <>{items.map(renderRow)}</>;
+});
+/** The rows of `items`; starts over with the first chunk whenever `resetKey` (filter, view, search) changes.
+ *  Chunks already drawn are not drawn again when the next one is added. */
+function ProgressiveRows({ items, renderRow, resetKey, columns }: { items: EnrichedTrade[]; renderRow: (item: EnrichedTrade) => ReactNode; resetKey: string; columns: number }) {
+  const [shown, setShown] = useState(1);
+  const [drawnFor, setDrawnFor] = useState(resetKey);
+  if (drawnFor !== resetKey) { setDrawnFor(resetKey); setShown(1); }
+  const chunks = useMemo(() => {
+    const out: EnrichedTrade[][] = [];
+    for (let i = 0; i < items.length; i += ROW_CHUNK) out.push(items.slice(i, i + ROW_CHUNK));
+    return out;
+  }, [items]);
+  const visible = Math.min(shown, chunks.length);
+  const moreRef = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    const more = moreRef.current;
+    if (!more || visible >= chunks.length) return undefined;
+    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) setShown((count) => count + 1); }, { rootMargin: '900px 0px' });
+    observer.observe(more);
+    return () => observer.disconnect();
+  }, [visible, chunks.length]);
+  const rest = items.length - visible * ROW_CHUNK;
+  return <>
+    {chunks.slice(0, visible).map((chunk, index) => <TradeRowChunk key={index} items={chunk} renderRow={renderRow} />)}
+    {rest > 0 && <tr ref={moreRef} className="trade-rows-more"><td colSpan={columns}>還有 {rest} 筆，往下捲動繼續顯示</td></tr>}
+  </>;
+}
 
 const donutPoint = (radius: number, fraction: number) => {
   const angle = fraction * Math.PI * 2 - Math.PI / 2;
@@ -3720,7 +3756,7 @@ export default function Home() {
               <tbody>
                 {loading && <tr><td colSpan={visibleTradeColumns.length} className="empty-state">正在載入你的交易紀錄…</td></tr>}
                 {!loading && !filteredTrades.length && <tr><td colSpan={visibleTradeColumns.length} className="empty-state">沒有符合目前篩選條件的交易。</td></tr>}
-                {filteredTrades.map((item) => <tr key={item.trade.id}>{visibleTradeColumns.map((column) => renderTradeCell(column.id, item))}</tr>)}
+                <ProgressiveRows items={filteredTrades} columns={visibleTradeColumns.length} resetKey={`${filter}|${query}|${drilledTicker ?? ''}|${allocationGroupSelection?.label ?? ''}`} renderRow={(item) => <tr key={item.trade.id}>{visibleTradeColumns.map((column) => renderTradeCell(column.id, item))}</tr>} />
               </tbody>
             </table>
           </div>}

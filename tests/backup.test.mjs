@@ -34,6 +34,17 @@ test('a damaged backup is reported instead of restored', async () => {
   await assert.rejects(readZip(new Blob([bytes('not a zip at all')])), /不是 OptionFlow 的備份檔/);
 });
 
+test('a file that inflates past its stated size is refused before it fills memory', async () => {
+  const zip = new Uint8Array(await (await createZip([{ name: 'database.json', data: new Uint8Array(4_000_000), compress: true }])).arrayBuffer());
+  // Claim 1 KB uncompressed in the central directory (offset 24 in its record).
+  const view = new DataView(zip.buffer);
+  for (let i = zip.length - 22; i >= 0; i -= 1) {
+    if (view.getUint32(i, true) === 0x02014b50) { view.setUint32(i + 24, 1024, true); break; }
+  }
+  const entries = await readZip(new Blob([zip]));
+  await assert.rejects(entries.get('database.json').read(), /損毀/);
+});
+
 test('only the background and 和風 art keys can be backed up or written back', () => {
   assert.deepEqual(backupFileRule('portfolio/backgrounds/1729000000000-0f8c4a1e-2b3c-4d5e-8f90-123456789abc.jpg'), { kind: 'background' });
   assert.deepEqual(backupFileRule('wafu/bgm-shigure-3/1729000000000-abcd1234'), { kind: 'bgm' });

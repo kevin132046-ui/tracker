@@ -25,6 +25,30 @@ async function transform(bytes: Uint8Array, stream: CompressionStream | Decompre
   return new Uint8Array(await new Response(output).arrayBuffer());
 }
 
+/**
+ * Inflates at most `limit` bytes: a crafted file can claim a small size and expand to gigabytes,
+ * so reading stops as soon as the output passes what the archive says it holds.
+ */
+async function inflateAtMost(packed: Uint8Array, limit: number, name: string) {
+  const reader = new Blob([packed as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw') as unknown as ReadableWritablePair<Uint8Array, Uint8Array>).getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > limit) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error(`備份檔裡的「${name}」已損毀。`);
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
+  return out;
+}
+
 export type ZipInput = { name: string; data: Uint8Array; compress?: boolean };
 
 const maxZipBytes = 0xffffffff;
@@ -141,7 +165,7 @@ export async function readZip(file: Blob): Promise<Map<string, ZipEntry>> {
         if (header.getUint32(0, true) !== 0x04034b50) throw notZip();
         const start = localOffset + 30 + header.getUint16(26, true) + header.getUint16(28, true);
         const packed = new Uint8Array(await file.slice(start, start + packedSize).arrayBuffer());
-        const bytes = method === 8 ? await transform(packed, new DecompressionStream('deflate-raw')) : packed;
+        const bytes = method === 8 ? await inflateAtMost(packed, size, name) : packed;
         if (bytes.length !== size || crc32(bytes) !== crc) throw new Error(`備份檔裡的「${name}」已損毀。`);
         return bytes;
       },

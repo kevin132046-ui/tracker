@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { defaultPort, seedDefaultBackground, startServer } from './server.mjs';
+import { defaultPort, keyHeader, seedDefaultBackground, startServer } from './server.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -81,6 +81,7 @@ function buildMenu() {
 
 /** Only the local site opens inside the window; every other link goes to the system browser. */
 function keepLinksOutside(contents, origin) {
+  contents.on('will-attach-webview', (event) => event.preventDefault());
   const isLocal = (url) => { try { return new URL(url).origin === origin; } catch { return false; } };
   const openOutside = (url) => { if (/^https?:\/\//i.test(url)) void shell.openExternal(url); };
   contents.setWindowOpenHandler(({ url }) => {
@@ -94,10 +95,15 @@ function keepLinksOutside(contents, origin) {
   });
 }
 
-function lockDownSession(origin) {
+function lockDownSession(origin, key) {
+  // The local server answers only requests with this launch's key (server.mjs); only this window has it.
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    if (details.url.startsWith(`${origin}/`)) details.requestHeaders[keyHeader] = key;
+    callback({ requestHeaders: details.requestHeaders });
+  });
   const allowed = new Set(['clipboard-sanitized-write', 'fullscreen']);
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    callback(allowed.has(permission) && (details.requestingUrl ?? '').startsWith(origin));
+    callback(allowed.has(permission) && (details.requestingUrl ?? '').startsWith(`${origin}/`));
   });
   session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin) => allowed.has(permission) && requestingOrigin === origin);
   // Backups and CSV exports: ask where to save, starting in Downloads.
@@ -151,7 +157,7 @@ async function start() {
       fs.appendFileSync(path.join(logDir, 'server.log'), `${new Date().toISOString()} default background: ${error}\n`);
     }
   }
-  lockDownSession(server.url);
+  lockDownSession(server.url, server.key);
   buildMenu();
   const win = createWindow(server.url);
   if (smokeTest) await runSmokeTest(win);

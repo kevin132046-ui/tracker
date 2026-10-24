@@ -271,13 +271,15 @@ const tonePalettes: Record<Tone, Record<WafuTheme, AllocationPalette>> = {
     shigure: { colors: ['#1b1b1b', '#4c5a68', '#7a7f4e', '#d2a85e', '#a8432f'], other: '#8f887a' },
   },
 };
+const darkLabelInk = '#14110d';
+const lightLabelInk = '#fbf6ec';
 /** The ink for a slice's percentage: dark or light, whichever reads better on that slice (WCAG contrast). */
 const labelInkOn = (color: string): string | undefined => {
   if (!/^#[0-9a-f]{6}$/i.test(color)) return undefined;
   const channel = (offset: number) => { const value = parseInt(color.slice(offset, offset + 2), 16) / 255; return value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4; };
   const luminance = .2126 * channel(1) + .7152 * channel(3) + .0722 * channel(5);
   // #14110d and #fbf6ec: relative luminance about .006 and .92.
-  return (luminance + .05) / .056 >= .97 / (luminance + .05) ? '#14110d' : '#fbf6ec';
+  return (luminance + .05) / .056 >= .97 / (luminance + .05) ? darkLabelInk : lightLabelInk;
 };
 const companyNames: Record<string, string> = {
   AAPL: 'Apple', AMZN: 'Amazon', AXP: 'American Express', BOXX: 'Alpha Architect', GOOGL: 'Alphabet', KO: 'Coca-Cola',
@@ -555,7 +557,13 @@ const AllocationDonut = memo(function AllocationDonut({ items, total, loading, a
           if (event.key === 'Escape') { event.preventDefault(); onPin(null); onHover(null); }
         }}
       />)}
-      {segments.filter((item) => item.share >= .03).map((item) => <text key={`label-${item.label}`} x={item.labelX} y={item.labelY} className={`donut-svg-label ${item.share < .04 ? 'is-small' : ''}${item.other ? ' is-other' : ''}`} style={{ fill: labelInkOn(item.color) }}>{percent.format(item.share)}</text>)}
+      {segments.filter((item) => item.share >= .03).map((item) => {
+        const ink = labelInkOn(item.color);
+        // The thin edge around a figure is the opposite of its ink (a dark edge on light figures, a paper edge
+        // on dark ones), so it separates the figure from a neighbouring slice without thickening the strokes.
+        const edge = ink === darkLabelInk ? ' ink-dark' : ink === lightLabelInk ? ' ink-light' : '';
+        return <text key={`label-${item.label}`} x={item.labelX} y={item.labelY} className={`donut-svg-label${item.share < .04 ? ' is-small' : ''}${item.other ? ' is-other' : ''}${edge}`} style={{ fill: ink }}>{percent.format(item.share)}</text>;
+      })}
     </svg>
     <span className={`donut-center ${active ? 'has-active-segment' : ''}`}>
       <strong>{loading ? '讀取中…' : active ? active.label : money.format(total)}</strong>

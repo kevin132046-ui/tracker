@@ -1,6 +1,7 @@
 # Desktop app (desktop/): builds the site once, then packages and smoke-tests it on Linux and Windows.
-# Pull requests that touch the desktop app get the installers as workflow artifacts; a tag such as
-# desktop-v0.1.0 also publishes them as a GitHub Release.
+# Pull requests that touch the desktop app get the installers as workflow artifacts. A desktop-v* tag
+# publishes them as a GitHub Release: push the tag, or publish a release with a new desktop-v* tag on
+# GitHub's Releases page (the installers are then added to that release).
 name: Desktop
 
 on:
@@ -11,6 +12,8 @@ on:
   push:
     tags:
       - 'desktop-v*'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -127,4 +130,11 @@ jobs:
           - **Linux**：下載 `*.AppImage`，執行 `chmod +x` 之後開啟；Ubuntu／Debian 也可以安裝 `*.deb`。
           - 要從網站版搬資料過來：在網站的「設定 → 資料 → 匯出完整備份」匯出，再到桌面版選「從備份還原」。
           EOF
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "OptionFlow 桌面版 ${GITHUB_REF_NAME#desktop-v}" --notes-file notes.md out/*.AppImage out/*.deb out/*.exe out/*.zip
+          title="OptionFlow 桌面版 ${GITHUB_REF_NAME#desktop-v}"
+          # A release published on GitHub's Releases page already exists: fill it in instead of creating it.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$title" --notes-file notes.md
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber out/*.AppImage out/*.deb out/*.exe out/*.zip
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$title" --notes-file notes.md out/*.AppImage out/*.deb out/*.exe out/*.zip
+          fi

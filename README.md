@@ -45,6 +45,14 @@ pnpm lint
 pnpm build
 ```
 
+## 桌面版（Linux・Windows）
+
+不想架 Cloudflare 的話，可以用桌面版：和網站同一份程式，在自己的電腦上執行，資料存在本機，也不需要 Access 登入。
+
+- **下載**：[GitHub Releases](https://github.com/kevin132046-ui/tracker/releases) 裡的 `OptionFlow-Setup-*.exe`（Windows）、`*.AppImage` 或 `*.deb`（Linux）。安裝檔沒有程式碼簽章，Windows 第一次開啟如果出現 SmartScreen，按「其他資訊 → 仍要執行」。
+- **搬資料**：網站版「設定 → 資料 → 匯出完整備份」，再到桌面版「從備份還原」。反過來也可以。
+- **自己建置**：見 [`desktop/README.md`](desktop/README.md)。發佈新版本時，先改 `desktop/package.json` 的 `version`，再推送 `desktop-v<版本>` 標籤，GitHub Actions 會在 Linux 和 Windows 上打包、跑煙霧測試，然後建立 Release。
+
 ## 部署到你自己的 Cloudflare 帳號
 
 1. **建立 D1 與 R2**

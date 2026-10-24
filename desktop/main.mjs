@@ -162,7 +162,13 @@ async function start() {
  * and quit with 0 (or 1 on any failure). Used by CI on every platform the release is built for.
  */
 async function runSmokeTest(win) {
-  const fail = (message) => { console.error(`SMOKE FAIL ${message}`); app.exit(1); };
+  // Stop workerd before exiting, so nothing is left running for CI to wait on.
+  const fail = (message) => {
+    console.error(`SMOKE FAIL ${message}`);
+    const closing = server;
+    server = null;
+    Promise.resolve(closing?.dispose()).catch(() => undefined).finally(() => app.exit(1));
+  };
   const timer = setTimeout(() => fail('timed out'), 90_000);
   try {
     await new Promise((resolve, reject) => {

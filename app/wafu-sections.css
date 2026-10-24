@@ -96,8 +96,10 @@
 :root[data-wafu] .donut-center strong { color: var(--wa-ink); font-family: var(--wa-f-display); font-weight: 700; letter-spacing: 0; }
 :root[data-wafu] .donut-svg-label { fill: var(--wa-bg); stroke: none; paint-order: normal; font-family: var(--wa-f-mono); font-weight: 500; }
 :root[data-wafu] .donut-svg-label.is-small { fill: var(--wa-bg); }
-/* A thin dark edge keeps each figure readable whatever slice or neighbour it sits over. */
-:root[data-wafu] .donut-svg-label { stroke: rgb(0 0 0 / .35); stroke-width: .5px; paint-order: stroke fill; }
+/* A thin edge in the opposite tone keeps each figure readable over a neighbouring slice. It stays hairline
+   and is drawn under the fill, so the glyphs keep their own weight instead of blurring into a dark outline. */
+:root[data-wafu] .donut-svg-label { stroke: rgb(20 17 13 / .45); stroke-width: .28px; stroke-linejoin: round; paint-order: stroke fill; text-rendering: geometricPrecision; }
+:root[data-wafu] .donut-svg-label.ink-dark { stroke: rgb(251 246 236 / .5); }
 :root[data-wafu] .donut-segment-outline { stroke: var(--wa-ink); }
 
 /* ---------- Top bar (prototype): date with the solar term, a centred notice pill, a lantern for the market ---------- */

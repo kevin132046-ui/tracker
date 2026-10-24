@@ -1,0 +1,33 @@
+<!doctype html><html><body style="margin:0;background:transparent"><canvas id="c" width="1024" height="1024"></canvas><script>
+<!-- Source of desktop/resources/icon.png: an original icon (balloon flower on a phosphor screen). Render at 1024 × 1024 with a transparent background, then scale to 512. -->
+const g=document.getElementById('c').getContext('2d');
+// case
+g.fillStyle='#262826';g.beginPath();g.roundRect(64,64,896,896,190);g.fill();
+g.strokeStyle='rgba(255,255,255,.08)';g.lineWidth=8;g.stroke();
+// stripes
+[['#F2A93B',0],['#E0661F',1],['#9A3A1C',2]].forEach(([c,i])=>{g.fillStyle=c;g.fillRect(200+i*76,808,76,44)});
+// screws
+[[150,150],[874,150],[150,874],[874,874]].forEach(([x,y])=>{g.fillStyle='#4b4f4c';g.beginPath();g.arc(x,y,22,0,7);g.fill();g.strokeStyle='#161716';g.lineWidth=7;g.beginPath();g.moveTo(x-12,y);g.lineTo(x+12,y);g.stroke();});
+// CRT
+g.fillStyle='#0f100f';g.beginPath();g.roundRect(170,190,684,580,90);g.fill();
+g.save();g.beginPath();g.roundRect(210,230,604,500,70);g.clip();
+g.fillStyle='#050806';g.fillRect(210,230,604,500);
+const hz=g.createRadialGradient(512,480,10,512,480,360);hz.addColorStop(0,'rgba(116,255,154,.16)');hz.addColorStop(1,'rgba(116,255,154,0)');g.fillStyle=hz;g.fillRect(210,230,604,500);
+// balloon flower: five pointed petals
+g.translate(512,480);g.shadowColor='rgba(116,255,154,.8)';g.shadowBlur=26;g.strokeStyle='#74FF9A';g.lineWidth=22;g.lineJoin='round';
+g.beginPath();
+for(let i=0;i<5;i++){const a=-Math.PI/2+i*2*Math.PI/5, b=a+Math.PI/5;
+ const tip=[Math.cos(a)*190,Math.sin(a)*190], vx=[Math.cos(b)*92,Math.sin(b)*92];
+ const c1=[Math.cos(a-0.32)*170,Math.sin(a-0.32)*170], c2=[Math.cos(a+0.32)*170,Math.sin(a+0.32)*170];
+ if(i===0){g.moveTo(Math.cos(a-Math.PI/5)*92,Math.sin(a-Math.PI/5)*92);}
+ g.quadraticCurveTo(c1[0],c1[1],tip[0],tip[1]);g.quadraticCurveTo(c2[0],c2[1],vx[0],vx[1]);}
+g.closePath();g.stroke();
+g.fillStyle='#74FF9A';g.beginPath();g.arc(0,0,30,0,7);g.fill();
+g.setTransform(1,0,0,1,0,0);g.shadowBlur=0;
+for(let y=230;y<730;y+=10){g.fillStyle='rgba(0,0,0,.3)';g.fillRect(210,y,604,4);}
+const v=g.createRadialGradient(512,480,200,512,480,420);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.65)');g.fillStyle=v;g.fillRect(210,230,604,500);
+g.restore();
+// lamp
+g.fillStyle='#0b0b0b';g.beginPath();g.arc(808,830,26,0,7);g.fill();g.shadowColor='#FFB23E';g.shadowBlur=24;g.fillStyle='#FFB23E';g.beginPath();g.arc(808,830,17,0,7);g.fill();
+document.title='done';
+</script></body></html>

@@ -1,0 +1,331 @@
+<!doctype html>
+<!--
+  Source of desktop/resources/default-background.jpg: the background a new desktop install starts with.
+  An original cassette-futurism console for a fictional unit (OptionFlow OF-7); every figure on it is made up.
+  To render it again:
+    cd desktop/art && npm install --no-save @fontsource/vt323@5.1.0 @fontsource/ibm-plex-sans-condensed@5.1.0
+    open this file in Chromium at 2560 × 1440, wait for document.title === 'done', screenshot the canvas,
+    save as JPEG (quality 86, progressive). Fonts: VT323 and IBM Plex Sans Condensed (SIL Open Font License).
+-->
+<html><head><meta charset="utf-8">
+<style>
+@font-face{font-family:VT;src:url(node_modules/@fontsource/vt323/files/vt323-latin-400-normal.woff2)}
+@font-face{font-family:Cond;font-weight:500;src:url(node_modules/@fontsource/ibm-plex-sans-condensed/files/ibm-plex-sans-condensed-latin-500-normal.woff2)}
+@font-face{font-family:Cond;font-weight:700;src:url(node_modules/@fontsource/ibm-plex-sans-condensed/files/ibm-plex-sans-condensed-latin-700-normal.woff2)}
+html,body{margin:0;background:#000}
+canvas{display:block}
+</style></head>
+<body><canvas id="c" width="2560" height="1440"></canvas>
+<script>
+// OptionFlow desktop background: an original cassette-futurism console (fictional unit OF-7).
+const W = 2560, H = 1440;
+const c = document.getElementById('c'), g = c.getContext('2d');
+const C = {
+  crt:'#050806', phos:'#74FF9A', phosDim:'#2E6B3F', amber:'#FFB23E',
+  case:'#1d1f1e', caseDeep:'#141615', panel:'#2c2f2d', panel2:'#353936', olive:'#3f4630',
+  beige:'#cfc5aa', beigeShade:'#ab9f83', plateBg:'#0f0f0f', plateFg:'#e6e3da',
+  s1:'#F2A93B', s2:'#E0661F', s3:'#9A3A1C', alert:'#E5281E',
+};
+let seed = 7;
+const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+
+function noise(x, y, w, h, alpha, size = 2) {
+  for (let i = 0; i < (w * h) / (size * size * 6); i++) {
+    const v = rnd() > .5 ? 255 : 0;
+    g.fillStyle = `rgba(${v},${v},${v},${alpha * rnd()})`;
+    g.fillRect(x + rnd() * w, y + rnd() * h, size, size);
+  }
+}
+function slab(x, y, w, h, fill, r = 6) {
+  g.save();
+  g.fillStyle = fill; g.beginPath(); g.roundRect(x, y, w, h, r); g.fill();
+  g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(x + r, y + 1); g.lineTo(x + w - r, y + 1); g.stroke();
+  g.strokeStyle = 'rgba(0,0,0,.55)';
+  g.beginPath(); g.moveTo(x + r, y + h - 1); g.lineTo(x + w - r, y + h - 1); g.stroke();
+  g.restore();
+}
+function screw(x, y, r = 9, angle = .6) {
+  g.save();
+  g.fillStyle = '#4b4f4c'; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,.6)'; g.lineWidth = 2; g.stroke();
+  g.translate(x, y); g.rotate(angle);
+  g.strokeStyle = '#1b1c1b'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(-r * .6, 0); g.lineTo(r * .6, 0); g.moveTo(0, -r * .6); g.lineTo(0, r * .6); g.stroke();
+  g.restore();
+}
+function screws(x, y, w, h, inset = 18) {
+  screw(x + inset, y + inset, 9, .3); screw(x + w - inset, y + inset, 9, 1.1);
+  screw(x + inset, y + h - inset, 9, .8); screw(x + w - inset, y + h - inset, 9, .1);
+}
+function plate(x, y, text, size = 22, fg = C.plateFg, bg = C.plateBg) {
+  g.save();
+  g.font = `500 ${size}px Cond`;
+  const spaced = text.toUpperCase().split('').join(String.fromCharCode(8202));
+  const w = g.measureText(spaced).width + size * 1.1;
+  g.fillStyle = bg; g.fillRect(x, y, w, size * 1.55);
+  g.fillStyle = fg; g.textBaseline = 'middle'; g.fillText(spaced, x + size * .55, y + size * .8);
+  g.restore();
+  return w;
+}
+function stripes(x, y, w, h) {
+  const part = w / 3;
+  [C.s1, C.s2, C.s3].forEach((color, i) => { g.fillStyle = color; g.fillRect(x + part * i, y, part + 1, h); });
+}
+function key(x, y, w, h, fill, legend, legendColor = '#1a1a1a', size = 22) {
+  g.save();
+  g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.roundRect(x + 3, y + 6, w, h, 6); g.fill();
+  g.fillStyle = fill; g.beginPath(); g.roundRect(x, y, w, h, 6); g.fill();
+  g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(x + 6, y + 4, w - 12, 3);
+  g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(x + 4, y + h - 9, w - 8, 5);
+  if (legend) { g.fillStyle = legendColor; g.font = `700 ${size}px Cond`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(legend, x + w / 2, y + h / 2 - 2); }
+  g.restore();
+}
+function lamp(x, y, color, on, r = 11) {
+  g.save();
+  g.fillStyle = '#0b0b0b'; g.beginPath(); g.arc(x, y, r + 4, 0, Math.PI * 2); g.fill();
+  g.fillStyle = on ? color : 'rgba(40,40,40,1)';
+  if (on) { g.shadowColor = color; g.shadowBlur = 22; }
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  g.shadowBlur = 0; g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.arc(x - r * .35, y - r * .35, r * .3, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+function knob(x, y, r, angle) {
+  g.save();
+  g.fillStyle = '#0d0e0d'; g.beginPath(); g.arc(x, y + 4, r + 3, 0, Math.PI * 2); g.fill();
+  const grad = g.createRadialGradient(x - r * .3, y - r * .3, r * .1, x, y, r);
+  grad.addColorStop(0, '#5a5e5b'); grad.addColorStop(1, '#262827');
+  g.fillStyle = grad; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x + Math.cos(a) * r * .86, y + Math.sin(a) * r * .86); g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); g.stroke(); }
+  g.strokeStyle = C.plateFg; g.lineWidth = 4; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(angle) * r * .8, y + Math.sin(angle) * r * .8); g.stroke();
+  g.fillStyle = 'rgba(230,227,218,.55)';
+  for (let i = 0; i <= 10; i++) { const a = Math.PI * .75 + i / 10 * Math.PI * 1.5; g.fillRect(x + Math.cos(a) * (r + 14) - 2, y + Math.sin(a) * (r + 14) - 2, 4, 4); }
+  g.restore();
+}
+function toggle(x, y, up) {
+  g.save();
+  g.fillStyle = '#0e0f0e'; g.beginPath(); g.roundRect(x - 20, y - 30, 40, 60, 6); g.fill();
+  g.fillStyle = '#8f938f'; g.beginPath(); g.arc(x, y, 10, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#c9ccc7'; g.lineWidth = 9; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + (up ? -34 : 34)); g.stroke();
+  g.fillStyle = '#e2e4df'; g.beginPath(); g.arc(x, y + (up ? -36 : 36), 8, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+function grille(x, y, w, h, gap = 16) {
+  g.save();
+  for (let yy = y; yy < y + h; yy += gap) {
+    g.fillStyle = '#0c0d0c'; g.beginPath(); g.roundRect(x, yy, w, gap * .45, gap * .22); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(x + 4, yy + gap * .45, w - 8, 1.5);
+  }
+  g.restore();
+}
+
+function drawCase() {
+  g.fillStyle = C.case; g.fillRect(0, 0, W, H);
+  // rack seams
+  g.fillStyle = C.caseDeep;
+  g.fillRect(0, 96, W, 14); g.fillRect(0, 930, W, 16);
+  noise(0, 0, W, H, .05, 2);
+}
+
+function drawTopBand() {
+  slab(0, 0, W, 96, '#262826', 0);
+  stripes(48, 26, 150, 44);
+  g.save();
+  g.fillStyle = C.beige; g.font = '700 46px Cond'; g.textBaseline = 'middle';
+  g.fillText('O P T I O N F L O W', 230, 50);
+  g.fillStyle = 'rgba(207,197,170,.6)'; g.font = '500 24px Cond';
+  g.fillText('PORTFOLIO TELEMETRY UNIT  ·  MODEL OF-7', 760, 52);
+  g.restore();
+  plate(W - 560, 30, 'SER. 00001  ·  RACK A', 22);
+  lamp(W - 120, 48, C.phos, true, 10); lamp(W - 82, 48, C.amber, true, 10); lamp(W - 44, 48, C.alert, false, 10);
+}
+
+function crt(x, y, w, h) {
+  // housing module
+  slab(x - 40, y - 40, w + 80, h + 140, C.panel, 8);
+  screws(x - 40, y - 40, w + 80, h + 140, 20);
+  plate(x - 10, y + h + 42, '01  NAV  ·  POSITION MONITOR', 22);
+  plate(x + w - 280, y + h + 42, 'PHOSPHOR P1', 22);
+  // bezel
+  g.save();
+  g.fillStyle = '#0f100f'; g.beginPath(); g.roundRect(x, y, w, h, 46); g.fill();
+  g.strokeStyle = 'rgba(255,255,255,.06)'; g.lineWidth = 3; g.stroke();
+  const sx = x + 34, sy = y + 34, sw = w - 68, sh = h - 68;
+  g.beginPath(); g.roundRect(sx, sy, sw, sh, 38); g.clip();
+  g.fillStyle = C.crt; g.fillRect(sx, sy, sw, sh);
+  // faint phosphor haze
+  const haze = g.createRadialGradient(sx + sw / 2, sy + sh / 2, 10, sx + sw / 2, sy + sh / 2, sw * .6);
+  haze.addColorStop(0, 'rgba(116,255,154,.07)'); haze.addColorStop(1, 'rgba(116,255,154,0)');
+  g.fillStyle = haze; g.fillRect(sx, sy, sw, sh);
+
+  const glow = (blur = 10) => { g.shadowColor = 'rgba(116,255,154,.55)'; g.shadowBlur = blur; };
+  g.textBaseline = 'alphabetic';
+  // header
+  glow(8); g.fillStyle = C.phos; g.font = '40px VT';
+  g.fillText('OF-7 TELEMETRY  //  CH 02  POSITIONS', sx + 48, sy + 66);
+  g.textAlign = 'right'; g.fillText('T+04:17:09:12', sx + sw - 48, sy + 66); g.textAlign = 'left';
+  g.shadowBlur = 0; g.fillStyle = C.phosDim; g.fillRect(sx + 48, sy + 84, sw - 96, 2);
+
+  // chart area
+  const cx = sx + 120, cy = sy + 120, cw = sw - 520, ch = sh - 330;
+  g.strokeStyle = 'rgba(46,107,63,.55)'; g.lineWidth = 1.5;
+  for (let i = 0; i <= 6; i++) { const yy = cy + ch * i / 6; g.beginPath(); g.setLineDash([4, 8]); g.moveTo(cx, yy); g.lineTo(cx + cw, yy); g.stroke(); }
+  for (let i = 0; i <= 8; i++) { const xx = cx + cw * i / 8; g.beginPath(); g.moveTo(xx, cy); g.lineTo(xx, cy + ch); g.stroke(); }
+  g.setLineDash([]);
+  g.fillStyle = C.phosDim; g.font = '28px VT'; g.textAlign = 'right';
+  for (let i = 0; i <= 6; i++) g.fillText((60 - i * 2.5).toFixed(1), cx - 14, cy + ch * i / 6 + 8);
+  g.textAlign = 'left';
+  // candles (fictional random walk)
+  seed = 4242;
+  let price = 50.5; const n = 46; const bw = cw / n;
+  const scaleY = (p) => cy + (60 - p) / 15 * ch;
+  glow(9);
+  for (let i = 0; i < n; i++) {
+    const open = price; price += (rnd() - .47) * 1.4; const close = price;
+    const hi = Math.max(open, close) + rnd() * .8, lo = Math.min(open, close) - rnd() * .8;
+    const xx = cx + i * bw + bw * .5;
+    g.strokeStyle = close >= open ? C.phos : 'rgba(116,255,154,.6)'; g.lineWidth = 2.5;
+    g.beginPath(); g.moveTo(xx, scaleY(hi)); g.lineTo(xx, scaleY(lo)); g.stroke();
+    const top = scaleY(Math.max(open, close)), bot = scaleY(Math.min(open, close));
+    if (close >= open) { g.fillStyle = C.phos; g.fillRect(xx - bw * .3, top, bw * .6, Math.max(3, bot - top)); }
+    else { g.lineWidth = 2.5; g.strokeRect(xx - bw * .3, top, bw * .6, Math.max(3, bot - top)); }
+  }
+  // strike line
+  g.shadowBlur = 0; g.strokeStyle = C.phos; g.setLineDash([14, 10]); g.lineWidth = 2;
+  g.beginPath(); g.moveTo(cx, scaleY(48)); g.lineTo(cx + cw, scaleY(48)); g.stroke(); g.setLineDash([]);
+  glow(6); g.fillStyle = C.phos; g.font = '30px VT'; g.fillText('STRIKE 48.0  PUT', cx + cw - 250, scaleY(48) + 34);
+
+  // right readouts
+  const rx = cx + cw + 70; g.font = '32px VT';
+  const rows = [['DELTA', '-0.21'], ['THETA', '+0.42/D'], ['VEGA', '-0.08'], ['DTE', '018'], ['ROC', '011.3%']];
+  rows.forEach(([k, v], i) => { g.shadowBlur = 0; g.fillStyle = C.phosDim; g.fillText(k, rx, cy + 26 + i * 42); glow(8); g.fillStyle = C.phos; g.fillText(v, rx + 130, cy + 26 + i * 42); });
+  g.shadowBlur = 0; g.fillStyle = C.phosDim; g.fillText('MARGIN', rx, cy + 26 + 5 * 42 + 4);
+  for (let i = 0; i < 8; i++) { if (i < 6) { glow(8); g.fillStyle = C.phos; } else { g.shadowBlur = 0; g.fillStyle = 'rgba(46,107,63,.6)'; } g.fillRect(rx + 130 + i * 19, cy + 26 + 5 * 42 - 18, 13, 24); }
+
+  // console lines
+  g.shadowBlur = 0; g.fillStyle = C.phosDim; g.fillRect(sx + 48, sy + sh - 190, sw - 96, 2);
+  glow(8); g.fillStyle = C.phos; g.font = '36px VT';
+  const lines = ['> SYNC TRADES ............ OK', '> QUOTE FEED ............. OK', '> EXPIRY WATCH ........... 3 OPEN'];
+  lines.forEach((line, i) => g.fillText(line, sx + 60, sy + sh - 140 + i * 44));
+  g.fillRect(sx + 60 + g.measureText(lines[2]).width + 16, sy + sh - 140 + 2 * 44 - 28, 20, 32);
+  g.textAlign = 'right'; g.fillStyle = C.phosDim; g.shadowBlur = 0;
+  g.fillText('TAPE 0412  REC', sx + sw - 60, sy + sh - 52); g.textAlign = 'left';
+
+  // scanlines, vignette, noise
+  g.shadowBlur = 0;
+  for (let yy = sy; yy < sy + sh; yy += 4) { g.fillStyle = 'rgba(0,0,0,.28)'; g.fillRect(sx, yy, sw, 1.6); }
+  const vig = g.createRadialGradient(sx + sw / 2, sy + sh / 2, sw * .32, sx + sw / 2, sy + sh / 2, sw * .72);
+  vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,.7)');
+  g.fillStyle = vig; g.fillRect(sx, sy, sw, sh);
+  noise(sx, sy, sw, sh, .06, 2);
+  // glass reflection
+  const refl = g.createLinearGradient(sx, sy, sx + sw * .5, sy + sh * .6);
+  refl.addColorStop(0, 'rgba(255,255,255,.05)'); refl.addColorStop(.5, 'rgba(255,255,255,0)');
+  g.fillStyle = refl; g.fillRect(sx, sy, sw, sh);
+  g.restore();
+}
+
+function reel(cx, cy, r, turn) {
+  g.save();
+  g.fillStyle = '#2a1d14'; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,.4)'; for (let k = 0; k < 6; k++) { g.lineWidth = 1; g.beginPath(); g.arc(cx, cy, r - k * 7, 0, Math.PI * 2); g.stroke(); }
+  g.fillStyle = '#dcd6c4'; g.beginPath(); g.arc(cx, cy, r * .42, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#1b1b1b';
+  for (let i = 0; i < 6; i++) { const a = turn + i * Math.PI / 3; g.save(); g.translate(cx, cy); g.rotate(a); g.fillRect(-5, r * .16, 10, r * .2); g.restore(); }
+  g.beginPath(); g.arc(cx, cy, r * .14, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+
+function tapeDeck(x, y, w, h) {
+  slab(x, y, w, h, C.beige, 10);
+  g.fillStyle = C.beigeShade; g.fillRect(x, y + h - 26, w, 26);
+  screws(x, y, w, h, 22);
+  stripes(x + 40, y + 34, 120, 16);
+  g.fillStyle = '#2b2a26'; g.font = '700 30px Cond'; g.fillText('02  COM  ·  DATA CASSETTE', x + 180, y + 52);
+  // window
+  const wx = x + 60, wy = y + 92, ww = w - 120, wh = 300;
+  g.fillStyle = '#121211'; g.beginPath(); g.roundRect(wx, wy, ww, wh, 16); g.fill();
+  // cassette shell
+  g.fillStyle = '#2e302d'; g.beginPath(); g.roundRect(wx + 30, wy + 26, ww - 60, wh - 52, 12); g.fill();
+  g.fillStyle = C.s1; g.fillRect(wx + 30, wy + 26, ww - 60, 44);
+  g.fillStyle = '#1b1b1b'; g.font = '700 26px Cond'; g.fillText('C-90  ·  LEDGER  ·  SIDE A', wx + 56, wy + 56);
+  g.fillStyle = '#0b0b0b'; g.beginPath(); g.roundRect(wx + 90, wy + 96, ww - 180, 130, 64); g.fill();
+  reel(wx + 170, wy + 160, 58, .3); reel(wx + ww - 170, wy + 160, 42, 1.1);
+  g.strokeStyle = '#2a1d14'; g.lineWidth = 4; g.beginPath(); g.moveTo(wx + 170, wy + 218); g.lineTo(wx + ww - 170, wy + 202); g.stroke();
+  // counter
+  const cx = x + w - 240, cy = y + 528;
+  g.fillStyle = '#121211'; g.fillRect(cx, cy, 180, 64);
+  ['0', '4', '1', '2'].forEach((d, i) => { g.fillStyle = '#ece8dd'; g.fillRect(cx + 10 + i * 42, cy + 8, 36, 48); g.fillStyle = '#151515'; g.font = '700 38px Cond'; g.textAlign = 'center'; g.fillText(d, cx + 28 + i * 42, cy + 46); g.textAlign = 'left'; });
+  plate(cx, cy + 76, 'COUNTER', 18);
+  // transport keys
+  const glyphs = ['◀◀', '▶', '■', '▶▶', '⏏'];
+  glyphs.forEach((glyph, i) => key(x + 60 + i * 100, y + 430, 86, 78, '#2c2e2c', glyph, C.plateFg, 28));
+  key(x + 60 + 5 * 100, y + 430, 86, 78, '#2c2e2c', '●', C.s2, 28);
+  plate(x + 60, y + 534, 'TRANSPORT', 18);
+  lamp(x + 230, y + 548, C.alert, true, 9);
+}
+
+function sidePanel(x, y, w, h) {
+  slab(x, y, w, h, C.olive, 8);
+  screws(x, y, w, h, 20);
+  plate(x + 40, y + 34, '03  PWR  ·  SYS  ·  O2', 22);
+  const labels = ['PWR', 'SYS', 'COM', 'O2'];
+  const levels = [11, 8, 12, 6];
+  labels.forEach((label, m) => {
+    const mx = x + 46 + m * 76, my = y + 96;
+    g.fillStyle = '#0d0e0c'; g.fillRect(mx, my, 56, 300);
+    for (let s = 0; s < 14; s++) {
+      const lit = s < levels[m];
+      const color = s >= 12 ? C.alert : s >= 9 ? C.s2 : C.s1;
+      g.save(); if (lit) { g.shadowColor = color; g.shadowBlur = 10; }
+      g.fillStyle = lit ? color : 'rgba(60,50,30,.6)';
+      g.fillRect(mx + 9, my + 280 - s * 20, 38, 14); g.restore();
+    }
+    g.fillStyle = C.plateFg; g.font = '500 22px Cond'; g.textAlign = 'center'; g.fillText(label, mx + 28, my + 334); g.textAlign = 'left';
+  });
+  knob(x + 100, y + 520, 46, -0.6); plate(x + 64, y + 590, 'GAIN', 18);
+  knob(x + w - 100, y + 520, 46, 1.9); plate(x + w - 136, y + 590, 'TUNE', 18);
+  for (let i = 0; i < 4; i++) toggle(x + 70 + i * 80, y + 680, i !== 1);
+}
+
+function keyboard(x, y, w, h) {
+  slab(x, y, w, h, C.panel, 8);
+  screws(x, y, w, h, 20);
+  plate(x + 40, y + 30, '04  KEY ENTRY', 22);
+  stripes(x + w - 220, y + 34, 170, 14);
+  const legends = 'OPN CLS PUT CALL BTC STC ROLL EXP DIV CASH SYNC QTE'.split(' ');
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 22; col++) {
+      const kx = x + 50 + col * 108 + (row % 2) * 30, ky = y + 92 + row * 104;
+      if (kx + 96 > x + w - 40) continue;
+      const fn = row === 0 && col < 12;
+      const fill = fn ? (col % 4 === 3 ? C.s2 : '#bdb398') : (col > 18 ? C.olive : C.beige);
+      key(kx, ky, 92, 84, fill, fn ? legends[col] : (row === 1 ? String.fromCharCode(65 + col) : (col < 10 ? String((col + 1) % 10) : '')), fill === C.olive ? C.plateFg : '#1d1d1b', fn ? 20 : 26);
+    }
+  }
+}
+
+async function draw() {
+  await document.fonts.load('40px VT'); await document.fonts.load('700 40px Cond'); await document.fonts.load('500 20px Cond');
+  drawCase();
+  drawTopBand();
+  crt(140, 190, 1200, 640);
+  tapeDeck(1420, 150, 700, 620);
+  sidePanel(2150, 150, 380, 760);
+  keyboard(40, 960, 2480, 440);
+  // lower-right status strip of the tape module
+  slab(1420, 800, 700, 110, C.panel2, 8);
+  plate(1450, 830, 'LINK', 20); lamp(1560, 848, C.phos, true, 9);
+  plate(1600, 830, 'DISK', 20); lamp(1712, 848, C.amber, true, 9);
+  plate(1752, 830, 'ALERT', 20); lamp(1874, 848, C.alert, false, 9);
+  grille(1910, 822, 180, 60, 15);
+  // Calm the lower half: the app's cards sit there, so the keys stay a texture, not a picture.
+  const shade = g.createLinearGradient(0, 760, 0, H);
+  shade.addColorStop(0, 'rgba(8,9,8,0)'); shade.addColorStop(.35, 'rgba(8,9,8,.45)'); shade.addColorStop(1, 'rgba(8,9,8,.72)');
+  g.fillStyle = shade; g.fillRect(0, 760, W, H - 760);
+  g.fillStyle = 'rgba(8,9,8,.14)'; g.fillRect(0, 0, W, H);
+  document.title = 'done';
+}
+draw();
+</script></body></html>

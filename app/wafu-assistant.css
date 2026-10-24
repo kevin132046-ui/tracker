@@ -61,7 +61,8 @@ p.wafu-assistant-msg { white-space: pre-wrap; }
 @media (max-width: 560px) {
   :root[data-wafu] .side-nav .wafu-nav-glyph { display: none; }
   :root[data-wafu] .side-nav .wafu-nav-ai .wafu-nav-glyph { display: grid; width: 18px; height: 18px; }
-  :root[data-wafu] .side-nav .wafu-nav-ai .halo-ico { width: 18px; height: 18px; }
+  /* The icon itself must shrink with its 18px box, or it spills over the label. */
+  :root[data-wafu] .side-nav .wafu-nav-ai :is(.halo-ico, .wafu-nav-icon) { width: 18px; height: 18px; }
   :root[data-wafu] .side-nav .wafu-nav-ai { flex-direction: row; gap: 3px; }
 }
 

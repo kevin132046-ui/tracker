@@ -43,6 +43,28 @@ const seedTrades: SeedTrade[] = [
   { type: 'Sell', openDate: '2026-05-15', expiryDate: '2026-11-20', closeDate: '2026-07-17', ticker: 'F', event: 'PUT', strike: '12', quantity: 1, entryPrice: 0.85, currentPrice: 0, fees: 0, collateral: 1200, notes: '', status: 'closed', quoteMode: 'manual', sourceRow: 16 },
 ];
 
+// Tables other routes create on first use (/api/cash-flows, /api/broker-hub); the full backup sets them up too.
+export const cashFlowsSetup = [
+  `CREATE TABLE IF NOT EXISTS cash_flows (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`,
+  'CREATE INDEX IF NOT EXISTS idx_cash_flows_date ON cash_flows(date)',
+];
+export const brokerHubStateTable = `CREATE TABLE IF NOT EXISTS broker_hub_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled INTEGER NOT NULL DEFAULT 0,
+  revision INTEGER NOT NULL DEFAULT 0,
+  data TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`;
+
 export function getDatabase() {
   if (!env.DB) throw new Error('D1 database binding DB is unavailable.');
   return env.DB;

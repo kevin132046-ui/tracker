@@ -2,14 +2,15 @@ import { ensureDatabase } from '@/lib/server/database';
 import { env } from 'cloudflare:workers';
 import { NextResponse } from 'next/server';
 import { guarded } from '@/lib/server/data-gate';
+import { backgroundPrefix, backgroundVersionPattern, maxBackgroundBytes } from '@/lib/backup';
 
 export const dynamic = 'force-dynamic';
 
 const imageSettingsKey = 'background_image_v3';
 const modeSettingsKey = 'background_mode_v3';
-const objectPrefix = 'portfolio/backgrounds/';
-const maxBackgroundBytes = 4 * 1024 * 1024;
-const versionPattern = /^\d{10,16}-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Shared with the full backup (lib/backup), which carries the background along.
+const objectPrefix = backgroundPrefix;
+const versionPattern = backgroundVersionPattern;
 
 type BackgroundMode = 'default' | 'image';
 type BackgroundImageSettings = {

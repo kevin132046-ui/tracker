@@ -1,19 +1,11 @@
 import { emptyBrokerWorkspace, normalizeBrokerWorkspace } from '@/lib/broker-workspace';
-import { ensureDatabase, tradeSelect, type TradeRow } from '@/lib/server/database';
+import { brokerHubStateTable, ensureDatabase, tradeSelect, type TradeRow } from '@/lib/server/database';
 import { NextResponse } from 'next/server';
 import { guarded } from '@/lib/server/data-gate';
 
 export const dynamic = 'force-dynamic';
 
 const responseHeaders = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
-const stateTable = `CREATE TABLE IF NOT EXISTS broker_hub_state (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  enabled INTEGER NOT NULL DEFAULT 0,
-  revision INTEGER NOT NULL DEFAULT 0,
-  data TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-)`;
-
 type StateRow = { enabled: number; revision: number; data: string; updatedAt: string };
 
 // Set once the table and its single row exist in this isolate (two round trips to D1 saved per request).
@@ -24,7 +16,7 @@ async function getState() {
   if (!stateReady) {
     const empty = emptyBrokerWorkspace(false);
     await db.batch([
-      db.prepare(stateTable),
+      db.prepare(brokerHubStateTable),
       db.prepare(`INSERT OR IGNORE INTO broker_hub_state (id, enabled, revision, data, updated_at)
         VALUES (1, 0, 0, ?, ?)`).bind(JSON.stringify(empty), empty.updatedAt),
     ]);

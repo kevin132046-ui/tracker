@@ -187,6 +187,7 @@
 :root[data-wafu][data-tone='nasa'] .settings-danger { position: relative; padding-top: 24px; border: 1.5px solid var(--nasa-ink); border-radius: 0; background: var(--nasa-white); }
 :root[data-wafu][data-tone='nasa'] .settings-danger::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 10px; background: var(--nasa-hazard); }
 :root[data-wafu][data-tone='nasa'] .settings-danger-button { color: var(--wa-ink); background: var(--nasa-white); border: 1px solid var(--nasa-ink); border-radius: 0; }
+:root[data-wafu][data-tone='nasa'] .settings-backup-progress i { border-radius: 0; background: var(--nasa-ink); }
 
 /* ---------- The opening stays 水墨: it keeps the theme's own night ---------- */
 :root[data-wafu='kikyo'][data-tone='nasa'] #wafu-opening { --wa-bg: #0c0d11; }

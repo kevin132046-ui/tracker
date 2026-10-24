@@ -48,3 +48,7 @@ optionflow-import-*.csv
 optionflow-gains-*.csv
 # full backups hold every trade and uploaded file
 optionflow-backup-*.zip
+
+# desktop app: dependencies and installers
+/desktop/node_modules/
+/desktop/release/

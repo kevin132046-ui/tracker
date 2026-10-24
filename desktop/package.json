@@ -1,6 +1,7 @@
 {
   "name": "optionflow-desktop",
   "productName": "OptionFlow",
+  "desktopName": "optionflow.desktop",
   "version": "0.1.0",
   "description": "OptionFlow options and stock tracker as a desktop app: the same site, run on your own computer.",
   "author": "kevin132046-ui",
@@ -16,17 +17,90 @@
     "site": "cd .. && npx -y pnpm@10 install --frozen-lockfile && npm run build",
     "start": "electron .",
     "test": "node --test test/*.test.mjs",
-    "smoke": "electron . --smoke-test"
+    "smoke": "electron . --smoke-test",
+    "dist:linux": "electron-builder --linux AppImage deb --x64",
+    "dist:win": "electron-builder --win nsis zip --x64"
   },
   "dependencies": {
     "miniflare": "4.20260515.0"
   },
   "devDependencies": {
-    "electron": "44.9.3"
+    "electron": "44.9.3",
+    "electron-builder": "26.17.0"
   },
   "overrides": {
     "undici": "7.30.1",
     "ws": "8.22.0",
     "sharp": "0.35.5"
+  },
+  "build": {
+    "appId": "io.github.kevin132046ui.optionflow",
+    "productName": "OptionFlow",
+    "copyright": "Copyright © 2026 kevin132046-ui",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "main.mjs",
+      "server.mjs",
+      "package.json",
+      "resources/icon.png",
+      "!node_modules/sharp/**",
+      "!node_modules/@img/**",
+      "!node_modules/@emnapi/**",
+      "!**/node_modules/**/*.{md,map,d.ts}",
+      "!**/node_modules/**/{test,tests,docs,example,examples}/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist",
+        "to": "site",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/default-background.jpg",
+        "to": "default-background.jpg"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/workerd/**",
+      "node_modules/@cloudflare/workerd-*/**"
+    ],
+    "artifactName": "OptionFlow-${version}-${arch}.${ext}",
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "resources/icon.png",
+      "category": "Office",
+      "maintainer": "kevin132046-ui",
+      "synopsis": "Options and stock trade tracker",
+      "executableName": "optionflow",
+      "syncDesktopName": true
+    },
+    "deb": {
+      "artifactName": "OptionFlow-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "OptionFlow-Setup-${version}.${ext}",
+      "shortcutName": "OptionFlow",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": null
   }
 }

@@ -29,3 +29,16 @@ npm run smoke     # 開視窗、確認頁面與資料端點正常後自動關閉
 ```
 
 Linux 以 root 執行 Electron 時要加 `--no-sandbox`（例如在容器裡）。
+
+## 打包
+
+```bash
+cd desktop
+npm run dist:linux   # release/ 裡產生 AppImage 與 deb
+npm run dist:win     # 在 Windows 上產生安裝檔（NSIS）與免安裝 zip
+```
+
+網站建置（`../dist`）和內建背景會放進安裝檔的 `resources/`，workerd 執行檔則從 `app.asar` 解開，才能被啟動。
+
+正式發佈交給 `.github/workflows/desktop.yml`：PR 動到 `desktop/` 時會打包並跑煙霧測試（安裝檔放在 workflow 的 artifacts）；推送 `desktop-v*` 標籤時另外建立 GitHub Release。
+

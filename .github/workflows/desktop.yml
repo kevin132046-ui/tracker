@@ -1,0 +1,130 @@
+# Desktop app (desktop/): builds the site once, then packages and smoke-tests it on Linux and Windows.
+# Pull requests that touch the desktop app get the installers as workflow artifacts; a tag such as
+# desktop-v0.1.0 also publishes them as a GitHub Release.
+name: Desktop
+
+on:
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop.yml'
+  push:
+    tags:
+      - 'desktop-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  site:
+    name: Build the site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        run: npx -y pnpm@10 install --frozen-lockfile
+      - name: Build
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site-dist
+          path: dist/
+          retention-days: 3
+
+  package:
+    name: Package (${{ matrix.os }})
+    needs: site
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: --linux AppImage deb --x64
+          - os: windows-latest
+            target: --win nsis zip --x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: site-dist
+          path: dist/
+      - name: Tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          test "desktop-v${version}" = "${GITHUB_REF_NAME}" || { echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${version}"; exit 1; }
+      - name: Install
+        run: npm ci
+      - name: Test the local server
+        run: npm test
+      - name: Package
+        run: npx electron-builder ${{ matrix.target }} --publish never
+
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb > /dev/null
+          xvfb-run -a -s "-screen 0 1440x900x24" release/linux-unpacked/optionflow --no-sandbox --smoke-test="$PWD/release/smoke-linux.png"
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $shot = Join-Path $PWD 'release\smoke-windows.png'
+          $app = Start-Process -FilePath 'release\win-unpacked\OptionFlow.exe' -ArgumentList "--smoke-test=$shot" -Wait -PassThru
+          if ($app.ExitCode -ne 0) { Write-Error "Smoke test failed with exit code $($app.ExitCode)"; exit 1 }
+          if (-not (Test-Path $shot)) { Write-Error 'No screenshot was written'; exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: optionflow-${{ runner.os }}
+          path: |
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+            desktop/release/*.exe
+            desktop/release/*.zip
+            desktop/release/smoke-*.png
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish the release
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: optionflow-*
+          path: out
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<'EOF'
+          OptionFlow 桌面版：和網站同一份程式，資料存在你自己的電腦。
+
+          - **Windows**：下載 `OptionFlow-Setup-*.exe` 安裝；或下載 `OptionFlow-*-x64.zip`，解壓縮後直接執行 `OptionFlow.exe`。安裝檔沒有程式碼簽章，第一次開啟時如果出現 SmartScreen，按「其他資訊 → 仍要執行」。
+          - **Linux**：下載 `*.AppImage`，執行 `chmod +x` 之後開啟；Ubuntu／Debian 也可以安裝 `*.deb`。
+          - 要從網站版搬資料過來：在網站的「設定 → 資料 → 匯出完整備份」匯出，再到桌面版選「從備份還原」。
+          EOF
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "OptionFlow 桌面版 ${GITHUB_REF_NAME#desktop-v}" --notes-file notes.md out/*.AppImage out/*.deb out/*.exe out/*.zip

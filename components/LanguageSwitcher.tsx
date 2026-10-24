@@ -186,7 +186,7 @@ const translations: ReadonlyArray<readonly [string, string | null, string | null
   ['裝置較慢時自動改用輕量開場（不顯示水墨）', '端末が遅いときは軽量版に自動で切り替える（水墨なし）', 'Use the lite opening on slow devices (no ink)'], ['這台裝置已改用輕量開場。', 'この端末は軽量版のオープニングを使用しています。', 'This device uses the lite opening.'], ['重新偵測', '再検出', 'Detect again'],
   // English only: labels and notes the Japanese list never covered.
   ['即時市場時間', 'リアルタイム市場時間', 'Live market time'], ['美東', '米東部', 'New York'], ['報價每 60 秒更新 · 上次', '価格は60秒ごとに更新 · 前回', 'Quotes refresh every 60 s · last'],
-  ['筆未平倉持倉', '件の保有ポジション', 'open positions'], ['筆有效平倉交易', '件の有効な決済取引', 'closed trades counted'], ['股票採買入成本；賣方選擇權採擔保金或履約價名目', '株式は取得原価、売りオプションは証拠金または権利行使価格の想定元本', 'Stocks at cost; short options at collateral or strike notional'],
+  ['筆未平倉持倉', '件の保有ポジション', 'open positions'], ['檔未平倉持倉', '銘柄を保有中', 'open positions'], ['筆有效平倉交易', '件の有効な決済取引', 'closed trades counted'], ['股票採買入成本；賣方選擇權採擔保金或履約價名目', '株式は取得原価、売りオプションは証拠金または権利行使価格の想定元本', 'Stocks at cost; short options at collateral or strike notional'],
   ['查看明細', '明細を見る', 'Details'], ['收益率', 'リターン', 'Return'], ['區間累積', '期間累計', 'Period total'],
   ['時間加權報酬：每日損益 ÷ 當日占用資本（個股市值＋max（BOXX, 賣權擔保金））；股票用 Yahoo 收盤並還原分割、含股息，選擇權以內含價值＋時間價值逐日估值', '時間加重リターン：日次損益 ÷ 当日の使用資本（個別株の時価＋max（BOXX, 売りプットの証拠金））。株式は Yahoo の終値（分割を戻し、配当込み）、オプションは本質的価値＋時間価値で日々評価', 'Time-weighted return: daily P&L ÷ capital in use that day (stocks at market + max(BOXX, put collateral)); stocks use Yahoo closes with splits undone and dividends included, options are valued daily at intrinsic plus time value'], ['（估算：', '（推定：', '(estimated: '], ['匯率與美債殖利率', '為替と米国債利回り', 'FX and Treasury yields'],
   ['黃金／原油', '金／原油', 'Gold / crude oil'], ['↻ 更新', '↻ 更新', '↻ Refresh'], ['· 每 60 秒', '· 60秒ごと', '· every 60 s'],

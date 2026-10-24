@@ -3576,7 +3576,7 @@ export default function Home() {
         </section>
 
         <section className="metric-grid" aria-label="投資組合摘要">
-          <article className="metric-card featured metric-card-link"><button type="button" className="metric-card-hit" aria-label="追蹤市值：查看未平倉持倉" onClick={showOpenPositions} /><p>追蹤市值</p><strong>{loading ? '—' : money.format(trackedValue)}</strong><span>{openTrades.length} 筆未平倉持倉</span></article>
+          <article className="metric-card featured metric-card-link"><button type="button" className="metric-card-hit" aria-label="追蹤市值：查看未平倉持倉" onClick={showOpenPositions} /><p>追蹤市值</p><strong>{loading ? '—' : money.format(trackedValue)}</strong><span>{tradeTabCounts.open} 檔未平倉持倉</span></article>
           <article className="metric-card metric-card-link"><button type="button" className="metric-card-hit" aria-label="未實現損益：查看未實現益損" onClick={showUnrealized} /><p>未實現損益</p><strong className={openPnl >= 0 ? 'positive' : 'negative'}>{loading ? '—' : money.format(openPnl)}</strong><span className={`metric-return ${openReturnOnCapital === null ? '' : openReturnOnCapital >= 0 ? 'positive' : 'negative'}`}>{loading ? '計算中…' : openReturnOnCapital === null ? 'ROIC —' : `ROIC ${openReturnOnCapital >= 0 ? '+' : ''}${percent.format(openReturnOnCapital)}`}</span></article>
           <article className="metric-card metric-card-link"><button type="button" className="metric-card-hit" aria-label="擔保／投入資本：查看持倉配置" onClick={showAllocation} /><p>擔保／投入資本</p><strong>{loading ? '—' : money.format(capitalAtRisk)}</strong><span>股票採買入成本；賣方選擇權採擔保金或履約價名目</span></article>
           <article className={`metric-card metric-card-interactive metric-card-link ${rocBreakdownOpen ? 'is-open' : ''}`}>

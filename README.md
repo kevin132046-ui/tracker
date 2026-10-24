@@ -112,3 +112,7 @@ pnpm dev
 - **背景**：沒有圖時只顯示主題底色；可以用側欄的「背景」上傳自己的圖。
 - **剪影**：`src/assets/silhouettes.ts` 留空時，開場照常播放，只是不畫剪影。
 - **音樂**：把自己的音檔放在 `public/bgm/`（檔名見 `src/lib/audio.ts`），這個資料夾已被 `.gitignore` 排除。
+
+## 授權
+
+程式碼以 [MIT License](LICENSE) 釋出。這個授權只涵蓋 repo 裡的程式碼；你自己上傳到網站的圖片、剪影與音樂不在 repo 內，也不在授權範圍內。

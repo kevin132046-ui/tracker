@@ -75,7 +75,9 @@
 :root[data-wafu='kikyo'][data-tone='washi'][data-wafu-intro] body::after { background: #0c0d11; }
 :root[data-wafu='shigure'][data-tone='washi'][data-wafu-intro] body::after { background: #07141a; }
 /* 和紙's deep ink slices need light figures on the donut. */
-:root[data-tone='washi'] .donut-segment-label, :root[data-tone='washi'] .donut-svg-label { color: #fbf6ec; fill: #fbf6ec; text-shadow: 0 1px 2px rgb(40 30 20 / .45); }
+:root[data-tone='washi'] .donut-segment-label { color: #fbf6ec; text-shadow: 0 1px 2px rgb(40 30 20 / .45); }
+/* The ring's figures take their ink per slice (labelInkOn); a blurred shadow under them reads as smudge. */
+:root[data-tone='washi'] .donut-svg-label { fill: #fbf6ec; text-shadow: none; }
 
 /* 文字大小 (設定 → 外觀): the page content scales evenly, layout included, so proportions hold.
    大 is the default; 標準 is the original size. */

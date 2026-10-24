@@ -96,9 +96,9 @@ test('a workerd left running by a crashed app is stopped on the next launch, and
     const crashed = JSON.parse(out.trim().split('\n').pop());
     assert.equal(crashed.port, crashPort);
     assert.ok(crashed.lock.workerdPid, 'the app noted its workerd');
-    // The leftover still answers on the port.
+    // On Linux and macOS workerd outlives the app; Windows ends it with the app (libuv's job object).
     const leftover = await new Promise((resolve) => { const socket = net.connect(crashPort, '127.0.0.1', () => { socket.end(); resolve(true); }); socket.on('error', () => resolve(false)); });
-    assert.equal(leftover, true, 'the crashed app left workerd running');
+    if (process.platform !== 'win32') assert.equal(leftover, true, 'the crashed app left workerd running');
 
     const server = await startServer({ siteDir, dataDir: crashDir, port: crashPort });
     try {

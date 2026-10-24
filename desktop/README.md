@@ -6,7 +6,9 @@
   - Windows：`%APPDATA%\OptionFlow\data`
   - Linux：`~/.config/OptionFlow/data`
   - 選單「檔案 → 開啟資料資料夾」可以直接打開。
-- **伺服器**只在 `127.0.0.1` 上聽（預設連接埠 47820，被占用時往後找），只有這台電腦連得到，關掉 App 就停。
+- **伺服器**只在 `127.0.0.1` 上聽（預設連接埠 47820，被占用時往後找），關掉 App 就停。前面有一層小 Worker，只接受帶著這次啟動隨機金鑰的請求，金鑰只有 App 視窗知道，所以同一台電腦上的其他程式、瀏覽器或使用者連進來都會得到 403。
+- **App 當掉時**：workerd 不會跟著停。App 會在資料夾裡記下 `server.json`，下次啟動時把上次留下的 workerd 停掉，取回原本的連接埠。
+- **Electron 安全開關（fuses）**：不能用 `ELECTRON_RUN_AS_NODE`、`NODE_OPTIONS` 或除錯參數改變 App 的行為，只從 `app.asar` 載入並驗證它的完整性，cookie 加密存放。視窗開啟沙箱與 contextIsolation，不能開 `<webview>`。
 - **沒有 Cloudflare Access**：資料端點只接受 `127.0.0.1`／`localhost` 來的請求，別的網站送來的寫入一律拒絕（和網站版同一套檢查）。AI 功能用你在「設定 → AI」貼的金鑰。
 - **第一次打開**會寫入虛構的示範交易，背景是內建的卡帶未來主義主控台（`resources/default-background.jpg`，原始碼在 `art/`）。換掉或改回原始之後就不會再自動放回來。
 - **搬資料**：在網站版「設定 → 資料 → 匯出完整備份」，再到桌面版「從備份還原」。
@@ -29,6 +31,11 @@ npm run smoke     # 開視窗、確認頁面與資料端點正常後自動關閉
 ```
 
 Linux 以 root 執行 Electron 時要加 `--no-sandbox`（例如在容器裡）。
+
+## 系統需求
+
+- **Windows** 10／11，x64。Windows on ARM 會以 x64 模擬執行。
+- **Linux** x64，glibc 2.35 以上（Ubuntu 22.04、Debian 12、Fedora 36 以上）。AppImage 需要 `libfuse2`（Ubuntu 24.04 是 `libfuse2t64`）；Ubuntu 24.04 的 AppArmor 可能擋下 AppImage 的沙箱，建議改用 `.deb`。
 
 ## 打包
 

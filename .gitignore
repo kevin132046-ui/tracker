@@ -46,3 +46,5 @@ optionflow-import-*.csv
 # Cloudflare local secrets and 益損 exports never belong in the repo
 .dev.vars*
 optionflow-gains-*.csv
+# full backups hold every trade and uploaded file
+optionflow-backup-*.zip

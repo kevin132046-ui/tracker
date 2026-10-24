@@ -225,6 +225,7 @@ const DcfCalculator = lazy(loadDcfCalculator);
 const GainsLedger = lazy(() => import('@/components/wafu/GainsLedger'));
 const SixMetrics = lazy(() => import('@/components/wafu/SixMetrics'));
 const CashFlowLedger = lazy(() => import('@/components/wafu/CashFlowLedger'));
+const BackupCard = lazy(() => import('@/components/BackupCard'));
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
 const TradeImportDialog = lazy(loadTradeImportDialog);
 // The AI assistant panel is only fetched when it is opened.
@@ -4017,6 +4018,7 @@ export default function Home() {
                 <button type="button" className="settings-danger-button" disabled={!trades.some((trade) => !trade.derived)} onClick={() => { setSettingsOpen(false); void loadClearTradesDialog(); setClearOpen(true); }}>清除…</button>
               </div>
             </section>
+            <Suspense fallback={null}><BackupCard /></Suspense>
             <section className="settings-feature-card is-enabled">
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">註</span><div><p>How it&apos;s worked out</p><h3>計算與標示說明</h3></div></div>
               <dl className="settings-help">

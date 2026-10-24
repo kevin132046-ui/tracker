@@ -236,6 +236,12 @@ const translations: ReadonlyArray<readonly [string, string | null, string | null
   ['檢查中…', '確認中…', 'Checking…'], ['✓ 有效', '✓ 有効', '✓ Valid'], ['✗ 無效', '✗ 無効', '✗ Invalid'], ['✗ 權限不足', '✗ 権限不足', '✗ Not permitted'], ['✗ 額度或速率受限', '✗ 残高・レート制限', '✗ Quota or rate limited'], ['✗ 無法確認', '✗ 確認不可', '✗ Unknown'], ['（伺服器金鑰）', '（サーバーキー）', ' (server key)'],
   ['已通過 Cloudflare Access（可使用伺服器金鑰）。', 'Cloudflare Access 認証済み（サーバーキーを使用可）。', 'Signed in through Cloudflare Access (server keys available).'],
   ['未設定 OpenAI 管理金鑰，無法檢查免費額度：', 'OpenAI 管理キーが未設定のため無料枠を確認できません：', 'No OpenAI admin key, so the free tier cannot be checked: '], ['照常使用，用量由你的 OpenAI 帳戶計費。', 'は通常どおり使え、使用量はあなたの OpenAI アカウントに課金されます。', ' works as usual and is billed to your OpenAI account.'],
+  // 完整備份與還原 (components/BackupCard).
+  ['完整備份與還原', 'フルバックアップと復元', 'Full backup and restore'], ['匯出完整備份', 'フルバックアップを書き出す', 'Export full backup'], ['從備份還原…', 'バックアップから復元…', 'Restore from backup…'],
+  ['把交易、存提款、DCF 情境、跨券商與股息設定、背景圖、和風素材與音樂，以及這個瀏覽器的顯示設定，存成一個 ZIP。可在網站版與桌面版之間搬移。API 金鑰與 AI 對話不會放進備份。', '取引、入出金、DCF シナリオ、複数口座と配当の設定、背景画像、和風素材と音楽、このブラウザの表示設定を1つの ZIP に保存します。Web 版とデスクトップ版の間で移せます。API キーと AI の会話は含めません。', 'Saves trades, deposits and withdrawals, DCF scenarios, cross-broker and dividend settings, the background, 和風 art and music, and this browser\'s display settings in one ZIP. Move it between the website and the desktop app. API keys and AI chats are left out.'],
+  ['還原會取代目前所有的資料與素材，完成後重新載入頁面。', '復元すると現在のデータと素材はすべて置き換わり、完了後にページを再読み込みします。', 'Restoring replaces all current data and art, then reloads the page.'], ['還原前先下載目前資料的備份', '復元の前に現在のデータをバックアップする', 'Download a backup of the current data first'],
+  ['素材與音樂', '素材と音楽', 'Art and music'], ['顯示設定', '表示設定', 'Display settings'], ['DCF 情境', 'DCF シナリオ', 'DCF scenarios'], ['備份時間', 'バックアップ日時', 'Backed up'],
+  ['讀取備份檔…', 'バックアップを読み込み中…', 'Reading the backup…'], ['已還原，重新載入頁面…', '復元しました。再読み込みします…', 'Restored; reloading…'], ['先備份目前的資料…', '現在のデータをバックアップ中…', 'Backing up the current data…'],
   // Import comparison, 整理選擇權紀錄, 清除所有交易資料 and 存提款紀錄.
   ['已記錄', '記録しました：', 'Recorded '], [' 換算）', ' で換算）', ')'], ['已刪除 ', '削除しました：', 'Deleted '],
   ['預覽與比對', 'プレビューと照合', 'Preview and compare'], ['比對與檢查', '照合とチェック', 'Comparison and checks'], ['依結果篩選', '結果で絞り込み', 'Filter by result'], ['勾選這些列', 'これらの行を選択', 'Select these rows'],

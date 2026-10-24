@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDatabase } from '@/lib/server/database';
+import { cashFlowsSetup, getDatabase } from '@/lib/server/database';
 import { cleanCashFlowNote, clearCashFlowsPhrase, maxCashFlowBatch, type CashFlow, type CashFlowInput } from '@/lib/cash-flows';
 import { guarded } from '@/lib/server/data-gate';
 
@@ -14,17 +14,7 @@ async function ensureCashFlows() {
   const db = getDatabase();
   if (cashFlowsReady) return db;
   await db.batch([
-    db.prepare(`CREATE TABLE IF NOT EXISTS cash_flows (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      date TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      amount REAL NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'USD',
-      note TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )`),
-    db.prepare('CREATE INDEX IF NOT EXISTS idx_cash_flows_date ON cash_flows(date)'),
+    ...cashFlowsSetup.map((sql) => db.prepare(sql)),
   ]);
   cashFlowsReady = true;
   return db;

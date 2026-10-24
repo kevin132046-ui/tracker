@@ -55,6 +55,12 @@
 :root[data-wafu][data-tone='nasa'] .wafu-bd-photo, :root[data-wafu][data-tone='nasa'] .wafu-bd-beam, :root[data-wafu][data-tone='nasa'] .wafu-bd-lantern, :root[data-wafu][data-tone='nasa'] .wafu-bd-snow { display: none; }
 :root[data-wafu][data-tone='nasa'] .wafu-bd, :root[data-wafu][data-tone='nasa'] .wafu-bd.has-photo .wafu-bd-shade { background: var(--wa-shell-bg); }
 :root[data-wafu][data-tone='nasa'] .wafu-bd-shade::after { display: none; }
+/* Sharp text on Windows: Chrome drops ClearType for text that scrolls over a fixed, separately composited
+   layer. Here the backdrop is only the paper colour and dot texture, which the shell already paints with
+   background-attachment: fixed, so the fixed layer goes, and an uploaded picture is painted the same way
+   (absolute, fixed attachment, no layer of its own). The page then stays in one layer and keeps ClearType. */
+:root[data-wafu][data-tone='nasa'] .wafu-bd { display: none; }
+:root[data-wafu][data-tone='nasa'] .shell.has-custom-background::before { position: absolute; background-attachment: fixed; transform: none; }
 :root[data-wafu][data-tone='nasa'] :is(.metric-card, .panel, .metric-grid > .metric-card, .metric-grid > .metric-card:not(:hover)) {
   background: var(--nasa-rivets), var(--nasa-white); border: 0; border-radius: 2px; box-shadow: var(--nasa-seams); outline: 0; backdrop-filter: none; -webkit-backdrop-filter: none;
 }

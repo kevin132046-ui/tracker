@@ -28,6 +28,7 @@ import type { AnnualRocSummary, CapitalBasis, PriceBar, PriceHistorySeries, Pric
 import { addDaysToKey, dateKey, isTradingDay, japaneseHolidays, parseDateKey, upcomingClosures, usEarlyCloseName, usMarketHolidays, weekday, zonedDate, zonedDateKey } from '@/lib/market-calendar';
 import type { UpcomingClosure } from '@/lib/market-calendar';
 import { earningsReminders, exchangeTodayKey, mergeEarnings, pruneManualEarnings } from '@/lib/earnings';
+import { defaultCashLike, eventWindowDays, exposureCashLikeKey, parseCashLike, type ExposureInput } from '@/lib/exposure';
 import type { AiEarningsSuggestion, AiProvider, EarningsEntry, EarningsEvent, EarningsReminder } from '@/lib/earnings';
 import { aiKeyHeaders, emptyAiKeys, loadAiKeys, loadAnalyses, loadDefaultProvider, loadQuestions, releaseNoticeDays, saveAiKeys, saveAnalyses, saveDefaultProvider, saveQuestions } from '@/lib/filings';
 import type { AiKeys, CompanyFilings, FilingAnalysis } from '@/lib/filings';
@@ -224,6 +225,7 @@ const BrokerHub = lazy(loadBrokerHub);
 const DcfCalculator = lazy(loadDcfCalculator);
 const GainsLedger = lazy(() => import('@/components/wafu/GainsLedger'));
 const SixMetrics = lazy(() => import('@/components/wafu/SixMetrics'));
+const ExposurePanel = lazy(() => import('@/components/wafu/ExposurePanel'));
 const CashFlowLedger = lazy(() => import('@/components/wafu/CashFlowLedger'));
 const BackupCard = lazy(() => import('@/components/BackupCard'));
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
@@ -1189,6 +1191,9 @@ export default function Home() {
   const [installPrompt, setInstallPrompt] = useState<(Event & { prompt: () => Promise<void> }) | null>(null);
   const [earningsEnabled, setEarningsEnabled] = useState(true);
   const [manualEarnings, setManualEarnings] = useState<Record<string, string>>({});
+  // 持倉風險: tickers counted with cash (BOXX and other T-bill ETFs unless edited).
+  const [cashLikeTickers, setCashLikeTickers] = useState<string[]>([...defaultCashLike]);
+  const [cashLikeDraft, setCashLikeDraft] = useState<string | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus>(null);
   const [openAiTier, setOpenAiTier] = useState<UsageTier>('low');
   // Bumped after each AI call so the quota is read again.
@@ -1423,6 +1428,8 @@ export default function Home() {
       if (window.localStorage.getItem(notifyBarKey) === 'off') queueMicrotask(() => setNotifyBar(false));
       if (window.localStorage.getItem(notifyCountKey) === 'off') queueMicrotask(() => setNotifyCount(false));
       if (window.localStorage.getItem(gainsTabKey) === 'off') queueMicrotask(() => setGainsTab(false));
+      const storedCashLike = window.localStorage.getItem(exposureCashLikeKey);
+      if (storedCashLike !== null) queueMicrotask(() => setCashLikeTickers(parseCashLike(storedCashLike)));
       const storedNav = window.localStorage.getItem(bottomNavKey);
       if (storedNav === 'guide' || storedNav === 'menu') queueMicrotask(() => setBottomNav(storedNav));
     } catch { /* storage unavailable: keep the default */ }
@@ -2851,6 +2858,30 @@ export default function Home() {
     }
     return count || closed ? { received, count, kept, closed } : null;
   }, [enriched, todayKey, usdJpyRate]);
+  // 持倉風險: stocks at market value, options at dollar delta, cash at its balance.
+  const exposureInputs = useMemo<ExposureInput[]>(() => openTrades.flatMap(({ trade, marketValue }): ExposureInput[] => {
+    const ticker = (trade.ticker || '').toUpperCase();
+    if (!ticker) return [];
+    if (isCashTrade(trade)) return [{ ticker, symbol: ticker, kind: 'cash', value: marketValue }];
+    const symbol = priceSymbolFor(trade);
+    if (isStockTrade(trade)) return [{ ticker, symbol, kind: 'stock', value: marketValue, shares: trade.quantity }];
+    const row = optionRows.get(trade.id);
+    if (!row) return [];
+    const deltaDollars = row.analytics?.deltaDollars;
+    return [{ ticker, symbol, kind: 'option', value: typeof deltaDollars === 'number' && Number.isFinite(deltaDollars) ? deltaDollars : 0, unpriced: typeof deltaDollars !== 'number' }];
+  }), [openTrades, optionRows]);
+  const exposureEarnings = useMemo(() => noticeEarnings && noticeNow !== null
+    ? earningsReminders(mergeEarnings(noticeEarnings.symbols, noticeEarnings.yahoo, noticeEarnings.manual, noticeNow), noticeNow, eventWindowDays)
+    : [], [noticeEarnings, noticeNow]);
+  const saveCashLike = useCallback((text: string) => {
+    const next = parseCashLike(text);
+    setCashLikeTickers(next);
+    setCashLikeDraft(null);
+    try {
+      if (next.join(',') === defaultCashLike.join(',')) window.localStorage.removeItem(exposureCashLikeKey);
+      else window.localStorage.setItem(exposureCashLikeKey, next.join(','));
+    } catch { /* storage unavailable: keep it for this visit */ }
+  }, []);
   const currentRocYear = Number(today().slice(0, 4));
   const annualRocSummary = useMemo(() => buildAnnualRocSummary(closedTrades, currentRocYear, usdJpyRate), [closedTrades, currentRocYear, usdJpyRate]);
 
@@ -3691,6 +3722,10 @@ export default function Home() {
           </article>
         </section>
 
+        <Suspense fallback={<article className="panel exposure-panel" id="exposure" aria-busy="true"><div className="panel-heading"><div><p className="eyebrow">Exposure</p><h2>持倉風險</h2></div></div></article>}>
+          <ExposurePanel inputs={exposureInputs} earnings={exposureEarnings} cashLike={cashLikeTickers} unrealized={openPnl} todayKey={todayKey} colors={allocationColors} loading={loading} />
+        </Suspense>
+
         {drilledTicker && <ResearchDrawer
           symbol={drilledTicker}
           company={researchPosition?.company ?? companyNames[drilledTicker] ?? ''}
@@ -4026,6 +4061,18 @@ export default function Home() {
                 <button type="button" className="settings-danger-button" disabled={!trades.some((trade) => !trade.derived)} onClick={() => { setSettingsOpen(false); void loadClearTradesDialog(); setClearOpen(true); }}>清除…</button>
               </div>
             </section>
+            <section className="settings-feature-card is-enabled exposure-settings-card">
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">險</span><div><p>Exposure</p><h3>持倉風險・類現金</h3></div><span className="settings-feature-status">{cashLikeTickers.length} 檔</span></div>
+              <p>這些代號在持倉風險面板裡算作類現金：不進產業或主題分組，也不套用壓力情境。用逗號或空白分隔。</p>
+              <form className="exposure-settings-form" onSubmit={(event) => { event.preventDefault(); saveCashLike(cashLikeDraft ?? cashLikeTickers.join(', ')); }}>
+                <label htmlFor="exposure-cash-like">類現金代號</label>
+                <input id="exposure-cash-like" value={cashLikeDraft ?? cashLikeTickers.join(', ')} onChange={(event) => setCashLikeDraft(event.target.value)} placeholder="BOXX, SGOV" spellCheck={false} autoCapitalize="characters" />
+                <div>
+                  <button type="button" className="exposure-settings-reset" onClick={() => saveCashLike(defaultCashLike.join(','))}>恢復預設</button>
+                  <button type="submit" className="primary-button" disabled={cashLikeDraft === null}>保存</button>
+                </div>
+              </form>
+            </section>
             <Suspense fallback={null}><BackupCard /></Suspense>
             <section className="settings-feature-card is-enabled">
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">註</span><div><p>How it&apos;s worked out</p><h3>計算與標示說明</h3></div></div>
@@ -4033,6 +4080,7 @@ export default function Home() {
                 <div><dt>收益走勢・時間加權報酬</dt><dd>每日損益 ÷ 當日占用資本（個股市值＋max（BOXX, 賣權擔保金））；股票用 Yahoo 收盤並還原分割、含股息，選擇權以內含價值＋時間價值逐日估值。</dd></div>
                 <div><dt>六項指標</dt><dd>交易統計：已平倉的個股 FIFO 批次（不含 BOXX）與選擇權交易；大賺＝個股報酬 ≥ 20%、選擇權獲利 ≥ $100。淨值與回撤：每個交易日以收盤估值，股價還原分割與分拆、含股息，選擇權以內含價值＋時間價值（隨 √剩餘天數 遞減）估值；時間加權報酬的資本＝個股市值＋max（BOXX, 賣權擔保金）。回撤百分比從資本第一次達到最高的 10% 起算，避免初期小部位放大百分比。</dd></div>
                 <div><dt>持倉配置</dt><dd>股票按目前價格、選擇權按擔保金、現金按原幣餘額計算；日圓部位會換算為 USD。選擇過去的日期時，股票使用該日以前最近一個交易日的收盤價，選擇權按當時擔保金、現金按當時餘額計算；缺少歷史報價的標的以成交價估算（會在圖下標出）。</dd></div>
+                <div><dt>持倉風險</dt><dd>股票按目前市值、選擇權按 Delta 換算的標的金額（Delta × 100 × 口數 × 標的價格）、現金按餘額計算；類現金代號與現金另外歸成一組，不套用情境。有效檔數 ＝ 1 ÷ 各部位權重平方和；集中度燈號：前三大 ≥ 75% 偏高、≥ 50% 略為集中。壓力情境是等幅下跌：最大分組 −25%、第二大分組 −15%、非現金全部 −20%，綠色刻度是目前未實現損益。產業取自 Yahoo，主題由你指定。單口 cash-secured put 的履約價上限 ＝ 類現金 ÷ 100。</dd></div>
                 <div><dt>交易明細的標示</dt><dd><span className="settings-help-legend"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span></span>現金不用查股價。股息會照你持有的期間和除息日，扣掉設定裡的外國人預扣稅後自動估算。</dd></div>
               </dl>
             </section>

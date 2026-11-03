@@ -214,3 +214,16 @@
 :root[data-wafu][data-tone='nasa'] .settings-panel > header { background: var(--nasa-stripe) 0 0 / 100% 7px no-repeat, var(--nasa-white); box-shadow: inset 0 -1px 0 var(--nasa-seam); backdrop-filter: none; -webkit-backdrop-filter: none; }
 :root[data-wafu][data-tone='nasa'] .eyebrow { white-space: nowrap; }
 :root[data-wafu][data-tone='nasa'] .hero > div:first-child { padding-bottom: 46px; }
+
+/* 持倉風險: the switch reads like the other segmented controls; cards and the toolbox sit on the hull. */
+:root[data-wafu][data-tone='nasa'] .exposure-switch { gap: 0; padding: 0; background: var(--nasa-white); border-radius: 0; box-shadow: 0 0 0 1px var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .exposure-switch button { color: var(--wa-ink); border-radius: 0; box-shadow: none; }
+:root[data-wafu][data-tone='nasa'] .exposure-switch button.active { color: var(--nasa-white); background: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] :is(.exposure-card, .exposure-legend-item, .exposure-summary > span) { background: var(--nasa-hull); border-color: var(--nasa-seam); }
+:root[data-wafu][data-tone='nasa'] .exposure-tools { background: var(--nasa-hull); border-color: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .exposure-tools dt, :root[data-wafu][data-tone='nasa'] .exposure-card h3 > span { font: var(--nasa-label); letter-spacing: .08em; text-transform: uppercase; }
+:root[data-wafu][data-tone='nasa'] .exposure-bar { border-radius: 0; box-shadow: inset 0 0 0 1px var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .exposure-bar .is-cash, :root[data-wafu][data-tone='nasa'] .exposure-legend-item i.is-cash { background-image: repeating-linear-gradient(135deg, var(--nasa-ink) 0 1.5px, transparent 1.5px 5px); }
+:root[data-wafu][data-tone='nasa'] .exposure-pop { background: var(--nasa-white); border-color: var(--nasa-ink); box-shadow: 4px 4px 0 rgb(27 27 27 / .12); }
+:root[data-wafu][data-tone='nasa'] .exposure-primary { color: var(--nasa-white); background: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] :is(.exposure-summary > span, .exposure-level, .exposure-tag, .exposure-events time, .exposure-legend-item i, .exposure-stress-track, .exposure-stress-track span, .exposure-members > button, .exposure-pop-options button) { border-radius: 0; }

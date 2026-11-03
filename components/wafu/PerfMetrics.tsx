@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import type { RangeMode } from '@/lib/performance';
 import type { RiskMetrics, monthlyGrid } from '@/lib/wafu/metrics';
@@ -11,8 +12,8 @@ const fmtN = (v: number, dp = 2) => Number.isFinite(v) ? `${v < 0 ? '−' : ''}$
 type Tone = 'good' | 'mid' | 'weak' | 'none';
 type Cell = { key: string; label: string; value: string; sub?: string; tone: Tone; def: string };
 
-/** 績效與風險指標: 8 core figures, 12 more on request (from the prototype). */
-export function MetricsGrid({ m, mode }: { m: RiskMetrics; mode: RangeMode }) {
+/** 績效與風險指標: 8 core figures, 12 more on request (from the prototype); `lead` sits above them (the 市場定調 tile). */
+export function MetricsGrid({ m, mode, lead }: { m: RiskMetrics; mode: RangeMode; lead?: ReactNode }) {
   const [more, setMore] = useState(false);
   const unit = { day: '日', week: '週', month: '月', year: '年' }[mode];
   const spy = (text: string) => m.hasSpy ? `SPY ${text}` : 'SPY —';
@@ -48,6 +49,7 @@ export function MetricsGrid({ m, mode }: { m: RiskMetrics; mode: RangeMode }) {
       <span>以 {m.n} 個{unit}報酬計算 · 無風險利率以 BOXX 代替{m.n < 8 ? ' · 期數少，僅供參考' : ''}</span>
       <button type="button" aria-expanded={more} onClick={() => setMore((value) => !value)}>{more ? '收合' : '更多指標 +12'}</button>
     </div>
+    {lead}
     <div className="wafu-kpi-grid">
       {cells.map((cell) => <div key={cell.key} className={`wafu-kpi tone-${cell.tone}`} title={cell.def}>
         <span>{cell.label}</span>

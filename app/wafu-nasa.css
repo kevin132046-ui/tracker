@@ -227,3 +227,29 @@
 :root[data-wafu][data-tone='nasa'] .exposure-pop { background: var(--nasa-white); border-color: var(--nasa-ink); box-shadow: 4px 4px 0 rgb(27 27 27 / .12); }
 :root[data-wafu][data-tone='nasa'] .exposure-primary { color: var(--nasa-white); background: var(--nasa-ink); }
 :root[data-wafu][data-tone='nasa'] :is(.exposure-summary > span, .exposure-level, .exposure-tag, .exposure-events time, .exposure-legend-item i, .exposure-stress-track, .exposure-stress-track span, .exposure-members > button, .exposure-pop-options button) { border-radius: 0; }
+
+/* ---------- 市場定調: the reading outlined in ink, the gauge in the stripe's paints with the panic zone hatched ---------- */
+:root[data-wafu][data-tone='nasa'] .wafu-regime-panel {
+  --rg-hi: var(--nasa-ink); --rg-c1: var(--nasa-ink); --rg-c2: var(--nasa-b1); --rg-needle: var(--nasa-ink);
+  --rg-z1: var(--nasa-b2); --rg-z2: var(--nasa-b3); --rg-z3: var(--nasa-b4); --rg-z4: repeating-linear-gradient(45deg, var(--nasa-ink) 0 4px, var(--nasa-white) 4px 8px);
+}
+:root[data-wafu][data-tone='nasa'] :is(.wafu-regime-tile, .wafu-regime-tag, .wafu-regime-chip, .wafu-regime-rule, .wafu-regime-go-link, .wafu-regime-empty button, .wafu-regime-card li i, .wafu-regime-gauge span, .wafu-regime-gauge b) { border-radius: 0; }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-gauge .z4 { box-shadow: inset 0 0 0 1px var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-gauge b { box-shadow: 0 0 0 2px var(--nasa-white); }
+:root[data-wafu][data-tone='nasa'] :is(.wafu-regime-now, .wafu-regime-rule, .wafu-regime-card, .wafu-regime-stats > .wafu-regime-metric) { background: var(--nasa-white); border: 0; box-shadow: var(--nasa-seams); }
+:root[data-wafu][data-tone='nasa'] :is(.wafu-regime-now, .wafu-regime-rule.is-current) { box-shadow: inset 0 0 0 2px var(--nasa-ink), inset 2px 2px 0 3px rgb(255 255 255 / .7); }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-rule.is-current { background: var(--nasa-white); }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-badge { border-color: var(--nasa-ink); color: var(--nasa-ink); background: var(--nasa-white); font-family: var(--wa-f-display); font-stretch: 112%; }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-badge.is-large { border-width: 2px; box-shadow: 0 0 0 3px var(--nasa-white), 0 0 0 4px var(--nasa-seam); }
+:root[data-wafu][data-tone='nasa'] :is(.wafu-regime-now-head strong, .wafu-regime-gauge-head strong, .wafu-regime-metric > strong, .wafu-regime-tile-text > strong) { font-stretch: 112%; font-weight: 700; }
+:root[data-wafu][data-tone='nasa'] :is(.wafu-regime-tag, .wafu-regime-chip) { color: var(--wa-ink); background: var(--nasa-white); border-color: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-chip.is-warn { color: var(--wa-down); border-color: var(--wa-down); }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-go-link { color: var(--nasa-ink); border-color: var(--nasa-ink); font-family: var(--wa-f-mono); letter-spacing: .04em; }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-go-link:hover { color: var(--nasa-white); background: var(--nasa-ink); }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-tile { background: var(--nasa-white); border: 0; box-shadow: var(--nasa-seams); }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-tile:hover { box-shadow: inset 0 0 0 1.5px var(--nasa-ink), inset 1px 1px 0 2px rgb(255 255 255 / .7); }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-tile::before { top: 0; bottom: 0; width: 4px; border-radius: 0; }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-go { color: var(--nasa-ink); font-family: var(--wa-f-mono); letter-spacing: .04em; }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-rules { counter-reset: nasa-rule; }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-rule { counter-increment: nasa-rule; position: relative; padding-top: 26px; }
+:root[data-wafu][data-tone='nasa'] .wafu-regime-rule::before { content: 'R-0' counter(nasa-rule); position: absolute; top: 7px; left: 14px; color: var(--wa-muted); font: var(--nasa-label); letter-spacing: .1em; }

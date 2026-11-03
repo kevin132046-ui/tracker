@@ -62,6 +62,7 @@ import MusicDock from '@/components/wafu/MusicDock';
 import NotifyCenter from '@/components/wafu/NotifyCenter';
 import GuideBar from '@/components/wafu/GuideBar';
 import { MetricsGrid, MonthlyHeatmap } from '@/components/wafu/PerfMetrics';
+import { MarketRegimeTile } from '@/components/wafu/MarketRegimeTile';
 import { VisualFieldPicker, defaultVisualFields, loadVisualFields, saveVisualFields, visualFields as visualFieldList } from '@/components/wafu/VisualFields';
 import type { VisualFieldId } from '@/components/wafu/VisualFields';
 import SpreadCard from '@/components/wafu/SpreadCard';
@@ -226,6 +227,7 @@ const DcfCalculator = lazy(loadDcfCalculator);
 const GainsLedger = lazy(() => import('@/components/wafu/GainsLedger'));
 const SixMetrics = lazy(() => import('@/components/wafu/SixMetrics'));
 const ExposurePanel = lazy(() => import('@/components/wafu/ExposurePanel'));
+const MarketRegime = lazy(() => import('@/components/wafu/MarketRegime'));
 const CashFlowLedger = lazy(() => import('@/components/wafu/CashFlowLedger'));
 const BackupCard = lazy(() => import('@/components/BackupCard'));
 const CompanyFundamentals = lazy(loadCompanyFundamentals);
@@ -3671,10 +3673,14 @@ export default function Home() {
               {returnEstimateNote && <p className="return-method-note">{returnEstimateNote}</p>}
             </div>
             <aside className="wafu-perf-side" aria-label="績效與風險指標">
-              {riskMetrics ? <MetricsGrid m={riskMetrics} mode={rangeMode} /> : <p className="wafu-perf-empty"><b>績效與風險指標</b>開始交易後就會計算報酬、波動與回撤。</p>}
+              {riskMetrics ? <MetricsGrid m={riskMetrics} mode={rangeMode} lead={<MarketRegimeTile />} /> : <><MarketRegimeTile /><p className="wafu-perf-empty"><b>績效與風險指標</b>開始交易後就會計算報酬、波動與回撤。</p></>}
             </aside>
           </div>
         </article>
+
+        <Suspense fallback={<article className="panel wafu-regime-panel" id="market-regime" aria-busy="true"><div className="panel-heading"><div><p className="eyebrow">Market regime · VIX term structure</p><h2>市場定調</h2></div></div></article>}>
+          <MarketRegime beta={riskMetrics?.hasSpy ? riskMetrics.beta : null} />
+        </Suspense>
 
         <Suspense fallback={<article className="panel wafu-six-panel" id="six-metrics" aria-busy="true"><div className="panel-heading"><div><p className="eyebrow">Six metrics</p><h2>六項指標</h2></div></div></article>}>
           <SixMetrics trades={trades} book={dailyBook} spy={spyHistory} cashFlows={cashFlows} usdJpyRate={usdJpyRate} todayKey={todayKey} loading={loading} pending={priceHistoryPending} colors={sixMetricsColors} onVisible={markSixMetricsSeen} />
@@ -4079,6 +4085,7 @@ export default function Home() {
               <dl className="settings-help">
                 <div><dt>收益走勢・時間加權報酬</dt><dd>每日損益 ÷ 當日占用資本（個股市值＋max（BOXX, 賣權擔保金））；股票用 Yahoo 收盤並還原分割、含股息，選擇權以內含價值＋時間價值逐日估值。</dd></div>
                 <div><dt>六項指標</dt><dd>交易統計：已平倉的個股 FIFO 批次（不含 BOXX）與選擇權交易；大賺＝個股報酬 ≥ 20%、選擇權獲利 ≥ $100。淨值與回撤：每個交易日以收盤估值，股價還原分割與分拆、含股息，選擇權以內含價值＋時間價值（隨 √剩餘天數 遞減）估值；時間加權報酬的資本＝個股市值＋max（BOXX, 賣權擔保金）。回撤百分比從資本第一次達到最高的 10% 起算，避免初期小部位放大百分比。</dd></div>
+                <div><dt>市場定調</dt><dd>比率＝VIX ÷ VIX3M（Cboe 延遲報價與每日收盤）。① 平靜：VIX &lt; 16 且比率 &lt; 0.90。② 正常偏緊張：VIX 16–22 且比率 0.90–1.00，其他比率在 1.0 以下的組合也歸這裡（VIX 高於 22 標「偏高」）。③ 近端恐慌開始：比率今天高於 1.0、前 5 個交易日內曾在 1.0 以下，且 VIX 今天 ≥ 25、5 個交易日前 &lt; 20。④ 持續倒掛：比率連續 15 個交易日高於 1.0。⑤ 恐慌消退：近 30 個交易日比率最高到 1.10 以上，今天回到 1.0 以下。比率在 1.0 以上但不符合 ③④ 時標「倒掛觀察」。只用來定調風險和倉位，不是買賣訊號。期貨曲線用 Cboe 的 VX 每月合約結算價；基本面參考的 FactSet 數字每週從最新一期 Earnings Insight PDF 自動讀出，Yardeni 只放連結。</dd></div>
                 <div><dt>持倉配置</dt><dd>股票按目前價格、選擇權按擔保金、現金按原幣餘額計算；日圓部位會換算為 USD。選擇過去的日期時，股票使用該日以前最近一個交易日的收盤價，選擇權按當時擔保金、現金按當時餘額計算；缺少歷史報價的標的以成交價估算（會在圖下標出）。</dd></div>
                 <div><dt>持倉風險</dt><dd>股票按目前市值、選擇權按 Delta 換算的標的金額（Delta × 100 × 口數 × 標的價格）、現金按餘額計算；類現金代號與現金另外歸成一組，不套用情境。有效檔數 ＝ 1 ÷ 各部位權重平方和；集中度燈號：前三大 ≥ 75% 偏高、≥ 50% 略為集中。壓力情境是等幅下跌：最大分組 −25%、第二大分組 −15%、非現金全部 −20%，綠色刻度是目前未實現損益。產業取自 Yahoo，主題由你指定。單口 cash-secured put 的履約價上限 ＝ 類現金 ÷ 100。</dd></div>
                 <div><dt>交易明細的標示</dt><dd><span className="settings-help-legend"><span><i className="live-dot" />股票 API 報價</span><span><i className="manual-dot" />手動價格</span><span><i className="cash-dot" />現金／稅後股息</span></span>現金不用查股價。股息會照你持有的期間和除息日，扣掉設定裡的外國人預扣稅後自動估算。</dd></div>

@@ -11,7 +11,7 @@ const leadingDate = /^(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{
 
 type Piece = { str: string; x: number; y: number; w: number; h: number };
 
-export async function readPdfTable(buffer: ArrayBuffer): Promise<PdfTable> {
+export async function readPdfTable(buffer: ArrayBuffer, pageLimit = maxPages): Promise<PdfTable> {
   const pdfjs = await import('pdfjs-dist');
   // pdf.js's worker code runs on the page (its "fake worker"): a statement is a few pages, and this
   // avoids depending on how the build serves a separate worker file.
@@ -24,7 +24,7 @@ export async function readPdfTable(buffer: ArrayBuffer): Promise<PdfTable> {
     throw new Error(error instanceof Error && /password/i.test(error.message) ? '這份 PDF 有密碼保護，請先移除密碼再匯入。' : '無法讀取這份 PDF。');
   }
   const lines: string[][] = [];
-  const pages = Math.min(doc.numPages, maxPages);
+  const pages = Math.min(doc.numPages, pageLimit);
   for (let number = 1; number <= pages; number++) {
     const page = await doc.getPage(number);
     const content = await page.getTextContent();
@@ -63,6 +63,12 @@ export async function readPdfTable(buffer: ArrayBuffer): Promise<PdfTable> {
   await doc.destroy();
   if (!lines.length) throw new Error('這份 PDF 沒有可讀的文字（可能是掃描影像），請改用 CSV／Excel 或 AI 截圖輸入。');
   return { pages: doc.numPages, lines };
+}
+
+/** A report's text from its first pages, one line per text line, for reading sentences rather than a table. */
+export async function readPdfText(buffer: ArrayBuffer, pageLimit = 20) {
+  const { lines } = await readPdfTable(buffer, pageLimit);
+  return lines.map((cells) => cells.join(' ')).join('\n');
 }
 
 const datePattern = /\b(\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})\b/;

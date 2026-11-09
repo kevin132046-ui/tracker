@@ -12,6 +12,7 @@ import { autoMapHeaders, decodeCsv, defaultImportSelection, importFields, import
 import type { CsvEncoding, CsvTable, CsvTrade, ImportField, ImportOp, ImportRow } from '@/lib/trade-csv';
 import { likelyTradeLines, linesToTsv } from '@/lib/pdf-table';
 import { chunkChanges, maxBatchOperations, postTradeBatch, type BatchChanges } from '@/lib/trade-batch';
+import { newChangeTag, type TradesChangeTag } from '@/lib/trades-changed';
 import type { FieldDiff } from '@/lib/trade-diff';
 import { cashFlowKindLabels, maxCashFlowBatch, type CashFlowInput } from '@/lib/cash-flows';
 
@@ -85,8 +86,8 @@ function importBatches(rows: readonly ImportRow[]) {
   return batches;
 }
 
-async function putTrade(trade: CsvTrade) {
-  const response = await fetch('/api/trades', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(trade) });
+async function putTrade(trade: CsvTrade, changeTag?: TradesChangeTag) {
+  const response = await fetch('/api/trades', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...trade, changeTag }) });
   const payload = await response.json().catch(() => ({})) as { trade?: unknown; error?: string };
   if (!response.ok || !payload.trade) throw new Error(payload.error ?? `伺服器回應 ${response.status}`);
 }
@@ -436,12 +437,14 @@ export default function TradeImportDialog({ existingTrades, existingFlows, onClo
     let deleted = 0;
     let failure: Outcome | null = null;
     const label = mode !== 'ai' ? (line: number) => `第 ${line} 列` : (line: number) => `第 ${line - 1} 筆`;
+    // One tag for the whole import, so 設定 → 資料 → 最後更改 counts all of its requests.
+    const changeTag = newChangeTag('import');
     const markImported = mode !== 'ai' ? setImported : setAiImported;
     const unselect = mode !== 'ai' ? setSelected : setAiSelected;
     // Rows go in batches of whole groups; a batch is saved all together or not at all.
     for (const batch of importBatches(mode !== 'ai' ? queue : aiQueue)) {
       try {
-        await postTradeBatch(batch.changes);
+        await postTradeBatch(batch.changes, changeTag);
       } catch (error) {
         const lines = batch.rows.map((row) => row.line);
         failure = {
@@ -482,7 +485,7 @@ export default function TradeImportDialog({ existingTrades, existingFlows, onClo
     }
     if (mode === 'ai' && !failure) for (const close of closeQueue) {
       try {
-        await putTrade(close.next!);
+        await putTrade(close.next!, changeTag);
         updated += 1;
         done += 1;
         setProgress({ done, total: pending });

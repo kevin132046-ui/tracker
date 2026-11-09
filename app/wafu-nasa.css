@@ -253,3 +253,9 @@
 :root[data-wafu][data-tone='nasa'] .wafu-regime-rules { counter-reset: nasa-rule; }
 :root[data-wafu][data-tone='nasa'] .wafu-regime-rule { counter-increment: nasa-rule; position: relative; padding-top: 26px; }
 :root[data-wafu][data-tone='nasa'] .wafu-regime-rule::before { content: 'R-0' counter(nasa-rule); position: absolute; top: 7px; left: 14px; color: var(--wa-muted); font: var(--nasa-label); letter-spacing: .1em; }
+
+/* 匯入與匯出: the date row as a seamed plate with stencilled labels. */
+:root[data-wafu][data-tone='nasa'] .settings-data-stamp { background: var(--nasa-white); border: 0; border-radius: 0; box-shadow: var(--nasa-seams); }
+:root[data-wafu][data-tone='nasa'] .settings-data-stamp > div + div { border-left-color: var(--nasa-seam); }
+:root[data-wafu][data-tone='nasa'] .settings-data-stamp dt { font: var(--nasa-label); letter-spacing: .1em; }
+:root[data-wafu][data-tone='nasa'] .settings-data-stamp dd { font-stretch: 112%; font-weight: 700; }

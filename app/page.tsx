@@ -90,6 +90,7 @@ import type { WafuIntroPreference } from '@/lib/wafu/intro';
 import { defaultWafuIntro, introPending, liftIntroVeil, loadIntroLiteAuto, loadWafuIntro, saveIntroLiteAuto, saveWafuIntro } from '@/lib/wafu/intro';
 import DatePicker from '@/components/DatePicker';
 import TradeColumnPicker from '@/components/TradeColumnPicker';
+import { changeActionLabels, latestRecordDate, parseTradesChanged, type TradesChanged } from '@/lib/trades-changed';
 
 type Trade = {
   id: number;
@@ -178,6 +179,8 @@ type TechnicalData = {
 };
 type TechnicalCacheEntry = { data: TechnicalData; fetchedAt: number };
 const emptyTechnicalPoints: TechnicalPoint[] = [];
+/** 設定 → 資料 → 最後更改, in the viewer's own time zone: 2026/11/9 14:32. */
+const stampFormat = new Intl.DateTimeFormat('zh-TW', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 type BenchmarkMarket = {
   id: 'USDJPY' | 'US10Y' | 'US30Y' | 'GOLD' | 'OIL';
   symbol: string;
@@ -1999,6 +2002,20 @@ export default function Home() {
     const expired = result.changes.filter((change) => change.reason === 'expired' || change.reason === 'assigned').length;
     return { closings, expired, total: result.changes.length };
   }, [trades, reconcileToday]);
+  // 設定 → 資料 → 匯入與匯出: when the records last changed (fetched while that tab is open, again as
+  // the trades change) and the latest date they cover.
+  const [tradesChanged, setTradesChanged] = useState<TradesChanged | null>(null);
+  const showingDataTab = settingsOpen && settingsTab === 'data';
+  useEffect(() => {
+    if (!showingDataTab) return;
+    const controller = new AbortController();
+    fetch('/api/trades?meta=changed', { cache: 'no-store', signal: controller.signal })
+      .then((response) => response.ok ? response.json() as Promise<{ changed?: unknown }> : null)
+      .then((payload) => { if (payload) setTradesChanged(parseTradesChanged(payload.changed)); })
+      .catch(() => { /* the card shows — */ });
+    return () => controller.abort();
+  }, [showingDataTab, trades]);
+  const recordCutoff = useMemo(() => latestRecordDate(trades), [trades]);
   const handleReconciled = useCallback((message: string) => {
     setReconcileOpen(false);
     void fetchTrades().catch((error) => notify(error instanceof Error ? error.message : '無法載入交易資料'));
@@ -4057,6 +4074,16 @@ export default function Home() {
             <section className="settings-feature-card data-settings-card is-enabled">
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">帳</span><div><p>Trades data</p><h3>匯入與匯出</h3></div><span className="settings-feature-status">{trades.length} 筆</span></div>
               <p>讀取 CSV（券商成交紀錄或自製表格），或用 AI 辨識券商 App 的截圖與一句話紀錄後匯入；也可把全部交易匯出成 CSV 備份。交易資料存在本站的資料庫。</p>
+              <dl className="settings-data-stamp">
+                <div>
+                  <dt>最後更改</dt>
+                  <dd>{tradesChanged ? stampFormat.format(new Date(tradesChanged.at)) : '—'}<small>{!tradesChanged ? '還沒有更改紀錄' : tradesChanged.action ? <>{changeActionLabels[tradesChanged.action]}{tradesChanged.count !== null && `・${tradesChanged.count} 筆`}</> : '依最新新增的交易推算'}</small></dd>
+                </div>
+                <div>
+                  <dt>記錄截止</dt>
+                  <dd>{recordCutoff ? recordCutoff.replaceAll('-', '/').replace(/\/0(\d)/g, '/$1') : '—'}<small>{recordCutoff ? '最新一筆開倉或平倉日' : '還沒有交易'}</small></dd>
+                </div>
+              </dl>
               <div className="settings-data-actions">
                 <button type="button" className="primary-button" onClick={() => { setSettingsOpen(false); void loadTradeImportDialog(); setImportOpen(true); }}>⇪ 匯入 CSV／Excel／PDF／截圖</button>
                 <button type="button" className="secondary-button" onClick={exportTradesCsv}>匯出 CSV</button>

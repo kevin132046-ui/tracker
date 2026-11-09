@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import type { CsvTrade } from '@/lib/trade-csv';
 import { tradesToCsv } from '@/lib/trade-csv';
 import { applyTradeChanges, type BatchChanges } from '@/lib/trade-batch';
+import { newChangeTag } from '@/lib/trades-changed';
 import { downloadText } from '@/lib/download';
 import { contractLabel, diffTrades } from '@/lib/trade-diff';
 import { reconcileTrades, reconItemsFromTrades, type ReconResult } from '@/lib/trade-reconcile';
@@ -113,7 +114,7 @@ export default function TradeReconcileDialog({ trades, today, onClose, onApplied
     setError('');
     try {
       downloadText(`optionflow-backup-before-cleanup-${today}.csv`, tradesToCsv(stored));
-      await applyTradeChanges(changes, (done, all) => setProgress({ done, total: all }));
+      await applyTradeChanges(changes, (done, all) => setProgress({ done, total: all }), newChangeTag('reconcile'));
       onApplied(`已整理 ${chosen.length} 組紀錄：更新 ${changes.updates.length}、刪除 ${changes.deletes.length}${changes.creates.length ? `、新增 ${changes.creates.length}` : ''} 筆（已先下載備份 CSV）`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '整理失敗，請稍後再試。');

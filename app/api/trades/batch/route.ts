@@ -3,10 +3,11 @@ import { ensureDatabase, tradeSelect, type TradeRow } from '@/lib/server/databas
 import { cleanTradeInput, type TradeInput } from '@/lib/server/trade-input';
 import { maxBatchOperations } from '@/lib/trade-batch';
 import { guarded } from '@/lib/server/data-gate';
+import { changeFrom, tradesChangedStatement } from '@/lib/server/trades-changed';
 
 export const dynamic = 'force-dynamic';
 
-type BatchBody = { updates?: Array<Partial<TradeInput> & { id?: number }>; creates?: Array<Partial<TradeInput>>; deletes?: unknown[] };
+type BatchBody = { updates?: Array<Partial<TradeInput> & { id?: number }>; creates?: Array<Partial<TradeInput>>; deletes?: unknown[]; changeTag?: unknown };
 
 const validId = (value: unknown) => {
   const id = Number(value);
@@ -50,6 +51,9 @@ async function handlePOST(request: Request) {
       )),
       ...deletes.map((id) => db.prepare('DELETE FROM trades WHERE id = ?').bind(id)),
     ];
+    // Recorded in the same transaction (設定 → 資料 → 最後更改); requests of one import add up.
+    const change = changeFrom(body.changeTag, 'batch');
+    statements.push(tradesChangedStatement(db, change.action, total, change.op));
     const results = await db.batch(statements);
     const missing = updates.filter((_, index) => !results[index].meta.changes).map(({ id }) => id);
     const createdIds = results.slice(updates.length, updates.length + creates.length).map((result) => Number((result.results?.[0] as { id?: number } | undefined)?.id ?? 0));

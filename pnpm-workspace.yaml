@@ -6,3 +6,8 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
   workerd: true
+
+# Patched versions of packages that come in through other packages (pnpm audit).
+overrides:
+  zod: ^4.6.7
+  source-map-js: ^1.2.2

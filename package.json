@@ -17,7 +17,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
     "drizzle-orm": "0.45.2",
-    "next": "16.2.6",
+    "next": "16.4.3",
     "pdfjs-dist": "4.10.38",
     "react": "19.2.8",
     "react-dom": "19.2.8"
@@ -34,7 +34,7 @@
     "@vitejs/plugin-rsc": "0.5.36",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.4.3",
     "react-server-dom-webpack": "19.2.8",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",

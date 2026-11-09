@@ -42,5 +42,11 @@
     "vite": "8.0.13",
     "wrangler": "4.92.0"
   },
-  "type": "module"
+  "type": "module",
+  "pnpm": {
+    "overrides": {
+      "zod": "^4.6.7",
+      "source-map-js": "^1.2.2"
+    }
+  }
 }

@@ -7,6 +7,8 @@ import type { AiProvider } from '@/lib/earnings';
 import type { AiKeys } from '@/lib/filings';
 import { aiKeyHeaders, defaultAnalysisQuestions, emptyAiKeys, maxQuestionLength, maxQuestions } from '@/lib/filings';
 import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
+import { groupOfModel, limitLabel, sharingSettingsUrl, tierOfAccount, usageTierLabel } from '@/lib/openai-free-tier';
+import { loadAccountTier, saveAccountTier, watchAccountTier } from '@/lib/openai-account-tier';
 import { FreeQuotaTable, freeQuotaLine } from '@/components/FreeQuota';
 
 export type AiStatus = { state: 'ok'; mode: 'access' | 'byok'; note: string | null; providers: Record<AiProvider, boolean>; openAiModel: string | null; sec: boolean; quota: QuotaReport | null } | { state: 'error'; message: string } | null;
@@ -59,6 +61,10 @@ export default function AiSettingsCard({ enabled, onEnabledChange, status, keys,
   const detection = useSyncExternalStore(watchModelDetection, loadModelDetection, () => null);
   const [detect, setDetect] = useState<Detect>({ state: 'idle' });
   const [recheck, setRecheck] = useState(0);
+  const accountTier = useSyncExternalStore(watchAccountTier, loadAccountTier, () => null);
+  // Text typed or pasted into the free-tier box that has not been saved yet (null: show the saved text).
+  const [tierDraft, setTierDraft] = useState<string | null>(null);
+  const [tierError, setTierError] = useState<string | null>(null);
   const questionText = draft ?? questions.join('\n');
   const serverKey = (provider: AiProvider) => status?.state === 'ok' && status.providers[provider];
   const keyState = (provider: AiProvider) => keys[provider].trim() ? '使用瀏覽器金鑰' : serverKey(provider) ? '使用伺服器金鑰' : '未設定';
@@ -88,9 +94,10 @@ export default function AiSettingsCard({ enabled, onEnabledChange, status, keys,
 
   const checking = detect.state === 'checking';
   // ChatGPT: the free-tier models first (those this key can use, when known), then the key's other chat models.
+  // A list may name a family ("gpt-5.4"): its dated snapshots belong to it too (see groupOfModel).
   const detectedOpenAi = detection?.openai.state === 'ok' ? detection.openai.models.map((model) => model.id) : null;
-  const freeModels = freeGroups.map((group) => ({ ...group, models: detectedOpenAi ? group.models.filter((model) => detectedOpenAi.includes(model)) : group.models })).filter((group) => group.models.length);
-  const freeIds = new Set(freeGroups.flatMap((group) => group.models));
+  const freeModels = freeGroups.map((group) => ({ ...group, models: detectedOpenAi ? detectedOpenAi.filter((model) => groupOfModel(freeGroups, model) === group) : group.models })).filter((group) => group.models.length);
+  const freeIds = new Set(freeModels.flatMap((group) => group.models));
   const otherModels = (detectedOpenAi ?? []).filter((model) => !freeIds.has(model));
   const enforced = quota?.enforced !== false;
   const currentOpenAi = openAiModel.trim();
@@ -146,6 +153,40 @@ export default function AiSettingsCard({ enabled, onEnabledChange, status, keys,
       <button type="button" disabled={checking} onClick={() => setRecheck((value) => value + 1)}>重新檢查金鑰</button>
     </div>
 
+    <section className="ai-free-tier" aria-labelledby="ai-free-tier-title">
+      <div className="ai-free-tier-head">
+        <h4 id="ai-free-tier-title">我的 OpenAI 免費資格</h4>
+        <a href={sharingSettingsUrl} target="_blank" rel="noreferrer noopener">開啟 OpenAI Sharing 頁</a>
+      </div>
+      <label className="ai-settings-wide"><span>{"從 Sharing 頁複製「You're eligible / enrolled …」整段貼上（不含金鑰，只存在這個瀏覽器與完整備份）"}</span>
+        <textarea rows={4} value={tierDraft ?? accountTier?.text ?? ''} spellCheck={false} placeholder={"You're eligible for free daily usage on traffic shared with OpenAI.\nUp to 250 thousand tokens per day across …\nUp to 2.5 million tokens per day across …"}
+          onChange={(event) => { setTierDraft(event.target.value); setTierError(null); }}
+          onBlur={() => {
+            if (tierDraft === null) return;
+            const error = tierDraft.trim() ? saveAccountTier(tierDraft) : saveAccountTier(null);
+            setTierError(error);
+            if (!error) setTierDraft(null);
+          }} />
+      </label>
+      {tierError && <p className="ai-free-tier-error" role="alert">{tierError}</p>}
+      {accountTier ? <>
+        <div className="ai-free-tier-summary">
+          <span className="ai-key-badge is-ok">已讀取 · {accountTier.parsed.groups.length} 組 · {accountTier.parsed.groups.reduce((sum, group) => sum + group.models.length, 0)} 個模型</span>
+          <span className="ai-key-badge">{accountTier.parsed.status === 'enrolled' ? '已加入（enrolled）' : accountTier.parsed.status === 'eligible' ? '有資格（尚未 enrolled）' : '狀態不明'}</span>
+          {accountTier.savedAt > 0 && <span className="ai-key-badge">{new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric' }).format(new Date(accountTier.savedAt))} 貼上</span>}
+          <button type="button" onClick={() => { saveAccountTier(null); setTierDraft(null); setTierError(null); }}>清除，改用說明頁清單</button>
+        </div>
+        <div className="ai-free-tier-groups">
+          {[...accountTier.parsed.groups].sort((a, b) => a.limit - b.limit).map((group) => <div key={group.limit}>
+            <small>{limitLabel(group.limit)} · 每日、組內共用</small>
+            <p>{group.models.map((model) => <code key={model}>{model}</code>)}</p>
+          </div>)}
+        </div>
+        {accountTier.parsed.status !== 'enrolled' && <p className="ai-free-tier-note">還沒 enrolled：到 Sharing 頁打開「Share inputs and outputs with OpenAI」後，額度才會真的免費；開好之後把新的文字再貼一次。</p>}
+      </> : <p className="ai-free-tier-note">沒貼的話，用 OpenAI 說明頁的清單判斷；說明頁和帳號頁不一定同步，說明頁常常列得比較多，建議貼上。</p>}
+      {quota?.accountRejected && <p className="ai-free-tier-error" role="alert">伺服器沒有接受貼上的清單（格式超出範圍），這次改用說明頁清單。</p>}
+    </section>
+
     <div className="ai-settings-grid">
       <label><span>預設 AI</span>
         <select value={defaultProvider} onChange={(event) => onDefaultProviderChange(event.target.value === 'anthropic' ? 'anthropic' : 'openai')}>
@@ -168,12 +209,14 @@ export default function AiSettingsCard({ enabled, onEnabledChange, status, keys,
           {claudeList.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
         </select>
       </label>
-      <label><span>OpenAI 使用層級</span>
+      {accountTier ? <div className="ai-settings-field"><span>OpenAI 使用層級</span>
+        <p className="ai-settings-fixed">{usageTierLabel[tierOfAccount(accountTier.parsed.groups)]}（依貼上的免費資格）</p>
+      </div> : <label><span>OpenAI 使用層級</span>
         <select value={usageTier} onChange={(event) => onUsageTierChange(event.target.value === 'high' ? 'high' : 'low')}>
-          <option value="low">Tier 1–2（較小額度，預設）</option>
-          <option value="high">Tier 3 以上</option>
+          <option value="low">Build（較小額度，預設）</option>
+          <option value="high">Launch／Grow</option>
         </select>
-      </label>
+      </label>}
     </div>
     {status?.state === 'ok' && <>
       <p className="free-quota-line">{freeQuotaLine(quota)}</p>

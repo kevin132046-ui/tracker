@@ -3,6 +3,7 @@
  * settings that shape them. Storage helpers never throw: without localStorage they do nothing.
  */
 import type { AiProvider } from '@/lib/earnings';
+import { accountTierHeaders } from '@/lib/openai-account-tier';
 
 export type EarningsFiling = { form: string; accession: string; filed: string; reportDate: string | null; items: string[]; url: string };
 export type CompanyFilings = { cik: string; name: string; earningsRelease: EarningsFiling | null; periodicReport: EarningsFiling | null };
@@ -109,6 +110,8 @@ export const saveQuestions = (questions: string[]) => write(analysisQuestionsKey
 /** Request headers carrying the keys typed into this browser, if any. */
 export function aiKeyHeaders(keys: AiKeys): Record<string, string> {
   return {
+    // The free-tier list pasted from OpenAI's data-sharing page, when there is one.
+    ...accountTierHeaders(),
     ...(keys.openai.trim() ? { 'X-OpenAI-Key': keys.openai.trim() } : {}),
     ...(keys.anthropic.trim() ? { 'X-Anthropic-Key': keys.anthropic.trim() } : {}),
     ...(keys.openaiAdmin?.trim() ? { 'X-OpenAI-Admin-Key': keys.openaiAdmin.trim() } : {}),

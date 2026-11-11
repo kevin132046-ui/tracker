@@ -1,11 +1,12 @@
-import type { FreeTierList, ModelQuota, QuotaReport, UsageTier } from '@/lib/openai-free-tier';
-import { builtinFreeTier, freeTierArticleUrl, groupOfModel, limitFor, nextUtcMidnight, parseFreeTierText } from '@/lib/openai-free-tier';
+import type { AccountFreeTierGroup, FreeTierList, ModelQuota, QuotaReport, UsageTier } from '@/lib/openai-free-tier';
+import { accountFreeTierList, builtinFreeTier, freeTierArticleUrl, groupOfModel, limitFor, limitLabel, nextUtcMidnight, parseFreeTierText } from '@/lib/openai-free-tier';
 import { htmlToText } from '@/lib/server/html';
 
 /**
  * Keeps every ChatGPT request inside OpenAI's complimentary daily tokens: the allowance comes from
- * OpenAI's help article, today's usage from the organisation Usage API (admin key), plus this
- * site's own recent calls, which the Usage API reports with a delay.
+ * the list pasted from the organisation's data-sharing page when there is one, else OpenAI's help
+ * article; today's usage from the organisation Usage API (admin key), plus this site's own recent
+ * calls, which the Usage API reports with a delay.
  */
 const listFreshMs = 10 * 60_000;
 const usageFreshMs = 60_000;
@@ -99,8 +100,9 @@ export function recordOpenAiUsage(scope: UsageScope, model: string, tokens: numb
   while (recentCalls.length && now - recentCalls[0].at > usageLagMs) recentCalls.shift();
 }
 
-export async function quotaReport(model: string, tier: UsageTier, scope: UsageScope, now = Date.now()): Promise<QuotaReport> {
-  const list = await freeTierList(now);
+export async function quotaReport(model: string, tier: UsageTier, scope: UsageScope, now = Date.now(), account: readonly AccountFreeTierGroup[] | null = null): Promise<QuotaReport> {
+  // A pasted list is the organisation's own offer: it wins over the article, and its limits are the limits.
+  const list = account?.length ? accountFreeTierList(account, now) : await freeTierList(now);
   let usedByModel: Record<string, number> = {};
   let usageError: string | null = null;
   try {
@@ -118,7 +120,7 @@ export async function quotaReport(model: string, tier: UsageTier, scope: UsageSc
   const groups = list.groups.map((group) => {
     const limit = Math.floor(limitFor(group, tier) * safetyMargin);
     const used = Object.entries(usedByModel).reduce((sum, [name, tokens]) => groupOfModel([group], name) ? sum + tokens : sum, 0);
-    return { id: group.id, label: group.label, limit, used, remaining: Math.max(0, limit - used), models: group.models };
+    return { id: group.id, label: limitLabel(limitFor(group, tier)), limit, used, remaining: Math.max(0, limit - used), models: group.models };
   });
   let selected: ModelQuota | null = null;
   if (model) {
@@ -130,11 +132,11 @@ export async function quotaReport(model: string, tier: UsageTier, scope: UsageSc
 }
 
 /** Whether a call estimated at `estimate` tokens stays inside the model's free allowance. */
-export async function checkOpenAiQuota(model: string, tier: UsageTier, estimate: number, scope: UsageScope) {
-  const report = await quotaReport(model, tier, scope);
+export async function checkOpenAiQuota(model: string, tier: UsageTier, estimate: number, scope: UsageScope, account: readonly AccountFreeTierGroup[] | null = null) {
+  const report = await quotaReport(model, tier, scope, Date.now(), account);
   const selected = report.selected!;
   if (!report.usageAvailable) return { ok: false as const, report, message: `${report.usageError}為避免超出免費額度，已停止這次 ChatGPT 請求。` };
-  if (!selected.group) return { ok: false as const, report, message: `${model} 不在 OpenAI 免費額度清單中，使用會直接計費，已擋下。請在「AI 設定」改選清單內的模型。` };
+  if (!selected.group) return { ok: false as const, report, message: `${model} 不在${report.list.source === 'account' ? '你帳號的' : ' OpenAI '}免費額度清單中，使用會直接計費，已擋下。請在「AI 設定」改選清單內的模型。` };
   if (estimate > selected.remaining) {
     return { ok: false as const, report, message: `預估這次約 ${estimate.toLocaleString('en-US')} tokens，超過 ${selected.group.label}今日免費剩餘 ${selected.remaining.toLocaleString('en-US')} tokens，已擋下。額度於 UTC 00:00（台灣時間早上 8 點）重置。` };
   }

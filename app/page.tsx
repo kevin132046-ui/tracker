@@ -36,7 +36,7 @@ import { loadUsageTier, saveUsageTier } from '@/lib/filings';
 import type { ClaudeModel } from '@/lib/ai-models';
 import { defaultClaudeModel, loadClaudeModel, requestModel, saveClaudeModel } from '@/lib/ai-models';
 import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
-import { loadAccountTier, watchAccountTier } from '@/lib/openai-account-tier';
+import { loadAccountTier, syncAccountTier, watchAccountTier } from '@/lib/openai-account-tier';
 import { OPTION_CONTRACT_SIZE, analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
@@ -1537,6 +1537,14 @@ export default function Home() {
     setOpenAiModel(value);
     try { window.localStorage.setItem(openAiModelKey, value.trim()); } catch { /* storage unavailable */ }
   }, []);
+
+  // The site's database holds the copy every device shares; take it when the settings or the analysis dialog open.
+  useEffect(() => {
+    if (!aiEnabled || (!settingsOpen && !filingDialogSymbol)) return;
+    const controller = new AbortController();
+    void syncAccountTier(controller.signal);
+    return () => controller.abort();
+  }, [aiEnabled, filingDialogSymbol, settingsOpen]);
 
   // AI lookups use the Worker's keys only behind Cloudflare Access (else the browser's own keys). The status carries today's free ChatGPT tokens, so it
   // is asked again every time the settings panel or the analysis dialog opens, after every AI call,

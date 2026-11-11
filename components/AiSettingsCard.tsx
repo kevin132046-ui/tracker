@@ -65,6 +65,14 @@ export default function AiSettingsCard({ enabled, onEnabledChange, status, keys,
   // Text typed or pasted into the free-tier box that has not been saved yet (null: show the saved text).
   const [tierDraft, setTierDraft] = useState<string | null>(null);
   const [tierError, setTierError] = useState<string | null>(null);
+  const [tierSaving, setTierSaving] = useState(false);
+  const saveTier = (text: string | null) => {
+    setTierSaving(true);
+    void saveAccountTier(text).then((error) => {
+      setTierError(error);
+      if (!error) setTierDraft(null);
+    }).finally(() => setTierSaving(false));
+  };
   const questionText = draft ?? questions.join('\n');
   const serverKey = (provider: AiProvider) => status?.state === 'ok' && status.providers[provider];
   const keyState = (provider: AiProvider) => keys[provider].trim() ? '使用瀏覽器金鑰' : serverKey(provider) ? '使用伺服器金鑰' : '未設定';
@@ -158,15 +166,10 @@ export default function AiSettingsCard({ enabled, onEnabledChange, status, keys,
         <h4 id="ai-free-tier-title">我的 OpenAI 免費資格</h4>
         <a href={sharingSettingsUrl} target="_blank" rel="noreferrer noopener">開啟 OpenAI Sharing 頁</a>
       </div>
-      <label className="ai-settings-wide"><span>{"從 Sharing 頁複製「You're eligible / enrolled …」整段貼上（不含金鑰，只存在這個瀏覽器與完整備份）"}</span>
-        <textarea rows={4} value={tierDraft ?? accountTier?.text ?? ''} spellCheck={false} placeholder={"You're eligible for free daily usage on traffic shared with OpenAI.\nUp to 250 thousand tokens per day across …\nUp to 2.5 million tokens per day across …"}
+      <label className="ai-settings-wide"><span>{"從 Sharing 頁複製「You're eligible / enrolled …」整段貼上（不含金鑰；存在網站資料庫，登入後每台裝置共用）"}</span>
+        <textarea rows={4} value={tierDraft ?? accountTier?.text ?? ''} spellCheck={false} disabled={tierSaving} placeholder={"You're eligible for free daily usage on traffic shared with OpenAI.\nUp to 250 thousand tokens per day across …\nUp to 2.5 million tokens per day across …"}
           onChange={(event) => { setTierDraft(event.target.value); setTierError(null); }}
-          onBlur={() => {
-            if (tierDraft === null) return;
-            const error = tierDraft.trim() ? saveAccountTier(tierDraft) : saveAccountTier(null);
-            setTierError(error);
-            if (!error) setTierDraft(null);
-          }} />
+          onBlur={() => { if (tierDraft !== null) saveTier(tierDraft.trim() ? tierDraft : null); }} />
       </label>
       {tierError && <p className="ai-free-tier-error" role="alert">{tierError}</p>}
       {accountTier ? <>
@@ -174,7 +177,8 @@ export default function AiSettingsCard({ enabled, onEnabledChange, status, keys,
           <span className="ai-key-badge is-ok">已讀取 · {accountTier.parsed.groups.length} 組 · {accountTier.parsed.groups.reduce((sum, group) => sum + group.models.length, 0)} 個模型</span>
           <span className="ai-key-badge">{accountTier.parsed.status === 'enrolled' ? '已加入（enrolled）' : accountTier.parsed.status === 'eligible' ? '有資格（尚未 enrolled）' : '狀態不明'}</span>
           {accountTier.savedAt > 0 && <span className="ai-key-badge">{new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric' }).format(new Date(accountTier.savedAt))} 貼上</span>}
-          <button type="button" onClick={() => { saveAccountTier(null); setTierDraft(null); setTierError(null); }}>清除，改用說明頁清單</button>
+          <span className="ai-key-badge">{accountTier.where === 'server' ? '已存到網站資料庫（所有裝置共用）' : '只存在這個瀏覽器（未通過 Access 登入）'}</span>
+          <button type="button" disabled={tierSaving} onClick={() => { setTierDraft(null); saveTier(null); }}>清除，改用說明頁清單</button>
         </div>
         <div className="ai-free-tier-groups">
           {[...accountTier.parsed.groups].sort((a, b) => a.limit - b.limit).map((group) => <div key={group.limit}>

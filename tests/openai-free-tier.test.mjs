@@ -135,3 +135,47 @@ describe('quota check with a pasted list', () => {
     assert.match(check.message, /管理金鑰/);
   });
 });
+
+describe('stored offer (in-memory SQLite stands in for D1)', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const store = await import('@/lib/server/openai-free-tier-store');
+  const fakeD1 = () => {
+    const sqlite = new DatabaseSync(':memory:');
+    sqlite.exec('CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+    const statement = (sql, args = []) => ({
+      bind: (...values) => statement(sql, values),
+      run: async () => sqlite.prepare(sql).run(...args),
+      first: async () => sqlite.prepare(sql).get(...args) ?? null,
+    });
+    return { sqlite, db: { prepare: (sql) => statement(sql) } };
+  };
+
+  test('saves, reads back (also after the cache is dropped) and clears', async () => {
+    const { db, sqlite } = fakeD1();
+    store.forgetFreeTierCache();
+    const value = store.checkFreeTierText(accountText, new Date('2026-11-12T04:00:00Z'));
+    assert.notEqual(typeof value, 'string');
+    await store.writeFreeTier(db, value);
+    store.forgetFreeTierCache();
+    const read = await store.readFreeTier(db);
+    assert.equal(read.savedAt, '2026-11-12T04:00:00.000Z');
+    assert.deepEqual(read.parsed.groups.map((group) => group.limit), [250_000, 2_500_000]);
+    // Only the text and time are stored; the groups are parsed again on read.
+    assert.deepEqual(Object.keys(JSON.parse(sqlite.prepare('SELECT value FROM app_meta').get().value)), ['text', 'savedAt']);
+    await store.writeFreeTier(db, null);
+    store.forgetFreeTierCache();
+    assert.equal(await store.readFreeTier(db), null);
+  });
+
+  test('refuses empty, overlong or unreadable text', () => {
+    assert.equal(typeof store.checkFreeTierText(''), 'string');
+    assert.equal(typeof store.checkFreeTierText(42), 'string');
+    assert.equal(typeof store.checkFreeTierText(`${accountText}\n${'x'.repeat(4_000)}`), 'string');
+    assert.equal(typeof store.checkFreeTierText('hello'), 'string');
+  });
+
+  test('a stored value that no longer parses counts as none', () => {
+    assert.equal(store.parseStoredFreeTier('{"text":"nothing here","savedAt":""}'), null);
+    assert.equal(store.parseStoredFreeTier('not json'), null);
+  });
+});

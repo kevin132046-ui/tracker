@@ -1,7 +1,7 @@
 'use client';
 
 import type { ChangeEvent, CSSProperties, ReactNode } from 'react';
-import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { BrokerWorkspace } from '@/lib/broker-workspace';
 import {
   buildAnnualRocSummary,
@@ -36,6 +36,7 @@ import { loadUsageTier, saveUsageTier } from '@/lib/filings';
 import type { ClaudeModel } from '@/lib/ai-models';
 import { defaultClaudeModel, loadClaudeModel, requestModel, saveClaudeModel } from '@/lib/ai-models';
 import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
+import { loadAccountTier, watchAccountTier } from '@/lib/openai-account-tier';
 import { OPTION_CONTRACT_SIZE, analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
@@ -1201,6 +1202,8 @@ export default function Home() {
   const [cashLikeDraft, setCashLikeDraft] = useState<string | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus>(null);
   const [openAiTier, setOpenAiTier] = useState<UsageTier>('low');
+  // The free-tier list pasted from OpenAI's data-sharing page; a change asks for the status again.
+  const accountTier = useSyncExternalStore(watchAccountTier, loadAccountTier, () => null);
   // Bumped after each AI call so the quota is read again.
   const [quotaCheck, setQuotaCheck] = useState(0);
   const refreshQuota = useCallback(() => setQuotaCheck((current) => current + 1), []);
@@ -1553,7 +1556,7 @@ export default function Home() {
         });
     }, 300);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [aiEnabled, aiKeys, filingDialogSymbol, openAiModel, openAiTier, quotaCheck, settingsOpen]);
+  }, [accountTier, aiEnabled, aiKeys, filingDialogSymbol, openAiModel, openAiTier, quotaCheck, settingsOpen]);
 
   const lookupEarningsWithAi = useCallback(async (symbol: string, provider: AiProvider) => {
     const id = `${provider}:${symbol}`;

@@ -5,7 +5,7 @@ import type { FilingExchange, QuarterRow } from '@/lib/filings';
 import { cleanQuestions, maxFollowUps, maxQuestionLength } from '@/lib/filings';
 import { aiGate, byokLimited, openAiUsageScope, providerKey, serverKeys, type AiGate } from '@/lib/server/ai-gate';
 import type { UsageTier } from '@/lib/openai-free-tier';
-import { estimateTokens } from '@/lib/openai-free-tier';
+import { estimateTokens, parseAccountFreeTierHeader } from '@/lib/openai-free-tier';
 import { anthropicModel, dateLookupEstimate, findEarningsDate, openAiModelPattern } from '@/lib/server/ai-earnings';
 import type { AiCompanyPayload } from '@/lib/company-ai';
 import { companyLookupEstimate, findCompanyFigures } from '@/lib/server/company-ai';
@@ -59,6 +59,13 @@ const fail = (error: string, status: number) => NextResponse.json({ error }, { s
 const providerName = (provider: AiProvider) => provider === 'anthropic' ? 'Claude' : 'ChatGPT';
 
 const tierOf = (value: unknown): UsageTier => value === 'high' ? 'high' : 'low';
+/**
+ * The free-tier list pasted from the organisation's data-sharing page, sent by the browser with every
+ * AI request. It only sets which of this user's own ChatGPT calls count as free; a malformed one is
+ * ignored (and reported), so the article's list applies.
+ */
+const freeTierHeader = 'X-OpenAI-Free-Tier';
+const accountList = (request: Request) => parseAccountFreeTierHeader(request.headers.get(freeTierHeader));
 
 export async function GET(request: Request) {
   const gate = await aiGate(request);
@@ -67,12 +74,13 @@ export async function GET(request: Request) {
   const model = String(params.get('model') ?? '').trim();
   const scope = await openAiUsageScope(request, gate);
   // Asked on every open of the AI settings and the analysis dialog, so the page always shows today's allowance.
-  const quota = await quotaReport(openAiModelPattern.test(model) ? model : gate.mode === 'access' ? env.OPENAI_MODEL ?? '' : '', tierOf(params.get('tier')), scope);
+  const account = accountList(request);
+  const quota = await quotaReport(openAiModelPattern.test(model) ? model : gate.mode === 'access' ? env.OPENAI_MODEL ?? '' : '', tierOf(params.get('tier')), scope, Date.now(), account);
   return NextResponse.json({
     mode: gate.mode,
     note: byokNote(gate),
     // Without an admin key (possible only in byok mode) ChatGPT is not held to the free tier.
-    quota: { ...quota, enforced: gate.mode === 'access' || scope !== null },
+    quota: { ...quota, enforced: gate.mode === 'access' || scope !== null, accountRejected: Boolean(request.headers.get(freeTierHeader)) && !account },
     email: gate.mode === 'access' ? gate.email : null,
     providers: serverKeys(gate),
     anthropicModel,
@@ -167,7 +175,7 @@ export async function POST(request: Request) {
   const scope = provider === 'openai' ? await openAiUsageScope(request, gate) : null;
   const guardQuota = async (estimate: number) => {
     if (provider !== 'openai' || (gate.mode === 'byok' && !scope)) return null;
-    const check = await checkOpenAiQuota(openAiModel, usageTier, estimate, scope);
+    const check = await checkOpenAiQuota(openAiModel, usageTier, estimate, scope, accountList(request));
     return check.ok ? null : NextResponse.json({ error: check.message, code: 'free-quota', quota: check.report, estimate }, { status: 429, headers: noStore });
   };
 

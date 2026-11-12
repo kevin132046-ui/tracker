@@ -10,6 +10,7 @@ import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
 import { groupOfModel, limitLabel, sharingSettingsUrl, tierOfAccount, usageTierLabel } from '@/lib/openai-free-tier';
 import { loadAccountTier, saveAccountTier, watchAccountTier } from '@/lib/openai-account-tier';
 import { FreeQuotaTable, freeQuotaLine, lookupQuota } from '@/components/FreeQuota';
+import SpendTotals from '@/components/SpendTotals';
 
 export type AiStatus = { state: 'ok'; mode: 'access' | 'byok'; note: string | null; providers: Record<AiProvider, boolean>; openAiModel: string | null; sec: boolean; quota: QuotaReport | null } | { state: 'error'; message: string } | null;
 
@@ -237,6 +238,7 @@ export default function AiSettingsCard({ enabled, onEnabledChange, status, keys,
       <p className="free-quota-line"><b>對話用</b>　{freeQuotaLine(quota)}</p>
       <p className="free-quota-line"><b>自動找資料用</b>　{freeQuotaLine(lookupQuota(quota))}</p>
       {enforced && <FreeQuotaTable quota={quota} />}
+      {enforced && <SpendTotals quota={quota} refresh={quota} />}
     </>}
     <div className="ai-settings-key-actions">
       <small>金鑰只存在這個瀏覽器，使用時經 HTTPS 送到本站伺服器轉呼叫，伺服器不保存。任何能在此網頁執行的程式都讀得到它；共用電腦請勿保存。</small>

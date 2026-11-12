@@ -1028,6 +1028,28 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .free-quota td { padding: 5px 8px; color: var(--wa-ink); border-top: 1px solid var(--wa-line); font-size: 11.5px; font-weight: 700; text-align: right; }
 .free-quota th:first-child, .free-quota td:first-child { text-align: left; }
 .free-quota tr.is-selected td { color: var(--wa-up); font-weight: 600; background: var(--wa-up-soft); }
+.spend-totals { display: grid; gap: 10px; margin-top: 12px; padding: 12px; background: var(--wa-panel); border: 1px solid var(--wa-line-2); border-radius: 10px; }
+.spend-totals h4 { margin: 0; color: var(--wa-ink); font-size: 12.5px; }
+.spend-totals-cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.spend-cell { display: grid; gap: 4px; padding: 10px; border: 1px solid var(--wa-line); border-radius: 8px; }
+.spend-cell small { color: var(--wa-muted); font-size: 10.5px; font-weight: 600; }
+.spend-cell b { color: var(--wa-ink); font-size: 15px; font-variant-numeric: tabular-nums; }
+.spend-cell b span, .spend-cell > span { color: var(--wa-muted); font-size: 10.5px; font-weight: 500; }
+.spend-bar { display: block; height: 6px; overflow: hidden; background: var(--wa-accent-soft); border-radius: 999px; }
+.spend-bar span { display: block; height: 100%; background: var(--wa-up); border-radius: inherit; }
+.spend-cell.is-paid b { color: var(--wa-gold); }
+.spend-balance { display: grid; gap: 8px; }
+.spend-balance p { margin: 0; color: var(--wa-ink-2); font-size: 11.5px; line-height: 1.6; }
+.spend-balance p b { color: var(--wa-ink); }
+.spend-balance p small { display: block; color: var(--wa-muted); font-size: 10.5px; }
+.spend-balance p strong { display: block; color: var(--wa-down); font-size: 11px; }
+.spend-balance p.is-low b { color: var(--wa-down); }
+.spend-balance-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.spend-balance-form label { display: grid; gap: 4px; color: var(--wa-ink); font-size: 11px; font-weight: 600; }
+.spend-balance-form input { width: 120px; min-height: 30px; padding: 0 8px; color: var(--wa-ink); background: var(--wa-bg, transparent); border: 1px solid var(--wa-line-2); border-radius: 7px; font: inherit; }
+.spend-balance-form button { min-height: 30px; padding: 0 10px; color: var(--wa-ink); background: var(--wa-accent-soft); border: 1px solid var(--wa-line-2); border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.spend-balance-form button:disabled { color: var(--wa-muted); cursor: default; }
+.spend-balance-form a { color: var(--wa-accent); font-size: 11px; font-weight: 700; }
 .free-quota-note { margin: 6px 0 0; color: var(--wa-muted); font-size: 10.5px; line-height: 1.55; }
 .free-quota-note a { color: var(--wa-accent); font-weight: 700; }
 .free-quota-note b { color: var(--wa-down); }

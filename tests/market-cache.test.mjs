@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { marketCacheTable } from '@/lib/server/database';
-import { dividendHistory, historyKey, nasdaqKey, nasdaqPayDates, tickerOfKey } from '@/lib/server/dividend-pay-sources';
+import { dividendHistory, historyKey, nasdaqKey, nasdaqPayDates, tickerOfKey, yahooNextPayDate } from '@/lib/server/dividend-pay-sources';
 import { MarketCache, skipLookup } from '@/lib/server/market-cache';
 
 /** Just enough of D1 over node:sqlite: prepare, bind, all, run, and a batch that is one transaction. */
@@ -203,5 +203,21 @@ describe('dividend sources through the cache', () => {
     assert.equal((await nasdaqPayDates('ZZTB', '2026-08-12', { remaining: 0 }, spent)).length, 1);
     assert.equal(requests, 2);
     assert.equal(tickerOfKey(nasdaqKey('ZZTB')), 'ZZTB');
+  });
+
+  test('a Yahoo lookup that runs out of request budget stores nothing; a failed one is held back for a while', async () => {
+    const { db, keys } = fakeD1();
+    let requests = 0;
+    globalThis.fetch = async () => { requests += 1; throw new Error('Yahoo is down'); };
+    const cache = await (await newIsolate('yahoo-budget')).open(db, 'dividend:');
+    // One request left is not enough for Yahoo's session (two requests): given up without asking.
+    assert.deepEqual(await yahooNextPayDate('ZZTC', '2026-02-11', { remaining: 1 }, cache), []);
+    assert.deepEqual(await yahooNextPayDate('ZZTD', '2026-02-11', { remaining: 0 }, cache), []);
+    assert.equal(requests, 0);
+    // With budget to spare the source is asked, fails, and is not asked again until the retry time.
+    assert.deepEqual(await yahooNextPayDate('ZZTE', '2026-02-11', { remaining: 10 }, cache), []);
+    assert.ok(requests > 0);
+    await cache.save();
+    assert.deepEqual(keys(), ['dividend:yahoo:ZZTE']);
   });
 });

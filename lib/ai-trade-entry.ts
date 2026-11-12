@@ -1,8 +1,9 @@
 /**
- * Trades typed as a sentence ("今天以 2.30 賣出 KO 11/20 到期 75 PUT 一口") or read from a broker
- * screenshot by Claude / ChatGPT. The server asks the model for JSON and cleans it with
- * cleanAiTradeParse; the import dialog turns the result into the same preview as a CSV file
- * (planAiImport). Closing fills that match an open trade become updates to that trade. Pure.
+ * Trades typed as a sentence ("今天以 2.30 賣出 KO 11/20 到期 75 PUT 一口"), read in the browser
+ * (lib/trade-text) or, for what it can't read and for broker screenshots, by Claude / ChatGPT. The
+ * server asks the model for JSON and cleans it with cleanAiTradeParse; the import dialog turns the
+ * result into the same preview as a CSV file (planAiImport). Closing fills are matched to open trades
+ * here, in the browser: the model is never sent the user's positions. Pure.
  */
 import { normalizeTickerForMarket } from '@/lib/performance';
 import type { CsvTable, CsvTrade, ImportField } from '@/lib/trade-csv';
@@ -23,33 +24,18 @@ export type AiTradeRow = {
   price: number | null;
   fees: number | null;
   note: string;
-  /** The open trade the model thinks this fill closes (one of the ids it was given). */
-  closesTradeId: number | null;
 };
 export type AiTradeParse = { rows: AiTradeRow[]; questions: string[] };
 
 export const maxAiRows = 50;
 export const maxEntryLength = 2_000;
-export const maxOpenTradeHints = 200;
 export const maxEntryImageBytes = 4 * 1024 * 1024;
 export const entryImageTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
 
-/** Open positions sent with the request so a closing fill can name the trade it closes. */
-export type OpenTradeHint = { id: number; ticker: string; kind: 'stock' | 'option'; side: 'buy' | 'sell'; right: 'PUT' | 'CALL' | null; strike: string | null; expiry: string | null; quantity: number; openDate: string };
-
-const kindOf = (trade: Pick<CsvTrade, 'type'>): AiTradeKind => trade.type === 'CASH' ? 'cash' : trade.type === 'SDI' ? 'stock' : 'option';
 const rightOf = (value: unknown): 'PUT' | 'CALL' | null => {
   const text = String(value ?? '').trim().toUpperCase();
   return text === 'PUT' || text === 'P' ? 'PUT' : text === 'CALL' || text === 'C' ? 'CALL' : null;
 };
-
-export function openTradeHints(trades: readonly CsvTrade[]): OpenTradeHint[] {
-  return trades.flatMap((trade) => {
-    const kind = kindOf(trade);
-    if (trade.derived || trade.status !== 'open' || kind === 'cash' || !trade.ticker) return [];
-    return [{ id: trade.id, ticker: trade.ticker, kind, side: trade.type === 'Sell' ? 'sell' : 'buy', right: kind === 'option' ? rightOf(trade.event) : null, strike: kind === 'option' ? trade.strike : null, expiry: trade.expiryDate, quantity: trade.quantity, openDate: trade.openDate } satisfies OpenTradeHint];
-  }).slice(0, maxOpenTradeHints);
-}
 
 /** The JSON object (or array) in a model reply, tolerating code fences and prose around it. */
 export function extractJson(text: string): unknown {
@@ -86,7 +72,6 @@ export function cleanAiTradeParse(raw: unknown): AiTradeParse {
     const kind: AiTradeKind = kindRaw === 'cash' ? 'cash' : kindRaw === 'option' || right ? 'option' : 'stock';
     const tickerRaw = text(row.ticker, 15).toUpperCase().replace(/\s+/g, '');
     const side = String(row.side ?? '').toLowerCase();
-    const id = finite(row.closesTradeId);
     return [{
       action: row.action === 'close' ? 'close' : 'open',
       date: dateOf(row.date),
@@ -100,7 +85,6 @@ export function cleanAiTradeParse(raw: unknown): AiTradeParse {
       price: kind === 'cash' ? null : nonNegative(row.price),
       fees: nonNegative(row.fees),
       note: text(row.note, 200),
-      closesTradeId: id !== null && Number.isInteger(id) && id > 0 ? id : null,
     }];
   });
   const questions = (Array.isArray(source.questions) ? source.questions : []).flatMap((question) => typeof question === 'string' && question.trim() ? [question.trim().slice(0, 200)] : []).slice(0, 5);
@@ -163,8 +147,7 @@ export function planAiImport(parse: AiTradeParse, existing: readonly CsvTrade[])
   parse.rows.forEach((row, index) => {
     if (row.action === 'close') {
       const candidates = closeCandidates(row, existing).filter((trade) => !claimed.has(trade.id));
-      const hinted = candidates.find((trade) => trade.id === row.closesTradeId);
-      const target = hinted ?? candidates.find((trade) => row.quantity === null || trade.quantity === row.quantity) ?? candidates[0];
+      const target = candidates.find((trade) => row.quantity === null || trade.quantity === row.quantity) ?? candidates[0];
       if (target) {
         claimed.add(target.id);
         if (row.quantity !== null && target.quantity !== row.quantity) {

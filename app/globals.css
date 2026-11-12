@@ -803,12 +803,12 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .import-status .is-success { color: var(--wa-up); }
 .import-footer .primary-button { min-width: 130px; }
 .import-footer .primary-button:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
-/* Import: CSV or AI entry (a sentence or a screenshot read by Claude / ChatGPT) */
+/* Import: CSV, or a sentence read on this device (what it can't read, and screenshots, by Claude / ChatGPT) */
 .import-mode-tabs { width: max-content; max-width: 100%; display: flex; gap: 4px; padding: 4px; background: var(--wa-accent-soft); border: 1px solid var(--wa-line); border-radius: 12px; }
 .import-mode-tabs button { min-height: 36px; padding: 0 14px; color: var(--wa-ink-2); background: transparent; border: 0; border-radius: 9px; font-size: 13.5px; font-weight: 600; cursor: pointer; }
 .import-mode-tabs button.active { color: var(--wa-accent); background: var(--wa-panel); box-shadow: 0 1px 4px rgb(0 0 0 / 0.264); }
 .import-mode-tabs button:disabled { cursor: wait; }
-.ai-entry { display: grid; gap: 12px; padding: 16px; background: var(--wa-accent-soft); border: 1px solid var(--wa-accent); border-radius: 14px; }
+.ai-entry { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 16px; background: var(--wa-accent-soft); border: 1px solid var(--wa-accent); border-radius: 14px; }
 .ai-entry-models { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
 .ai-entry-models label, .ai-entry-text { min-width: 0; display: grid; gap: 5px; color: var(--wa-ink-2); font-size: 12.5px; font-weight: 600; }
 .ai-entry-models label:nth-child(2) { flex: 1 1 240px; }
@@ -818,7 +818,6 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .ai-entry-text textarea:focus-visible, .ai-entry-models select:focus-visible, .ai-entry-models input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .ai-entry-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
 .ai-entry-image { min-width: 0; display: flex; align-items: center; gap: 8px; }
-.ai-entry-image img { width: 44px; height: 44px; flex: 0 0 auto; object-fit: cover; border: 1px solid var(--wa-line-2); border-radius: 8px; }
 .ai-entry-image span { max-width: 200px; overflow: hidden; color: var(--wa-ink); font-size: 12.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .ai-entry-image button, .ai-entry-stop { min-height: 36px; padding: 0 12px; color: var(--wa-accent); background: var(--wa-accent-soft); border: 1px solid var(--wa-accent); border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .ai-entry-actions .primary-button { min-height: 38px; font-size: 13px; }
@@ -827,6 +826,26 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .ai-entry-note.is-error { color: var(--wa-down); }
 .ai-entry-source { margin: 0; color: var(--wa-ink-2); font-size: 12.5px; font-weight: 500; }
 .ai-entry-questions ul { margin: 6px 0 0; padding-left: 20px; }
+.ai-entry-gaps { display: grid; gap: 8px; padding: 10px 13px; color: var(--wa-ink); background: var(--wa-gold-soft); border: 1px solid var(--wa-gold); border-radius: 10px; font-size: 13px; line-height: 1.5; }
+.ai-entry-gaps b { color: var(--wa-gold); font-weight: 650; }
+.ai-entry-gaps ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
+.ai-entry-gaps li { min-width: 0; overflow-wrap: anywhere; }
+.ai-entry-gaps q { font-weight: 600; }
+.ai-entry-gaps li span { margin-left: 8px; color: var(--wa-down); font-size: 12.5px; font-weight: 600; }
+.ai-entry-gaps small { color: var(--wa-muted); font-size: 12px; font-weight: 600; }
+.ai-entry-gaps-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.ai-entry-gaps-actions .primary-button { min-height: 36px; font-size: 13px; }
+.ai-entry-gaps-actions .primary-button:disabled { cursor: not-allowed; box-shadow: none; }
+.image-crop { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.image-crop-frame { position: relative; width: max-content; max-width: 100%; justify-self: start; cursor: crosshair; touch-action: none; user-select: none; border: 1px solid var(--wa-line-2); border-radius: 10px; overflow: hidden; }
+.image-crop-frame.is-disabled { cursor: default; }
+.image-crop-frame img { display: block; max-width: 100%; max-height: 340px; }
+.image-crop-box { position: absolute; border: 2px solid var(--blue); background: rgb(80 140 255 / 0.14); box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.38); pointer-events: none; }
+.image-crop-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--wa-muted); font-size: 12.5px; font-weight: 600; }
+.image-crop-actions button { min-height: 32px; padding: 0 11px; color: var(--wa-accent); background: var(--wa-panel); border: 1px solid var(--wa-accent); border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.ai-entry-models-box { padding-top: 10px; border-top: 1px dashed var(--wa-line-2); }
+.ai-entry-models-box summary { color: var(--wa-ink-2); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.ai-entry-models-box[open] summary { margin-bottom: 10px; }
 .import-modal table.import-closes-table { min-width: 960px; }
 @media (max-width: 720px) {
   .toolbar-io { width: 100%; }

@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { claudeExtras, openAiReasoning } from '@/lib/ai-models';
-import type { AiTradeParse, OpenTradeHint } from '@/lib/ai-trade-entry';
+import type { AiTradeParse } from '@/lib/ai-trade-entry';
 import { cleanAiTradeParse, entryImageTypes, extractJson, maxEntryImageBytes } from '@/lib/ai-trade-entry';
 import type { AiProvider } from '@/lib/earnings';
 import { estimateTokens } from '@/lib/openai-free-tier';
@@ -36,7 +36,9 @@ const system = [
   'Never invent numbers. When a required value (ticker, quantity, price, strike, expiry, date) is missing or unreadable, set it to null and ask about it in "questions", written in the user\'s language.',
 ].join('\n');
 
-function prompt(entry: string, today: string, openTrades: OpenTradeHint[], hasImage: boolean) {
+// The note is only what the user typed or the lines the browser couldn't read; their positions are
+// never sent (closing fills are matched to open trades in the browser).
+function prompt(entry: string, today: string, hasImage: boolean) {
   return [
     `Today is ${today} (週${weekday(today)}). Resolve relative dates such as 今天, 昨天, 上週五, 本日, 昨日, yesterday against today; a date without a year is in the current year.`,
     'Return one row per fill:',
@@ -46,10 +48,8 @@ function prompt(entry: string, today: string, openTrades: OpenTradeHint[], hasIm
     '- Options: right "PUT" or "CALL", strike as a number, expiry "YYYY-MM-DD" (an expiry given without a year that falls before the trade date is next year), quantity in contracts, price as the per-share premium (2.30, not 230).',
     '- Stocks: quantity in shares, price per share. Japanese stocks use the 4-digit code plus ".T" (7203.T).',
     '- fees only when stated; note: a few words from the user worth keeping, otherwise "".',
-    '- closesTradeId: for a "close" row, the id of the open position below that it closes, or null when none matches.',
     'Reply with JSON only, no prose:',
-    '{"rows":[{"action":"open","date":"YYYY-MM-DD","ticker":"KO","kind":"option","side":"sell","right":"PUT","strike":75,"expiry":"2026-11-20","quantity":1,"price":2.3,"fees":null,"note":"","closesTradeId":null}],"questions":[]}',
-    `Open positions (JSON): ${JSON.stringify(openTrades)}`,
+    '{"rows":[{"action":"open","date":"YYYY-MM-DD","ticker":"KO","kind":"option","side":"sell","right":"PUT","strike":75,"expiry":"2026-11-20","quantity":1,"price":2.3,"fees":null,"note":""}],"questions":[]}',
     hasImage ? 'The attached image is a brokerage screenshot: extract every fill or position row you can read; for positions without a trade date use null.' : '',
     entry ? `<note>\n${entry}\n</note>` : '',
   ].filter(Boolean).join('\n');
@@ -57,8 +57,8 @@ function prompt(entry: string, today: string, openTrades: OpenTradeHint[], hasIm
 
 export type TradeParseRequest = { system: string; prompt: string; image: EntryImage | null; maxOutput: number; estimate: number };
 
-export function tradeParseRequest(entry: string, image: EntryImage | null, today: string, openTrades: OpenTradeHint[]): TradeParseRequest {
-  const text = prompt(entry, today, openTrades, Boolean(image));
+export function tradeParseRequest(entry: string, image: EntryImage | null, today: string): TradeParseRequest {
+  const text = prompt(entry, today, Boolean(image));
   return { system, prompt: text, image, maxOutput: tradeParseMaxOutput, estimate: estimateTokens(`${system}\n${text}`) + (image ? imageTokenEstimate : 0) + tradeParseMaxOutput };
 }
 

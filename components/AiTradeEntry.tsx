@@ -75,7 +75,9 @@ export default function AiTradeEntry({ ai, existingTrades, disabled, onResult }:
   onResult: (result: AiEntryResult) => void;
 }) {
   const [provider, setProvider] = useState<AiProvider>(ai?.defaultProvider ?? 'openai');
-  const [openAiModel, setOpenAiModel] = useState(ai?.openAiModel ?? '');
+  // The model picked here, else the 自動找資料 model (which can arrive from the database after the box opens).
+  const [pickedModel, setOpenAiModel] = useState<string | null>(null);
+  const openAiModel = pickedModel ?? ai?.openAiModel ?? '';
   const [claudeModel, setClaudeModel] = useState<ClaudeModel>(ai?.claudeModel ?? resolveClaudeModel(''));
   const [status, setStatus] = useState<Status>({ state: 'loading' });
   const [text, setText] = useState('');

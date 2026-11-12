@@ -4,7 +4,7 @@ import {
   backupFileLimit, backupFilePrefixes, backupFileRule, backupFormat, backupTableNames, backupTables, backupVersion,
   chunkRows, validBackupTables, type BackupFile, type BackupRow, type BackupSnapshot, type BackupTables,
 } from '@/lib/backup';
-import { brokerHubStateTable, cashFlowsSetup, ensureDatabase } from '@/lib/server/database';
+import { brokerHubStateTable, cashFlowsSetup, dailyDigestTable, ensureDatabase } from '@/lib/server/database';
 import { guarded } from '@/lib/server/data-gate';
 import { tradesChangedStatement } from '@/lib/server/trades-changed';
 import { forgetFreeTierCache } from '@/lib/server/openai-free-tier-store';
@@ -27,7 +27,7 @@ const noBucket = () => env.BACKGROUND_IMAGES ? null : fail('這個網址沒有�
 
 async function readyDatabase() {
   const db = await ensureDatabase();
-  await db.batch([...cashFlowsSetup, brokerHubStateTable].map((sql) => db.prepare(sql)));
+  await db.batch([...cashFlowsSetup, brokerHubStateTable, dailyDigestTable].map((sql) => db.prepare(sql)));
   return db;
 }
 

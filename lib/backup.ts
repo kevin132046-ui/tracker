@@ -15,9 +15,12 @@ export const backupTables = {
   dcf_scenarios: ['id', 'name', 'ticker', 'currency', 'data', 'created_at', 'updated_at'],
   broker_hub_state: ['id', 'enabled', 'revision', 'data', 'updated_at'],
   app_meta: ['key', 'value'],
+  daily_digest: ['day', 'status', 'created_at', 'data'],
 } as const;
 export type BackupTable = keyof typeof backupTables;
 export const backupTableNames = Object.keys(backupTables) as BackupTable[];
+/** Tables added after backups already existed: an older backup without them restores them empty. */
+const laterTables: ReadonlySet<BackupTable> = new Set(['daily_digest']);
 export type BackupRow = Record<string, string | number | null>;
 export type BackupTables = Record<BackupTable, BackupRow[]>;
 
@@ -117,7 +120,7 @@ export function validBackupTables(value: unknown): BackupTables {
   const tables = {} as BackupTables;
   let total = 0;
   for (const name of backupTableNames) {
-    const rows = source[name];
+    const rows = source[name] === undefined && laterTables.has(name) ? [] : source[name];
     if (!Array.isArray(rows)) throw new Error(`備份檔缺少資料表「${name}」。`);
     total += rows.length;
     if (total > maxBackupRows) throw new Error('備份裡的資料超過可還原的上限。');

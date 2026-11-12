@@ -1537,14 +1537,14 @@ export default function Home() {
   const updateOpenAiModel = useCallback((value: string) => { void saveModelRoles({ ...loadModelRoles(), chat: value.trim() }); }, []);
   const updateLookupModel = useCallback((value: string) => { void saveModelRoles({ ...loadModelRoles(), lookup: value.trim() }); }, []);
 
-  // The site's database holds the copy every device shares; take it when the settings or the analysis dialog open.
+  // The site's database holds the copy every device shares; take it when the settings, the analysis or the import dialog open.
   useEffect(() => {
-    if (!aiEnabled || (!settingsOpen && !filingDialogSymbol)) return;
+    if (!aiEnabled || (!settingsOpen && !filingDialogSymbol && !importOpen)) return;
     const controller = new AbortController();
     void syncAccountTier(controller.signal);
     void syncModelRoles(controller.signal);
     return () => controller.abort();
-  }, [aiEnabled, filingDialogSymbol, settingsOpen]);
+  }, [aiEnabled, filingDialogSymbol, importOpen, settingsOpen]);
 
   // AI lookups use the Worker's keys only behind Cloudflare Access (else the browser's own keys). The status carries today's free ChatGPT tokens, so it
   // is asked again every time the settings panel or the analysis dialog opens, after every AI call,

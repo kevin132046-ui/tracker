@@ -68,8 +68,8 @@ export default function DailyDigestPanel({ digests, startDay, onClose, onRegener
             {body.expiring.length ? <ul>{body.expiring.map((item) => <li key={`${item.ticker}-${item.expiry}-${item.strike}-${item.right}`}><b>{item.ticker}</b> {md(item.expiry)} {item.strike} {item.right === 'PUT' ? 'P' : 'C'} · 剩 {item.days} 天{item.moneyness ? ` · ${item.moneyness === 'ITM' ? '價內' : item.moneyness === 'OTM' ? '價外' : '價平附近'}` : ''}</li>)}</ul> : <p>7 天內沒有到期的選擇權。</p>}
           </section>
 
-          <section><h3>30 天內財報</h3>
-            {body.events.length ? <p>{body.events.map((event, position) => <span key={event.ticker}>{position > 0 && '、'}<b>{event.ticker}</b> {md(event.date)}{event.timing ? (event.timing === 'pre' ? ' 盤前' : ' 盤後') : ''}{event.estimate ? '（預估）' : ''}</span>)}</p> : <p>30 天內沒有已知的財報日。</p>}
+          <section><h3>30 天內財報與事件</h3>
+            {body.events.length ? <p>{body.events.map((event, position) => <span key={`${event.ticker}-${event.date}-${event.kind ?? 'earnings'}-${event.label ?? ''}`}>{position > 0 && '、'}<b>{event.ticker}</b> {md(event.date)}{event.kind === 'custom' ? ` ${event.label ?? ''}` : <>{event.timing ? (event.timing === 'pre' ? ' 盤前' : ' 盤後') : ''}{event.estimate ? '（預估）' : ''}</>}</span>)}</p> : <p>30 天內沒有已知的財報日或自訂事件。</p>}
           </section>
 
           <section><h3>持倉相關新聞</h3>
@@ -81,7 +81,7 @@ export default function DailyDigestPanel({ digests, startDay, onClose, onRegener
           </section>
 
           <section><h3>集中度</h3>
-            {body.concentration ? <p>最大分組 <b>{body.concentration.group}</b> {(body.concentration.share * 100).toFixed(1)}%{body.concentration.previousShare !== null ? `，前一份是 ${(body.concentration.previousShare * 100).toFixed(1)}%` : ''}。</p> : <p>沒有可計算的持倉。</p>}
+            {body.concentration ? <p>最大分組 <b>{body.concentration.group}</b> {(body.concentration.share * 100).toFixed(1)}%{body.concentration.mode === 'theme' ? '（依主題）' : body.concentration.mode === 'sector' ? '（依產業）' : ''}{body.concentration.previousShare !== null ? `，前一份是 ${(body.concentration.previousShare * 100).toFixed(1)}%` : ''}。</p> : <p>沒有可計算的持倉。</p>}
           </section>
 
           <section><h3>OpenAI</h3>

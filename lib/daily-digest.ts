@@ -4,6 +4,7 @@
  * opens. Only describes; never advises buying or selling. Pure: the server gathers the data.
  */
 import type { EarningsEvent } from '@/lib/earnings';
+import type { CustomEvent, GroupMode } from '@/lib/exposure';
 import type { FreeTierGroup, UsageTier } from '@/lib/openai-free-tier';
 import { groupOfModel, limitFor } from '@/lib/openai-free-tier';
 import { addDaysToKey, isTradingDay, previousTradingDay } from '@/lib/market-calendar';
@@ -35,7 +36,8 @@ export type DigestQuote = { price: number; changePercent: number | null };
 
 export type DigestMover = { ticker: string; changePercent: number };
 export type DigestExpiry = { ticker: string; right: 'PUT' | 'CALL'; strike: string; expiry: string; days: number; moneyness: 'ITM' | 'OTM' | 'ATM' | null };
-export type DigestEvent = { ticker: string; date: string; timing: EarningsEvent['timing']; estimate: boolean };
+/** An earnings date, or (kind 'custom', with its label) an event the owner added in the 持倉風險 panel. */
+export type DigestEvent = { ticker: string; date: string; timing: EarningsEvent['timing']; estimate: boolean; kind?: 'custom'; label?: string };
 export type DigestNews = { ticker: string; text: string; url: string };
 export type DigestOpenAi = {
   /** The UTC day checked (the day before the run). */
@@ -56,7 +58,8 @@ export type DigestBody = {
   expiring: DigestExpiry[];
   events: DigestEvent[];
   regime: { id: RegimeId; vix: number; ratio: number; previousId: RegimeId | null } | null;
-  concentration: { group: string; share: number; previousShare: number | null } | null;
+  /** The largest group as the 持倉風險 panel groups: by theme once any holding has one, else by sector. Digests written before the panel's settings were shared have no `mode` (grouped by industry). */
+  concentration: { group: string; share: number; previousShare: number | null; mode?: GroupMode } | null;
   news: DigestNews[];
   /** Why there is no news (search off, quota, no key). */
   newsNote: string | null;
@@ -144,15 +147,15 @@ export function upcomingEvents(earnings: Readonly<Record<string, EarningsEvent>>
     .sort((a, b) => a.date.localeCompare(b.date) || a.ticker.localeCompare(b.ticker));
 }
 
-/** The largest group's share of the tracked value. */
-export function concentration(values: ReadonlyArray<{ group: string; value: number }>): { group: string; share: number } | null {
-  const totals = new Map<string, number>();
-  for (const { group, value } of values) if (value > 0) totals.set(group, (totals.get(group) ?? 0) + value);
-  const total = [...totals.values()].reduce((sum, value) => sum + value, 0);
-  if (total <= 0) return null;
-  const [group, value] = [...totals.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
-  return { group, share: round(value / total, 4) };
+/** The owner's custom events for tickers held, from `day` to `window` days ahead. */
+export function customDigestEvents(custom: readonly CustomEvent[], held: ReadonlySet<string>, day: string, window = eventWindow): DigestEvent[] {
+  const last = addDaysToKey(day, window);
+  return custom.flatMap((event) => held.has(event.ticker) && event.date > day && event.date <= last
+    ? [{ ticker: event.ticker, date: event.date, timing: null, estimate: false, kind: 'custom' as const, label: event.label }] : []);
 }
+
+/** Earnings and custom events in one list, soonest first. */
+export const sortDigestEvents = (events: readonly DigestEvent[]) => [...events].sort((a, b) => a.date.localeCompare(b.date) || a.ticker.localeCompare(b.ticker) || (a.kind ?? '').localeCompare(b.kind ?? ''));
 
 /** A Costs API line item ("gpt-5.4-mini, input", "web search tool calls") → its model, or 'search'. */
 export function lineItemModel(lineItem: string) {

@@ -1,7 +1,7 @@
 // Run with `pnpm test`. Made-up trades, prices and costs; no real account data.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { cleanDigestSettings, cleanNews, concentration, digestDayFor, expiringSoon, freeTierCheck, lineItemModel, topMovers, trackedValue, upcomingEvents } from '@/lib/daily-digest';
+import { cleanDigestSettings, cleanNews, customDigestEvents, digestDayFor, expiringSoon, freeTierCheck, lineItemModel, sortDigestEvents, topMovers, trackedValue, upcomingEvents } from '@/lib/daily-digest';
 
 const trade = (fields) => ({ id: 1, type: 'SDI', ticker: 'AAA', event: 'STOCK', strike: null, expiryDate: null, quantity: 10, currentPrice: 90, collateral: 0, ...fields });
 const quotes = { AAA: { price: 100, changePercent: 0.02 }, BBB: { price: 48, changePercent: -0.051 }, CCC: { price: 10, changePercent: 0.001 }, '7203.T': { price: 3000, changePercent: 0.01 } };
@@ -44,9 +44,19 @@ test('earnings within 30 days, in date order', () => {
   assert.deepEqual(upcomingEvents(earnings, '2026-11-13').map((event) => event.ticker), ['BBB', 'AAA']);
 });
 
-test('the largest group of the tracked value', () => {
-  assert.deepEqual(concentration([{ group: 'Tech', value: 300 }, { group: 'Banks', value: 100 }, { group: 'Tech', value: 100 }]), { group: 'Tech', share: 0.8 });
-  assert.equal(concentration([]), null);
+test('custom events for tickers held join the earnings dates, soonest first', () => {
+  const earnings = { AAA: { date: '2026-12-01', endDate: null, estimate: false, timing: 'post' } };
+  const custom = [
+    { id: '1', date: '2026-11-25', ticker: 'AAA', label: '產品發表' },
+    { id: '2', date: '2026-11-13', ticker: 'AAA', label: '今天的不算' },
+    { id: '3', date: '2026-12-20', ticker: 'AAA', label: '超過 30 天' },
+    { id: '4', date: '2026-11-20', ticker: 'ZZZ', label: '沒有持有' },
+  ];
+  const events = sortDigestEvents([...upcomingEvents(earnings, '2026-11-13'), ...customDigestEvents(custom, new Set(['AAA']), '2026-11-13')]);
+  assert.deepEqual(events, [
+    { ticker: 'AAA', date: '2026-11-25', timing: null, estimate: false, kind: 'custom', label: '產品發表' },
+    { ticker: 'AAA', date: '2026-12-01', timing: 'post', estimate: false },
+  ]);
 });
 
 describe('free tier check', () => {

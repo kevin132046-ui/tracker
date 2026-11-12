@@ -29,6 +29,7 @@ import { addDaysToKey, dateKey, isTradingDay, japaneseHolidays, parseDateKey, up
 import type { UpcomingClosure } from '@/lib/market-calendar';
 import { earningsReminders, exchangeTodayKey, mergeEarnings, pruneManualEarnings } from '@/lib/earnings';
 import { defaultCashLike, eventWindowDays, exposureCashLikeKey, parseCashLike, type ExposureInput } from '@/lib/exposure';
+import { exposurePrefsChanged, pushExposurePrefs, syncExposurePrefs } from '@/lib/exposure-prefs-client';
 import type { AiEarningsSuggestion, AiProvider, EarningsEntry, EarningsEvent, EarningsReminder } from '@/lib/earnings';
 import { aiKeyHeaders, emptyAiKeys, loadAiKeys, loadAnalyses, loadDefaultProvider, loadQuestions, releaseNoticeDays, saveAiKeys, saveAnalyses, saveDefaultProvider, saveQuestions } from '@/lib/filings';
 import type { AiKeys, CompanyFilings, FilingAnalysis } from '@/lib/filings';
@@ -1450,6 +1451,24 @@ export default function Home() {
       const storedNav = window.localStorage.getItem(bottomNavKey);
       if (storedNav === 'guide' || storedNav === 'menu') queueMicrotask(() => setBottomNav(storedNav));
     } catch { /* storage unavailable: keep the default */ }
+  }, []);
+
+  // 持倉風險 settings (themes, custom events, the cash-like list) are shared through the site's database:
+  // take its copy once per visit, and read the cash-like list again when that copy replaced this browser's.
+  useEffect(() => {
+    const controller = new AbortController();
+    const reloadCashLike = () => {
+      try {
+        const stored = window.localStorage.getItem(exposureCashLikeKey);
+        setCashLikeTickers(stored === null ? [...defaultCashLike] : parseCashLike(stored));
+      } catch { /* storage unavailable: keep the current list */ }
+    };
+    window.addEventListener(exposurePrefsChanged, reloadCashLike);
+    void syncExposurePrefs(controller.signal);
+    return () => {
+      controller.abort();
+      window.removeEventListener(exposurePrefsChanged, reloadCashLike);
+    };
   }, []);
 
   useEffect(() => {
@@ -2954,10 +2973,12 @@ export default function Home() {
     const next = parseCashLike(text);
     setCashLikeTickers(next);
     setCashLikeDraft(null);
+    const builtIn = next.join(',') === defaultCashLike.join(',');
     try {
-      if (next.join(',') === defaultCashLike.join(',')) window.localStorage.removeItem(exposureCashLikeKey);
+      if (builtIn) window.localStorage.removeItem(exposureCashLikeKey);
       else window.localStorage.setItem(exposureCashLikeKey, next.join(','));
     } catch { /* storage unavailable: keep it for this visit */ }
+    void pushExposurePrefs({ cashLike: builtIn ? null : next });
   }, []);
   const currentRocYear = Number(today().slice(0, 4));
   const annualRocSummary = useMemo(() => buildAnnualRocSummary(closedTrades, currentRocYear, usdJpyRate), [closedTrades, currentRocYear, usdJpyRate]);
@@ -4171,6 +4192,7 @@ export default function Home() {
             <section className="settings-feature-card is-enabled exposure-settings-card">
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">險</span><div><p>Exposure</p><h3>持倉風險・類現金</h3></div><span className="settings-feature-status">{cashLikeTickers.length} 檔</span></div>
               <p>這些代號在持倉風險面板裡算作類現金：不進產業或主題分組，也不套用壓力情境。用逗號或空白分隔。</p>
+              <p>主題、自訂事件和類現金清單存在網站資料庫，所有裝置共用，每日彙總也會用到。</p>
               <form className="exposure-settings-form" onSubmit={(event) => { event.preventDefault(); saveCashLike(cashLikeDraft ?? cashLikeTickers.join(', ')); }}>
                 <label htmlFor="exposure-cash-like">類現金代號</label>
                 <input id="exposure-cash-like" value={cashLikeDraft ?? cashLikeTickers.join(', ')} onChange={(event) => setCashLikeDraft(event.target.value)} placeholder="BOXX, SGOV" spellCheck={false} autoCapitalize="characters" />

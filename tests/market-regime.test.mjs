@@ -16,6 +16,20 @@ describe('Cboe files', () => {
     const quote = parseCboeQuote('VIX', { data: { symbol: '^VIX', current_price: 18.5, prev_day_close: 19.25, last_trade_time: '2026-03-02T14:05:00' } });
     assert.deepEqual(quote, { symbol: 'VIX', price: 18.5, prevClose: 19.25, time: '2026-03-02T14:05:00' });
     assert.equal(parseCboeQuote('VIX', { data: { current_price: 0 } }), null);
+  });
+
+  test('after the close: the official close, not the overnight (GTH) value', () => {
+    // 2026-11-11 22:40 ET: GTH hasn't moved yet, prev_day_close already rolled to the close.
+    assert.deepEqual(parseCboeQuote('VIX', { data: { current_price: 17.49, close: 17.49, prev_day_close: 17.49, price_change: -1.97, last_trade_time: '2026-11-11T16:15:01' } }),
+      { symbol: 'VIX', price: 17.49, prevClose: 19.46, time: '2026-11-11T16:15:01' });
+    // A weekend with GTH moving: the 11/6 close (25.64) stands; the close before it isn't known from this file.
+    assert.deepEqual(parseCboeQuote('VIX', { data: { current_price: 24.71, close: 25.64, prev_day_close: 25.64, price_change: -0.93, last_trade_time: '2026-11-06T16:15:01' } }),
+      { symbol: 'VIX', price: 25.64, prevClose: null, time: '2026-11-06T16:15:01' });
+    // Between 16:15 and the start of GTH, prev_day_close is still the session before.
+    assert.deepEqual(parseCboeQuote('VIX', { data: { current_price: 24.7, close: 25.64, prev_day_close: 28.18, last_trade_time: '2026-11-06T16:15:01' } }),
+      { symbol: 'VIX', price: 25.64, prevClose: 28.18, time: '2026-11-06T16:15:01' });
+    // During the session the live value is used, whatever close holds.
+    assert.equal(parseCboeQuote('VIX', { data: { current_price: 18.1, close: 17.49, prev_day_close: 17.49, last_trade_time: '2026-11-12T11:02:00' } }).price, 18.1);
     assert.equal(parseCboeQuote('VIX', null), null);
   });
 
@@ -142,5 +156,8 @@ describe('Earnings Insight text', () => {
     assert.equal(insight.date, null);
     assert.equal(hasInsight(insight), false);
     assert.equal(reportDate('EarningsInsight_133026.pdf'), null);
+    // FactSet sometimes adds a revision letter.
+    assert.equal(reportDate('EarningsInsight_110626A.pdf'), '2026-11-06');
+    assert.equal(reportDate('EarningsInsight_110626AB.pdf'), null);
   });
 });

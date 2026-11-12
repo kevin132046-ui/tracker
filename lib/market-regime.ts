@@ -67,15 +67,27 @@ export type RegimeReading = {
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const round = (value: number, digits = 4) => Number(value.toFixed(digits));
 
-/** One of Cboe's delayed-quote files (`{ data: { current_price, prev_day_close, last_trade_time } }`). */
+/**
+ * One of Cboe's delayed-quote files (`{ data: { current_price, close, prev_day_close, price_change, last_trade_time } }`).
+ * During the regular session the latest value is `current_price`. After 16:15 ET, overnight and at
+ * weekends `last_trade_time` stays at the session's 16:15 while `current_price` follows the global
+ * trading hours (GTH) value, and `prev_day_close` rolls over to that session's close: the session's
+ * official close is `close`, and the one before it is `close − price_change`.
+ */
 export function parseCboeQuote(symbol: IndexSymbol, payload: unknown): IndexQuote | null {
   const data = (payload as { data?: Record<string, unknown> } | null)?.data;
   if (!data || typeof data !== 'object') return null;
-  const price = data.current_price;
-  if (!finite(price) || price <= 0) return null;
-  const prev = data.prev_day_close;
+  const current = data.current_price;
+  if (!finite(current) || current <= 0) return null;
   const time = typeof data.last_trade_time === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(data.last_trade_time) ? data.last_trade_time : null;
-  return { symbol, price, prevClose: finite(prev) && prev > 0 ? prev : null, time };
+  const prev = finite(data.prev_day_close) && data.prev_day_close > 0 ? data.prev_day_close : null;
+  const close = finite(data.close) && data.close > 0 ? data.close : null;
+  if (isIntraday(time) || close === null) return { symbol, price: current, prevClose: prev, time };
+  // After the close. The session's change still holds while no GTH value has moved the price; otherwise
+  // the earlier close is only known when prev_day_close hasn't rolled over yet.
+  const change = finite(data.price_change) ? data.price_change : null;
+  const before = change !== null && current === close ? round(close - change, 2) : prev !== null && prev !== close ? prev : null;
+  return { symbol, price: close, prevClose: before !== null && before > 0 ? before : null, time };
 }
 
 const historyRow = /"date":\s*"(\d{4}-\d{2}-\d{2})"[^}]*?"close":\s*"?(\d+(?:\.\d+)?)"?/g;

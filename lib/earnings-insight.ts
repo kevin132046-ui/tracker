@@ -1,6 +1,7 @@
 /**
  * 基本面參考: the figures read from FactSet's weekly Earnings Insight PDF. The route resolves the
- * latest report (https://www.factset.com/earningsinsight redirects to EarningsInsight_MMDDYY.pdf); the
+ * latest report (https://www.factset.com/earningsinsight redirects to EarningsInsight_MMDDYY.pdf, sometimes with a
+ * revision letter: EarningsInsight_110626A.pdf); the
  * browser reads the PDF's text and these patterns pick the sentences FactSet repeats every week.
  * Anything a pattern doesn't find stays null, and the card shows only what was found.
  */
@@ -21,9 +22,9 @@ export type EarningsInsight = {
   guidanceQuarter: string | null; guidanceNegative: number | null; guidancePositive: number | null;
 };
 
-export const reportFile = /^EarningsInsight_(\d{2})(\d{2})(\d{2})\.pdf$/;
+export const reportFile = /^EarningsInsight_(\d{2})(\d{2})(\d{2})[A-Za-z]?\.pdf$/;
 
-/** YYYY-MM-DD from a report file name such as EarningsInsight_103026.pdf. */
+/** YYYY-MM-DD from a report file name such as EarningsInsight_103026.pdf or EarningsInsight_110626A.pdf. */
 export function reportDate(file: string) {
   const match = file.match(reportFile);
   if (!match) return null;

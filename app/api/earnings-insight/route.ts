@@ -35,7 +35,7 @@ async function resolveLatest(): Promise<Latest> {
   let latest = reportFromUrl(response.headers.get('location'));
   // A page instead of a redirect: the first link to a report on it.
   if (!latest && response.ok) {
-    const link = (await response.text()).match(/https:\/\/advantage\.factset\.com\/[^"'\s<>]*EarningsInsight_\d{6}\.pdf/);
+    const link = (await response.text()).match(/https:\/\/advantage\.factset\.com\/[^"'\s<>]*EarningsInsight_\d{6}[A-Za-z]?\.pdf/);
     latest = reportFromUrl(link?.[0] ?? null);
   } else {
     await response.body?.cancel();

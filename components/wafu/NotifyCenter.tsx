@@ -8,7 +8,7 @@ import type { DigestSource } from '@/components/wafu/FilingDigest';
 /** One notification. The id's second ':' field is its date, so old ids can be pruned. */
 export type NoticeItem = {
   id: string;
-  kind: 'release' | 'closure' | 'early' | 'earnings' | 'expiry' | 'dividend';
+  kind: 'release' | 'closure' | 'early' | 'earnings' | 'expiry' | 'dividend' | 'digest' | 'alert';
   label: string;
   text: string;
   when: string;
@@ -128,7 +128,7 @@ export default function NotifyCenter({ items, openSignal = 0, bar = true, count 
     try { window.localStorage.setItem(remindKey, value); } catch { /* this visit only */ }
   };
   const soonClosures = calendar?.closures.filter((closure) => closure.daysAway <= 7) ?? [];
-  const others = shown.filter((item) => item.kind === 'expiry' || item.kind === 'dividend' || item.kind === 'release');
+  const others = shown.filter((item) => item.kind === 'alert' || item.kind === 'digest' || item.kind === 'expiry' || item.kind === 'dividend' || item.kind === 'release');
   const markRead = (ids: string[]) => setRead((current) => writeIds(readKey, [...(current ?? []), ...ids]));
   const dismiss = (id: string) => { setDismissed((current) => writeIds(dismissedKey, [...current, id])); markRead([id]); };
 
@@ -171,7 +171,7 @@ export default function NotifyCenter({ items, openSignal = 0, bar = true, count 
         <p className="ntc-note">休市日前 7 天起在頂欄預告；依 NYSE 與 JPX 官方年表。</p>
       </div>}
       {tab === 'other' && <div className="ntc-body">
-        <div className="ntc-other-head"><h5>到期與股息</h5><button type="button" disabled={!unread} onClick={() => markRead(shown.map((item) => item.id))}>全部標為已讀</button></div>
+        <div className="ntc-other-head"><h5>彙總、到期與股息</h5><button type="button" disabled={!unread} onClick={() => markRead(shown.map((item) => item.id))}>全部標為已讀</button></div>
         {others.length
           ? <ul>
             {others.map((item) => {
@@ -186,7 +186,7 @@ export default function NotifyCenter({ items, openSignal = 0, bar = true, count 
               </li>;
             })}
           </ul>
-          : <p className="wafu-notify-empty">目前沒有到期或股息通知。</p>}
+          : <p className="wafu-notify-empty">目前沒有彙總、到期或股息通知。</p>}
       </div>}
     </div>}
   </div>;

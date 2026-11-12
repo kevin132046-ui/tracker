@@ -93,6 +93,9 @@ import { defaultWafuIntro, introPending, liftIntroVeil, loadIntroLiteAuto, loadW
 import DatePicker from '@/components/DatePicker';
 import TradeColumnPicker from '@/components/TradeColumnPicker';
 import { changeActionLabels, latestRecordDate, parseTradesChanged, type TradesChanged } from '@/lib/trades-changed';
+import DailyDigestPanel from '@/components/DailyDigestPanel';
+import type { DigestSettings } from '@/lib/daily-digest';
+import { loadDigests, runDigest, saveDigestSettings, shouldCatchUp, type DigestState } from '@/lib/daily-digest-client';
 
 type Trade = {
   id: number;
@@ -1179,6 +1182,9 @@ export default function Home() {
   const [notifyBar, setNotifyBar] = useState(true);
   // The unread number on the bell; off → the bell only lights up.
   const [notifyCount, setNotifyCount] = useState(true);
+  // 每日彙總 (/api/daily-digest): the latest days, and the day open in its panel.
+  const [digestState, setDigestState] = useState<DigestState | null>(null);
+  const [digestOpen, setDigestOpen] = useState<string | null>(null);
   const [gainsTab, setGainsTab] = useState(true);
   // Which 益損 tab to open on, and a counter so the same request reopens it.
   const [gainsStart, setGainsStart] = useState<{ tab: 'this' | 'last' | 'open'; n: number }>({ tab: 'this', n: 0 });
@@ -2183,11 +2189,50 @@ export default function Home() {
 
   // Notification center: the header notice line (results, closures, earnings dates) plus options
   // expiring within a week and dividends paid or about to be paid.
+  // 每日彙總: read on open; when the Cron trigger missed the session just closed (the desktop app has none), write it now, once per visit.
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const state = await loadDigests();
+      if (!active || !state) return;
+      setDigestState(state);
+      if (!state.due || !shouldCatchUp(state.day)) return;
+      await runDigest().catch(() => null);
+      const next = await loadDigests();
+      if (active && next) setDigestState(next);
+    })();
+    return () => { active = false; };
+  }, []);
+  const regenerateDigest = useCallback(async () => {
+    await runDigest(true);
+    const next = await loadDigests();
+    if (next) setDigestState(next);
+  }, []);
+  const updateDigestSettings = useCallback(async (settings: DigestSettings) => {
+    setDigestState((current) => current && { ...current, settings });
+    try {
+      const saved = await saveDigestSettings(settings);
+      setDigestState((current) => current && { ...current, settings: saved });
+    } catch {
+      const fresh = await loadDigests();
+      if (fresh) setDigestState(fresh);
+    }
+  }, []);
+
   const noticeItems = useMemo<NoticeItem[]>(() => {
     if (!notifyEnabled || noticeNow === null) return [];
     const items: NoticeItem[] = [];
     const usToday = zonedDateKey(zonedDate(noticeNow, 'America/New_York'));
     const short = (key: string) => key.slice(5).replace('-', '/');
+    const latestDigest = digestState?.settings.enabled ? digestState.digests[0] : undefined;
+    if (latestDigest?.status === 'ok') {
+      const open = { label: ' · 打開', run: () => setDigestOpen(latestDigest.day) };
+      items.push({ id: `DIGEST:${latestDigest.day}`, kind: 'digest', label: '每日彙總', text: `${short(latestDigest.day)} 收盤`, when: '美股收盤後', date: latestDigest.day, action: open });
+      const check = latestDigest.body?.openai;
+      if (check?.ok === false) items.push({ id: `OPENAI:${check.day}`, kind: 'alert', label: 'OpenAI 免費額度', text: '免費額度內卻被收費', when: `${short(check.day)}（UTC）`, date: check.day, action: open });
+    } else if (latestDigest?.status === 'error') {
+      items.push({ id: `DIGESTERR:${latestDigest.day}`, kind: 'alert', label: '每日彙總', text: `${short(latestDigest.day)} 沒有產生`, when: latestDigest.error ?? '', date: latestDigest.day, action: { label: ' · 查看', run: () => setDigestOpen(latestDigest.day) } });
+    }
     for (const release of recentReleases) {
       items.push({ id: `FILED:${release.filed}:${release.symbol}`, kind: 'release', label: '財報已公布', text: release.symbol, when: `${short(release.filed)} 申報`, date: release.filed, action: { label: ' · 查看解讀', run: () => setFilingDialogSymbol(release.symbol) } });
     }
@@ -2219,7 +2264,7 @@ export default function Home() {
       }
     }
     return items;
-  }, [dividendEvents, dividendSettings.enabled, holidayNoticeEnabled, noticeEarnings, noticeNow, notifyEnabled, recentReleases, trades]);
+  }, [digestState, dividendEvents, dividendSettings.enabled, holidayNoticeEnabled, noticeEarnings, noticeNow, notifyEnabled, recentReleases, trades]);
 
   const earningsRows = useMemo(() => {
     if (!noticeEarnings) return [];
@@ -3978,6 +4023,22 @@ export default function Home() {
                 <button type="button" className={`settings-toggle ${notifyCount ? 'is-on' : ''}`} role="switch" aria-checked={notifyCount} aria-label="未讀數字" onClick={toggleNotifyCount}><i /><b>{notifyCount ? '開啟' : '關閉'}</b></button>
               </div>}
             </section>
+            {digestState && <section className={`settings-feature-card ${digestState.settings.enabled ? 'is-enabled' : ''}`}>
+              <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">彙</span><div><p>Daily digest</p><h3>每日彙總</h3></div><span className="settings-feature-status">{digestState.settings.enabled ? '已開啟' : '已關閉'}</span></div>
+              <p>每天美股收盤後（台灣清晨）整理一份：追蹤市值的變化、變動最大的持股、7 天內到期的選擇權、30 天內財報、市場定調與集中度，並核對昨天 OpenAI 免費額度有沒有正常（清單上的模型被收費會在鈴鐺提醒）。只描述，不給買賣建議。</p>
+              <div className="settings-feature-actions">
+                <span>桌面版和沒跑到的日子，會在打開網站時補上。</span>
+                <button type="button" className={`settings-toggle ${digestState.settings.enabled ? 'is-on' : ''}`} role="switch" aria-checked={digestState.settings.enabled} aria-label="每日彙總" onClick={() => void updateDigestSettings({ ...digestState.settings, enabled: !digestState.settings.enabled })}><i /><b>{digestState.settings.enabled ? '開啟' : '關閉'}</b></button>
+              </div>
+              {digestState.settings.enabled && <div className="settings-feature-actions">
+                <span>上網找持倉相關新聞：用「自動找資料」的模型，最多搜尋 3 次（每次約 1 美分，算在今日總量）；預付餘額偏低或當天搜尋費到 10 美分就不搜。</span>
+                <button type="button" className={`settings-toggle ${digestState.settings.search ? 'is-on' : ''}`} role="switch" aria-checked={digestState.settings.search} aria-label="彙總時上網找新聞" onClick={() => void updateDigestSettings({ ...digestState.settings, search: !digestState.settings.search })}><i /><b>{digestState.settings.search ? '開啟' : '關閉'}</b></button>
+              </div>}
+              {digestState.settings.enabled && <div className="settings-feature-actions">
+                <span>{digestState.digests[0] ? `最新一份：${digestState.digests[0].day.slice(5).replace('-', '/')} 收盤` : '還沒有彙總。'}</span>
+                <button type="button" className="digest-open-button" onClick={() => setDigestOpen(digestState.digests[0]?.day ?? '')}>打開每日彙總</button>
+              </div>}
+            </section>}
             <section className={`settings-feature-card ${gainsTab ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">益</span><div><p>Gains &amp; losses</p><h3>益損分頁</h3></div><span className="settings-feature-status">{gainsTab ? '已開啟' : '已關閉'}</span></div>
               <p>在「交易與持倉」加上益損分頁：今年、去年的已實現損益與未實現損益，分短期與長期，可展開到每檔與每筆交易，並可列印或下載 CSV。</p>
@@ -4283,6 +4344,7 @@ export default function Home() {
       {rocBreakdownOpen && <RocBreakdownDialog summary={annualRocSummary} onClose={closeRocBreakdown} />}
       {reconcileOpen && <Suspense fallback={null}><TradeReconcileDialog trades={trades} today={reconcileToday} onClose={() => setReconcileOpen(false)} onApplied={handleReconciled} /></Suspense>}
       {clearOpen && <Suspense fallback={null}><ClearTradesDialog trades={trades} cashFlows={cashFlows?.length ? { count: cashFlows.length, csv: () => cashFlowsToCsv(cashFlows), clear: clearCashFlows } : undefined} onClose={() => setClearOpen(false)} onCleared={handleCleared} /></Suspense>}
+      {digestOpen !== null && digestState && <DailyDigestPanel digests={digestState.digests} startDay={digestOpen} onClose={() => setDigestOpen(null)} onRegenerate={regenerateDigest} />}
       {importOpen && <Suspense fallback={null}><TradeImportDialog existingTrades={trades} existingFlows={cashFlows} onClose={closeImport} onImported={handleImported} ai={aiEnabled ? importAi : undefined} /></Suspense>}
       {dividendAdjustmentCandidate && <div className="confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!dividendAdjusting && event.target === event.currentTarget) setDividendAdjustmentCandidate(null); }}>
         <section className="dividend-adjustment-modal" role="dialog" aria-modal="true" aria-labelledby="dividend-adjustment-title">

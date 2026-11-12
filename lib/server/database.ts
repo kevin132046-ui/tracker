@@ -57,6 +57,16 @@ export const cashFlowsSetup = [
     )`,
   'CREATE INDEX IF NOT EXISTS idx_cash_flows_date ON cash_flows(date)',
 ];
+/**
+ * Public market data fetched before (lib/server/market-cache), so a new isolate reads it here instead of
+ * asking the sources again. Rebuilt from those sources: not part of the full backup.
+ */
+export const marketCacheTable = `CREATE TABLE IF NOT EXISTS market_cache (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL,
+  fresh_until INTEGER NOT NULL
+)`;
 /** 每日彙總: one row per US session (lib/server/daily-digest). */
 export const dailyDigestTable = `CREATE TABLE IF NOT EXISTS daily_digest (
   day TEXT PRIMARY KEY,
@@ -120,6 +130,7 @@ async function setUpDatabase(db: D1Database) {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )`),
+    db.prepare(marketCacheTable),
     db.prepare(`CREATE TABLE IF NOT EXISTS dcf_scenarios (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,

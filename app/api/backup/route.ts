@@ -8,6 +8,7 @@ import { brokerHubStateTable, cashFlowsSetup, ensureDatabase } from '@/lib/serve
 import { guarded } from '@/lib/server/data-gate';
 import { tradesChangedStatement } from '@/lib/server/trades-changed';
 import { forgetFreeTierCache } from '@/lib/server/openai-free-tier-store';
+import { forgetModelRolesCache } from '@/lib/server/ai-model-roles-store';
 import { sniffAsset } from '@/lib/wafu/asset-slots';
 
 export const dynamic = 'force-dynamic';
@@ -136,8 +137,9 @@ async function handlePOST(request: Request) {
     // After the backup's own app_meta rows: the restore is the latest change to the trades.
     statements.push(tradesChangedStatement(db, 'restore', tables.trades.length));
     await db.batch(statements);
-    // app_meta was replaced, so the cached free-tier offer may be stale.
+    // app_meta was replaced, so the cached free-tier offer and model choices may be stale.
     forgetFreeTierCache();
+    forgetModelRolesCache();
   } catch (error) {
     return fail(`資料無法還原，原本的資料沒有變動。（${error instanceof Error ? error.message : '未知錯誤'}）`, 500);
   }

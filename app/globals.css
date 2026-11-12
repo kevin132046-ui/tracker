@@ -947,6 +947,8 @@ table.trade-table-custom td.positive > strong, table.trade-table-custom td.negat
 .ai-key-badge.is-limited, .ai-key-badge.is-error { color: var(--wa-gold); background: var(--wa-gold-soft); }
 .ai-key-badge.is-checking { cursor: default; opacity: .8; }
 @media (max-width: 620px) { .ai-settings-grid { grid-template-columns: 1fr; } }
+.ai-settings-grid .ai-settings-hint { color: var(--wa-muted); font-size: 10.5px; font-weight: 500; }
+.free-quota-line b { margin-right: 2px; color: var(--wa-ink); }
 .ai-settings-grid .ai-settings-field { display: grid; gap: 5px; color: var(--wa-ink); font-size: 11.5px; font-weight: 600; }
 .ai-settings-fixed { display: flex; align-items: center; min-height: 34px; margin: 0; padding: 0 9px; color: var(--wa-ink-2); border: 1px dashed var(--wa-line-2); border-radius: 8px; }
 .ai-free-tier { display: grid; gap: 8px; margin-top: 14px; padding: 12px; background: var(--wa-panel); border: 1px solid var(--wa-line-2); border-radius: 10px; }

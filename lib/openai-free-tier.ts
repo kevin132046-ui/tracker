@@ -28,7 +28,9 @@ export type QuotaReport = { list: FreeTierList; tier: UsageTier; usageAvailable:
   /** false: no admin key in bring-your-own-key mode, so ChatGPT is not held to the free tier (billed to that key). */
   enforced?: boolean;
   /** A pasted list reached the server but was out of bounds, so the article's list applied. */
-  accountRejected?: boolean };
+  accountRejected?: boolean;
+  /** The "lookup" role's model (lib/ai-model-roles), when the status was asked for it too. */
+  lookup?: ModelQuota | null };
 
 /** From the article as captured on 2026-11-12; used only when the live article cannot be read. */
 export const builtinFreeTier: FreeTierList = {

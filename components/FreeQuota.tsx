@@ -16,6 +16,9 @@ export function freeQuotaLine(quota: QuotaReport | null | undefined) {
   return `ChatGPT（${selected.model}）今日免費剩餘 ${tokens(selected.remaining)} / ${tokens(selected.group.limit)} tokens（${selected.group.label}，組內共用）· UTC 00:00（台灣 08:00）重置`;
 }
 
+/** The same report seen from the 自動找資料 role's model (lib/ai-model-roles), when the status carried it. */
+export const lookupQuota = (quota: QuotaReport | null | undefined): QuotaReport | null | undefined => quota && quota.lookup !== undefined ? { ...quota, selected: quota.lookup } : quota;
+
 /** True when ChatGPT has free tokens left for the selected model. */
 export const freeQuotaOpen = (quota: QuotaReport | null | undefined) => quota?.enforced === false || Boolean(quota?.usageAvailable && quota.selected?.group && quota.selected.remaining > 0);
 
@@ -26,7 +29,7 @@ export function FreeQuotaTable({ quota }: { quota: QuotaReport | null | undefine
     <table>
       <caption>OpenAI 每日免費額度（{quota.list.source === 'account' ? '你的帳號' : usageTierLabel[quota.tier]}，已保留 5% 緩衝）</caption>
       <thead><tr><th>組別</th><th>上限</th><th>今日已用</th><th>剩餘</th></tr></thead>
-      <tbody>{quota.groups.map((group) => <tr key={group.id} className={quota.selected?.group?.id === group.id ? 'is-selected' : ''}>
+      <tbody>{quota.groups.map((group) => <tr key={group.id} className={quota.selected?.group?.id === group.id || quota.lookup?.group?.id === group.id ? 'is-selected' : ''}>
         <td>{group.label}</td><td>{tokens(group.limit)}</td><td>{quota.usageAvailable ? tokens(group.used) : '—'}</td><td>{quota.usageAvailable ? tokens(group.remaining) : '—'}</td>
       </tr>)}</tbody>
     </table>

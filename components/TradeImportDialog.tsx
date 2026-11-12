@@ -28,6 +28,15 @@ type Mode = 'csv' | 'paste' | 'ai';
 /** An AI reply frozen at the moment it arrived, so importing does not reshuffle it. */
 type AiPlan = { result: AiEntryResult; rows: ImportRow[]; closes: AiCloseUpdate[] };
 
+/** Where the preview rows came from: read on this device, by a model, or both. */
+function sourceLine(result: AiEntryResult) {
+  const local = `本機解讀 ${result.local} 筆（沒有送出）`;
+  if (!result.provider) return local;
+  const model = result.provider === 'anthropic' ? claudeModelLabel(result.model) : `ChatGPT（${result.model}）`;
+  const sent = `${model} 讀了 ${result.rows.length - result.local} 筆`;
+  return result.local ? `${local} · ${sent}` : `AI：${sent}`;
+}
+
 const maxFileBytes = 5 * 1024 * 1024;
 const maxBinaryBytes = 20 * 1024 * 1024;
 const utf8 = new TextEncoder();
@@ -527,14 +536,14 @@ export default function TradeImportDialog({ existingTrades, existingFlows, onClo
   return <div className="confirm-backdrop import-backdrop" role="presentation" onMouseDown={(event) => { if (!importing && event.target === event.currentTarget) onClose(); }}>
     <section className="import-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <header>
-        <div><p className="eyebrow">{mode === 'ai' ? 'AI entry' : 'Import trades'}</p><h2 id={titleId}>{mode === 'ai' ? '用 AI 記錄交易' : '匯入交易'}</h2></div>
+        <div><p className="eyebrow">{mode === 'ai' ? 'Quick entry' : 'Import trades'}</p><h2 id={titleId}>{mode === 'ai' ? '用一句話記錄交易' : '匯入交易'}</h2></div>
         <button type="button" className="close-button" onClick={onClose} disabled={importing} aria-label="關閉匯入視窗">×</button>
       </header>
       <div className="import-body">
         <div className="import-mode-tabs" role="tablist" aria-label="匯入方式">
           <button type="button" role="tab" aria-selected={mode === 'csv'} className={mode === 'csv' ? 'active' : ''} disabled={importing} onClick={() => switchMode('csv')}>檔案（CSV／Excel／PDF）</button>
           <button type="button" role="tab" aria-selected={mode === 'paste'} className={mode === 'paste' ? 'active' : ''} disabled={importing} onClick={() => switchMode('paste')}>貼上表格</button>
-          {ai && <button type="button" role="tab" aria-selected={mode === 'ai'} className={mode === 'ai' ? 'active' : ''} disabled={importing} onClick={() => switchMode('ai')}>AI 輸入（一句話／截圖）</button>}
+          <button type="button" role="tab" aria-selected={mode === 'ai'} className={mode === 'ai' ? 'active' : ''} disabled={importing} onClick={() => switchMode('ai')}>{ai ? '一句話／截圖' : '一句話'}</button>
         </div>
 
         {mode === 'csv' && <>
@@ -599,12 +608,10 @@ export default function TradeImportDialog({ existingTrades, existingFlows, onClo
           </>}
         </>}
 
-        {mode === 'ai' && ai && <>
-          <AiTradeEntry ai={ai} existingTrades={existingTrades} disabled={importing} onResult={receiveAi} />
+        {mode === 'ai' && <>
+          <AiTradeEntry ai={ai ?? null} existingTrades={existingTrades} disabled={importing} onResult={receiveAi} />
           {aiPlan && <>
-            <p className="ai-entry-source">
-              AI：{aiPlan.result.provider === 'anthropic' ? claudeModelLabel(aiPlan.result.model) : `ChatGPT（${aiPlan.result.model}）`} · {aiPlan.result.rows.length} 筆
-            </p>
+            <p className="ai-entry-source">{sourceLine(aiPlan.result)}</p>
             {aiPlan.result.questions.length > 0 && <div className="import-alert ai-entry-questions" role="status">
               <b>AI 需要你確認：</b>
               <ul>{aiPlan.result.questions.map((question) => <li key={question}>{question}</li>)}</ul>

@@ -9,7 +9,7 @@ import { aiKeyHeaders, defaultAnalysisQuestions, emptyAiKeys, maxQuestionLength,
 import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
 import { groupOfModel, limitLabel, sharingSettingsUrl, tierOfAccount, usageTierLabel } from '@/lib/openai-free-tier';
 import { loadAccountTier, saveAccountTier, watchAccountTier } from '@/lib/openai-account-tier';
-import { FreeQuotaTable, freeQuotaLine } from '@/components/FreeQuota';
+import { FreeQuotaTable, freeQuotaLine, lookupQuota } from '@/components/FreeQuota';
 
 export type AiStatus = { state: 'ok'; mode: 'access' | 'byok'; note: string | null; providers: Record<AiProvider, boolean>; openAiModel: string | null; sec: boolean; quota: QuotaReport | null } | { state: 'error'; message: string } | null;
 
@@ -22,8 +22,12 @@ type Props = {
   onKeysChange: (keys: AiKeys) => void;
   defaultProvider: AiProvider;
   onDefaultProviderChange: (provider: AiProvider) => void;
+  /** The 對話 role's ChatGPT model (lib/ai-model-roles). */
   openAiModel: string;
   onOpenAiModelChange: (model: string) => void;
+  /** The 自動找資料 role's ChatGPT model. */
+  lookupModel: string;
+  onLookupModelChange: (model: string) => void;
   claudeModel: ClaudeModel;
   onClaudeModelChange: (model: ClaudeModel) => void;
   usageTier: UsageTier;
@@ -53,7 +57,7 @@ function KeyBadge({ check, checking }: { check: KeyCheck | undefined; checking: 
 }
 
 /** Keys, default model and the analysis question list for the AI features. Everything stays in this browser. */
-export default function AiSettingsCard({ enabled, onEnabledChange, status, keys, onKeysChange, defaultProvider, onDefaultProviderChange, openAiModel, onOpenAiModelChange, claudeModel, onClaudeModelChange, usageTier, onUsageTierChange, questions, onQuestionsChange }: Props) {
+export default function AiSettingsCard({ enabled, onEnabledChange, status, keys, onKeysChange, defaultProvider, onDefaultProviderChange, openAiModel, onOpenAiModelChange, lookupModel, onLookupModelChange, claudeModel, onClaudeModelChange, usageTier, onUsageTierChange, questions, onQuestionsChange }: Props) {
   const quota = status?.state === 'ok' ? status.quota : null;
   const freeGroups = quota?.list.groups ?? [];
   const [showKeys, setShowKeys] = useState(false);
@@ -108,8 +112,22 @@ export default function AiSettingsCard({ enabled, onEnabledChange, status, keys,
   const freeIds = new Set(freeModels.flatMap((group) => group.models));
   const otherModels = (detectedOpenAi ?? []).filter((model) => !freeIds.has(model));
   const enforced = quota?.enforced !== false;
-  const currentOpenAi = openAiModel.trim();
-  const listed = freeModels.some((group) => group.models.includes(currentOpenAi)) || otherModels.includes(currentOpenAi);
+  const serverDefault = status?.state === 'ok' ? status.openAiModel : null;
+  /** A ChatGPT model menu for one role: free-tier models first, then the key's others. */
+  const modelPicker = (label: string, hint: string, value: string, onChange: (model: string) => void) => {
+    const current = value.trim();
+    const listed = freeModels.some((group) => group.models.includes(current)) || otherModels.includes(current);
+    return <label><span>{label}{detectedOpenAi ? `（偵測到 ${detectedOpenAi.length} 個）` : ''}</span>
+      {freeModels.length || otherModels.length ? <select value={current} onChange={(event) => onChange(event.target.value)}>
+        <option value="">{serverDefault ? `伺服器預設（${serverDefault}）` : '請選擇模型'}</option>
+        {current && !listed && <option value={current}>{current}（{detectedOpenAi ? '這把金鑰不能用' : '不在免費清單'}）</option>}
+        {freeModels.map((group) => <optgroup key={group.id} label={`免費額度內 · ${group.label}`}>{group.models.map((model) => <option key={model} value={model}>{model}</option>)}</optgroup>)}
+        {otherModels.length > 0 && <optgroup label={enforced ? '其他可用（不在免費額度，會被擋下）' : '其他可用（會計費）'}>{otherModels.map((model) => <option key={model} value={model} disabled={enforced}>{model}</option>)}</optgroup>}
+      </select>
+        : <input type="text" value={value} maxLength={64} spellCheck={false} autoComplete="off" placeholder={serverDefault ? `預設 ${serverDefault}` : '輸入 OpenAI 模型名稱'} onChange={(event) => onChange(event.target.value)} />}
+      <small className="ai-settings-hint">{hint}</small>
+    </label>;
+  };
   const claudeList = claudeChoices(detection);
   const claudeListed = claudeList.some((model) => model.id === claudeModel);
 
@@ -198,21 +216,14 @@ export default function AiSettingsCard({ enabled, onEnabledChange, status, keys,
           <option value="anthropic">Claude</option>
         </select>
       </label>
-      <label><span>ChatGPT 模型{detectedOpenAi ? `（偵測到 ${detectedOpenAi.length} 個）` : ''}</span>
-        {freeModels.length || otherModels.length ? <select value={currentOpenAi} onChange={(event) => onOpenAiModelChange(event.target.value)}>
-          <option value="">{status?.state === 'ok' && status.openAiModel ? `伺服器預設（${status.openAiModel}）` : '請選擇模型'}</option>
-          {currentOpenAi && !listed && <option value={currentOpenAi}>{currentOpenAi}（{detectedOpenAi ? '這把金鑰不能用' : '不在免費清單'}）</option>}
-          {freeModels.map((group) => <optgroup key={group.id} label={`免費額度內 · ${group.label}`}>{group.models.map((model) => <option key={model} value={model}>{model}</option>)}</optgroup>)}
-          {otherModels.length > 0 && <optgroup label={enforced ? '其他可用（不在免費額度，會被擋下）' : '其他可用（會計費）'}>{otherModels.map((model) => <option key={model} value={model} disabled={enforced}>{model}</option>)}</optgroup>}
-        </select>
-          : <input type="text" value={openAiModel} maxLength={64} spellCheck={false} autoComplete="off" placeholder={status?.state === 'ok' && status.openAiModel ? `預設 ${status.openAiModel}` : '輸入 OpenAI 模型名稱'} onChange={(event) => onOpenAiModelChange(event.target.value)} />}
-      </label>
       <label><span>Claude 模型{detection?.anthropic.state === 'ok' ? '（依金鑰偵測）' : ''}</span>
         <select value={claudeModel} onChange={(event) => onClaudeModelChange(resolveClaudeModel(event.target.value))}>
           {!claudeListed && <option value={claudeModel}>{claudeModel}</option>}
           {claudeList.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
         </select>
       </label>
+      {modelPicker('對話用 ChatGPT 模型', 'AI 助理、財報解讀與追問', openAiModel, onOpenAiModelChange)}
+      {modelPicker('自動找資料用 ChatGPT 模型', '查財報日、公司資料、DCF 預填、AI 記錄交易', lookupModel, onLookupModelChange)}
       {accountTier ? <div className="ai-settings-field"><span>OpenAI 使用層級</span>
         <p className="ai-settings-fixed">{usageTierLabel[tierOfAccount(accountTier.parsed.groups)]}（依貼上的免費資格）</p>
       </div> : <label><span>OpenAI 使用層級</span>
@@ -223,7 +234,8 @@ export default function AiSettingsCard({ enabled, onEnabledChange, status, keys,
       </label>}
     </div>
     {status?.state === 'ok' && <>
-      <p className="free-quota-line">{freeQuotaLine(quota)}</p>
+      <p className="free-quota-line"><b>對話用</b>　{freeQuotaLine(quota)}</p>
+      <p className="free-quota-line"><b>自動找資料用</b>　{freeQuotaLine(lookupQuota(quota))}</p>
       {enforced && <FreeQuotaTable quota={quota} />}
     </>}
     <div className="ai-settings-key-actions">

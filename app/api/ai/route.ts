@@ -22,7 +22,9 @@ import { parseDateKey } from '@/lib/market-calendar';
 import { maxAssistantQuestion } from '@/lib/ai-assistant';
 import { chatRequest, chatSearchEstimate, cleanSnapshot, cleanTurns, completeChat } from '@/lib/server/portfolio-chat';
 import { analysisRequest, completeFilingRequest, followUpRequest, type FilingContext } from '@/lib/server/filing-analysis';
-import { checkOpenAiQuota, quotaReport, recordOpenAiUsage } from '@/lib/server/openai-quota';
+import { checkOpenAiQuota, quotaReport, recordOpenAiUsage, selectQuota } from '@/lib/server/openai-quota';
+import { roleOfTask } from '@/lib/ai-model-roles';
+import { readModelRoles } from '@/lib/server/ai-model-roles-store';
 import { SecNotConfigured, filingText, findFiling, isAccession, lookupCik, quarterlyFigures } from '@/lib/server/sec';
 import { crossSiteWrite } from '@/lib/server/same-origin';
 
@@ -87,7 +89,11 @@ export async function GET(request: Request) {
   const scope = await openAiUsageScope(request, gate);
   // Asked on every open of the AI settings and the analysis dialog, so the page always shows today's allowance.
   const account = await accountList(request);
-  const quota = await quotaReport(openAiModelPattern.test(model) ? model : gate.mode === 'access' ? env.OPENAI_MODEL ?? '' : '', tierOf(params.get('tier')), scope, Date.now(), account.groups);
+  const serverDefault = gate.mode === 'access' ? env.OPENAI_MODEL ?? '' : '';
+  const quota = await quotaReport(openAiModelPattern.test(model) ? model : serverDefault, tierOf(params.get('tier')), scope, Date.now(), account.groups);
+  // The "lookup" role's model, when the page asks for both roles at once.
+  const lookup = params.has('lookup') ? String(params.get('lookup') ?? '').trim() : null;
+  if (lookup !== null) quota.lookup = selectQuota(quota, openAiModelPattern.test(lookup) ? lookup : serverDefault);
   return NextResponse.json({
     mode: gate.mode,
     note: byokNote(gate),
@@ -176,7 +182,11 @@ export async function POST(request: Request) {
       : `${accessMessages[gate.access]}請先在「AI 設定」輸入 ${providerName(provider)} 金鑰。`, 503);
   }
   const requestedModel = typeof body.model === 'string' ? body.model.trim() : '';
-  const openAiModel = provider === 'openai' ? requestedModel || (gate.mode === 'access' ? env.OPENAI_MODEL : '') || '' : '';
+  // No model sent: the model saved for this task's role (signed-in requests only), else the server default.
+  const roleModel = provider === 'openai' && !requestedModel && !(await dataGate(request))
+    ? (await readModelRoles(await ensureDatabase()).catch(() => null))?.[roleOfTask[task] ?? 'chat'] ?? ''
+    : '';
+  const openAiModel = provider === 'openai' ? requestedModel || roleModel || (gate.mode === 'access' ? env.OPENAI_MODEL : '') || '' : '';
   if (provider === 'openai' && !openAiModelPattern.test(openAiModel)) return fail('請先在設定中填入 ChatGPT 模型名稱。', 400);
   // Claude runs only the models on the list; anything else falls back to the default.
   const claudeModel = resolveClaudeModel(requestedModel);

@@ -131,6 +131,9 @@ export function yahooNextPayDate(ticker: string, latestExDate: string, budget: R
       const payDate = toKey(calendar?.dividendDate?.raw);
       return exDate && payDate ? [{ exDate, payDate }] : [];
     } catch (error) {
+      // Out of request budget (opening Yahoo's session alone takes two requests): not a failed source.
+      // The next request, with its own budget, carries on from what this one stored.
+      if (budget.remaining < 2) return skipLookup;
       console.warn(`Yahoo dividend dates unavailable for ${ticker}:`, error instanceof Error ? error.message : error);
       throw error;
     }

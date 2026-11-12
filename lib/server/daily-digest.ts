@@ -3,14 +3,16 @@ import { GET as earningsGet } from '@/app/api/earnings/route';
 import { GET as marketRegimeGet } from '@/app/api/market-regime/route';
 import { GET as profileGet, type SymbolProfile } from '@/app/api/profile/route';
 import type { DigestBody, DigestOpenAi, DigestQuote, DigestRecord, DigestSettings, DigestStatus, DigestTrade } from '@/lib/daily-digest';
-import { cleanDigestSettings, cleanNews, concentration, digestDayFor, expiringSoon, freeTierCheck, keptDigests, marketValueUsd, maxDigestSearches, quoteSymbolOf, topMovers, trackedValue, upcomingEvents } from '@/lib/daily-digest';
+import { cleanDigestSettings, cleanNews, customDigestEvents, digestDayFor, expiringSoon, freeTierCheck, keptDigests, marketValueUsd, maxDigestSearches, quoteSymbolOf, sortDigestEvents, topMovers, trackedValue, upcomingEvents } from '@/lib/daily-digest';
 import type { EarningsEvent } from '@/lib/earnings';
 import { extractJson } from '@/lib/ai-trade-entry';
+import { cashLikeList, largestExposureGroup } from '@/lib/exposure-prefs';
 import { classifyRegime, type MarketRegimePayload } from '@/lib/market-regime';
 import { accountFreeTierList, estimateTokens } from '@/lib/openai-free-tier';
 import { estimateBalance, summarizeSpend } from '@/lib/openai-spend';
 import { dailyDigestTable, ensureDatabase } from '@/lib/server/database';
 import { readModelRoles } from '@/lib/server/ai-model-roles-store';
+import { readExposurePrefs } from '@/lib/server/exposure-prefs-store';
 import { readFreeTier } from '@/lib/server/openai-free-tier-store';
 import { checkOpenAiQuota, freeTierList, recordOpenAiUsage, usageScope } from '@/lib/server/openai-quota';
 import { readBalance, readCosts } from '@/lib/server/openai-spend-store';
@@ -18,7 +20,8 @@ import { fetchLatestPrice } from '@/lib/server/yahoo-quote';
 
 /**
  * 每日彙總 on the server: gathers the open positions (D1), fresh prices, earnings dates, 市場定調
- * and industry groups (the same public routes the page uses), news for the largest holdings with
+ * and sectors (the same public routes the page uses), the 持倉風險 panel's themes, custom events and
+ * cash-like list (D1), news for the largest holdings with
  * the 自動找資料 model and at most three web searches, and yesterday's OpenAI charges, then stores
  * one row per US session in `daily_digest`. Runs from the Cron trigger (worker/index.ts) or, when
  * that didn't happen, from the page (POST /api/daily-digest).
@@ -28,7 +31,8 @@ const staleRunMs = 10 * 60_000;
 const newsTimeoutMs = 90_000;
 const newsMaxOutput = 1_500;
 const maxQuoted = 40;
-const maxProfiled = 15;
+// Sectors for every symbol the panel would group (it asks for up to 40 as well).
+const maxProfiled = 40;
 const maxNewsTickers = 5;
 // Searches are billed: skip them once today's searches cost this much, or the prepaid balance runs low.
 const searchCapUsd = 0.1;
@@ -203,11 +207,13 @@ export async function runDailyDigest(now = Date.now(), force = false): Promise<D
 
 async function gather(db: D1Database, day: string, settings: DigestSettings, now: number): Promise<DigestBody> {
   const missing: string[] = [];
-  const [trades, previous, regimePayload, groups] = await Promise.all([
+  const [trades, previous, regimePayload, groups, exposure] = await Promise.all([
     openTrades(db),
     db.prepare("SELECT day, status, created_at, data FROM daily_digest WHERE status = 'ok' AND day < ? ORDER BY day DESC LIMIT 1").bind(day).first<Row>().then((row) => row ? recordOf(row).body : null),
     readJson<MarketRegimePayload>(marketRegimeGet, '/api/market-regime').catch(() => null),
     freeGroups(db, now),
+    // Themes, custom events and the cash-like list set in the 持倉風險 panel; without them the built-in list and sectors apply.
+    readExposurePrefs(db).catch(() => null),
   ]);
 
   // Prices: every symbol held (shares and option underlyings), plus USD/JPY for yen positions.
@@ -220,7 +226,7 @@ async function gather(db: D1Database, day: string, settings: DigestSettings, now
   const before = previous?.value?.total ?? null;
   const value = { total, previous: before, change: before === null ? null : Number((total - before).toFixed(2)), changePercent: before ? Number(((total - before) / before).toFixed(4)) : null };
 
-  // Earnings for every symbol held; industries for the largest ones.
+  // Earnings for every symbol held; sectors for everything but the cash-like tickers.
   const stockSymbols = symbols.filter((symbol) => !symbol.endsWith('.T'));
   const earnings = stockSymbols.length
     ? await readJson<{ earnings?: Record<string, EarningsEvent> }>(earningsGet, `/api/earnings?symbols=${encodeURIComponent(stockSymbols.join(','))}`).then((payload) => payload.earnings ?? {}).catch(() => { missing.push('財報日'); return {}; })
@@ -229,12 +235,16 @@ async function gather(db: D1Database, day: string, settings: DigestSettings, now
   const bySymbol = new Map<string, number>();
   for (const item of valued) if (item.symbol) bySymbol.set(item.symbol, (bySymbol.get(item.symbol) ?? 0) + item.value);
   const largest = [...bySymbol.entries()].sort((a, b) => b[1] - a[1]).map(([symbol]) => symbol);
-  const profiled = largest.filter((symbol) => !symbol.endsWith('.T')).slice(0, maxProfiled);
+  const cashLike = new Set(cashLikeList(exposure).map((ticker) => ticker.toUpperCase()));
+  const profiled = largest.filter((symbol) => !cashLike.has(symbol)).slice(0, maxProfiled);
   const profiles: Record<string, SymbolProfile> = profiled.length
     ? await readJson<{ profiles?: Record<string, SymbolProfile> }>(profileGet, `/api/profile?symbols=${encodeURIComponent(profiled.join(','))}`).then((payload) => payload.profiles ?? {}).catch(() => { missing.push('產業分類'); return {}; })
     : {};
-  const groupOf = (symbol: string, cash: boolean) => cash ? '現金' : profiles[symbol]?.industry ?? profiles[symbol]?.sector ?? symbol;
-  const top = concentration(valued.map((item) => ({ group: groupOf(item.symbol, !item.symbol), value: item.value })));
+  // Grouped as the 持倉風險 panel groups (themes once any holding has one, else sectors; cash and
+  // cash-like tickers apart). Values are this digest's market values, where the panel uses option deltas.
+  const sectors = Object.fromEntries(Object.entries(profiles).map(([symbol, profile]) => [symbol, profile.sector]));
+  const top = largestExposureGroup(valued.map((item) => ({ ticker: item.trade.ticker ?? '', symbol: item.symbol, value: item.value, cash: !item.symbol })), exposure, sectors);
+  const heldTickers = new Set(valued.flatMap((item) => item.symbol && item.trade.ticker ? [item.trade.ticker.toUpperCase(), item.symbol] : []));
 
   let regime: DigestBody['regime'] = null;
   if (regimePayload) {
@@ -288,9 +298,9 @@ async function gather(db: D1Database, day: string, settings: DigestSettings, now
     value: trades.length ? value : null,
     movers: topMovers(trades, quotes),
     expiring: expiringSoon(trades, day, quotes),
-    events: upcomingEvents(earnings, day),
+    events: sortDigestEvents([...upcomingEvents(earnings, day), ...customDigestEvents(exposure?.events ?? [], heldTickers, day)]),
     regime,
-    concentration: top ? { ...top, previousShare: previous?.concentration?.group === top.group ? previous.concentration.share : null } : null,
+    concentration: top ? { ...top, previousShare: previous?.concentration?.group === top.group && previous.concentration.mode === top.mode ? previous.concentration.share : null } : null,
     news,
     newsNote,
     openai,

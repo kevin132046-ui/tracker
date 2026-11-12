@@ -15,8 +15,7 @@ import { companyLookupEstimate, findCompanyFigures } from '@/lib/server/company-
 import type { DcfAiSuggestion } from '@/lib/dcf-ai';
 import { dcfLookupEstimate, judgeDcfAssumptions } from '@/lib/server/dcf-ai';
 import { aiErrorHint, claudeModels, resolveClaudeModel, safeAiError } from '@/lib/ai-models';
-import type { OpenTradeHint } from '@/lib/ai-trade-entry';
-import { maxEntryLength, maxOpenTradeHints } from '@/lib/ai-trade-entry';
+import { maxEntryLength } from '@/lib/ai-trade-entry';
 import { parseEntryImage, parseTrades, tradeParseRequest } from '@/lib/server/trade-parse';
 import { parseDateKey } from '@/lib/market-calendar';
 import { maxAssistantQuestion } from '@/lib/ai-assistant';
@@ -108,7 +107,7 @@ export async function GET(request: Request) {
   }, { headers: noStore });
 }
 
-type Body = { task?: unknown; symbol?: unknown; provider?: unknown; model?: unknown; accession?: unknown; questions?: unknown; history?: unknown; question?: unknown; usageTier?: unknown; text?: unknown; image?: unknown; today?: unknown; openTrades?: unknown; persona?: unknown; language?: unknown; snapshot?: unknown; turns?: unknown; fresh?: unknown };
+type Body = { task?: unknown; symbol?: unknown; provider?: unknown; model?: unknown; accession?: unknown; questions?: unknown; history?: unknown; question?: unknown; usageTier?: unknown; text?: unknown; image?: unknown; today?: unknown; persona?: unknown; language?: unknown; snapshot?: unknown; turns?: unknown; fresh?: unknown };
 
 async function filingContext(symbol: string, accession: string): Promise<FilingContext | string> {
   const company = await lookupCik(symbol);
@@ -128,27 +127,6 @@ function cleanHistory(value: unknown): FilingExchange[] {
     return typeof exchange.question === 'string' && typeof exchange.answer === 'string'
       ? [{ question: exchange.question.slice(0, maxQuestionLength * 2), answer: exchange.answer.slice(0, 4000), provider: exchange.provider === 'anthropic' ? 'anthropic' : 'openai', model: String(exchange.model ?? '').slice(0, 64), at: Number(exchange.at) || 0 } as FilingExchange]
       : [];
-  });
-}
-
-/** Open positions from the browser, trimmed to the fields the trade parser uses. */
-function cleanOpenTrades(value: unknown): OpenTradeHint[] {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, maxOpenTradeHints).flatMap((item) => {
-    const hint = item as Partial<OpenTradeHint>;
-    const id = Number(hint?.id);
-    const ticker = String(hint?.ticker ?? '').trim().toUpperCase();
-    if (!Number.isInteger(id) || id < 1 || !symbolPattern.test(ticker)) return [];
-    return [{
-      id, ticker,
-      kind: hint.kind === 'option' ? 'option' : 'stock',
-      side: hint.side === 'sell' ? 'sell' : 'buy',
-      right: hint.right === 'PUT' || hint.right === 'CALL' ? hint.right : null,
-      strike: hint.strike ? String(hint.strike).slice(0, 30) : null,
-      expiry: typeof hint.expiry === 'string' && parseDateKey(hint.expiry) ? hint.expiry : null,
-      quantity: Math.max(0, Number(hint.quantity) || 0),
-      openDate: typeof hint.openDate === 'string' && parseDateKey(hint.openDate) ? hint.openDate : '',
-    } satisfies OpenTradeHint];
   });
 }
 
@@ -209,7 +187,7 @@ export async function POST(request: Request) {
     if (!entry && !image) return fail('請輸入交易內容或附上截圖。', 400);
     // The browser's local date, so 今天／昨天 mean the user's day; a bad value falls back to UTC.
     const today = typeof body.today === 'string' && parseDateKey(body.today) ? body.today : new Date().toISOString().slice(0, 10);
-    const aiRequest = tradeParseRequest(entry, image, today, cleanOpenTrades(body.openTrades));
+    const aiRequest = tradeParseRequest(entry, image, today);
     const blocked = await guardQuota(aiRequest.estimate);
     if (blocked) return blocked;
     try {

@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server';
 import type { CreditOn, KnownPayDate, PaySource } from '@/lib/dividend-pay-dates';
 import { entitledOnExDate, resolvePayDate } from '@/lib/dividend-pay-dates';
 import { addDaysToKey, parseDateKey, zonedDate, zonedDateKey } from '@/lib/market-calendar';
-import { nasdaqPayDates, yahooNextPayDate } from '@/lib/server/dividend-pay-sources';
+import { dividendHistory, nasdaqPayDates, tickerOfKey, yahooNextPayDate } from '@/lib/server/dividend-pay-sources';
+import { MarketCache } from '@/lib/server/market-cache';
 import type { RequestBudget } from '@/lib/server/yahoo-summary';
 import { guarded } from '@/lib/server/data-gate';
 
@@ -15,12 +16,6 @@ type DividendSettings = {
   jpTaxRate: number;
   // Cash is credited on the pay date by default; 'ex' keeps the earlier ex-dividend behaviour.
   creditOn: CreditOn;
-};
-
-type YahooChart = {
-  chart?: { result?: Array<{
-    events?: { dividends?: Record<string, { amount?: number; date?: number }> };
-  }> };
 };
 
 type DividendEvent = {
@@ -53,8 +48,6 @@ const payDatesKey = 'dividend_pay_dates_v1';
 const payLookupDays = 120;
 const maxPayLookups = 24;
 const defaultSettings: DividendSettings = { enabled: true, usTaxRate: 30, jpTaxRate: 15.315, creditOn: 'pay' };
-const yahooHosts = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'] as const;
-const dividendCache = new Map<string, { expiresAt: number; events: Array<{ date: string; amount: number }> }>();
 const responseHeaders = { 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' };
 
 const clampTaxRate = (value: unknown, fallback: number) => {
@@ -150,42 +143,14 @@ async function removeExistingUsdCashOnce(events: DividendEvent[], adjustments: D
 const dividendEventKey = (ticker: string, date: string, amountPerShare: number) => `${ticker}|${date}|${amountPerShare.toFixed(8)}`;
 const emptyCash = () => ({ gross: 0, tax: 0, adjustment: 0, net: 0, count: 0 });
 
-async function fetchDividendEvents(ticker: string, startDate: string, endDate: string) {
-  const cacheKey = `${ticker}:${startDate}:${endDate}`;
-  const cached = dividendCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.events;
-  const period1 = Math.floor(new Date(`${startDate}T00:00:00Z`).getTime() / 1000);
-  const period2 = Math.floor((new Date(`${endDate}T23:59:59Z`).getTime() + 86_400_000) / 1000);
-  for (const host of yahooHosts) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4_500);
-    try {
-      const response = await fetch(`https://${host}/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${period1}&period2=${period2}&interval=1d&events=div`, {
-        headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 OptionFlow/1.0' },
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      if (!response.ok) continue;
-      const payload = await response.json() as YahooChart;
-      const dividends = Object.values(payload.chart?.result?.[0]?.events?.dividends ?? {}).flatMap((item) => {
-        const amount = Number(item.amount);
-        const timestamp = Number(item.date);
-        if (!(amount > 0) || !(timestamp > 0)) return [];
-        return [{ date: new Date(timestamp * 1000).toISOString().slice(0, 10), amount }];
-      }).sort((a, b) => a.date.localeCompare(b.date));
-      dividendCache.set(cacheKey, { events: dividends, expiresAt: Date.now() + 6 * 60 * 60 * 1_000 });
-      return dividends;
-    } catch {
-      // Try Yahoo's alternate chart host before returning an unavailable symbol.
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-  throw new Error(`Dividend history unavailable for ${ticker}`);
+/** How long each part of the request took, and how the market cache answered: durations and counts only. */
+function serverTiming(marks: Array<[string, number]>, stats: MarketCache['stats']) {
+  return [...marks.map(([name, ms]) => `${name};dur=${Math.max(0, Math.round(ms))}`), `cache;desc="hit ${stats.hit}, fetched ${stats.fetched}, failed ${stats.failed}"`].join(', ');
 }
 
 async function handleGET(request: Request) {
   try {
+    const started = Date.now();
     // Independent reads go out together: each is a round trip to D1.
     const [settings, storedAdjustments] = await Promise.all([readSettings(), readAdjustments()]);
     let adjustments = storedAdjustments;
@@ -194,9 +159,14 @@ async function handleGET(request: Request) {
     }
 
     const db = await ensureDatabase();
-    const result = await db.prepare(`${tradeSelect}
+    // The trades and what earlier requests (this isolate's or another's) already fetched, together.
+    const [result, cache] = await Promise.all([
+      db.prepare(`${tradeSelect}
       WHERE (type = 'SDI' OR event = 'STOCK') AND ticker IS NOT NULL
-      ORDER BY ticker, open_date, id`).all<TradeRow>();
+      ORDER BY ticker, open_date, id`).all<TradeRow>(),
+      MarketCache.open(db, 'dividend:'),
+    ]);
+    const readAt = Date.now();
     const stockTrades = result.results.filter((trade) => trade.ticker && trade.quantity > 0);
     const grouped = new Map<string, TradeRow[]>();
     stockTrades.forEach((trade) => {
@@ -206,8 +176,9 @@ async function handleGET(request: Request) {
     const endDate = new Date().toISOString().slice(0, 10);
     const settled = await Promise.allSettled([...grouped.entries()].map(async ([ticker, lots]) => {
       const startDate = lots.reduce((earliest, lot) => lot.openDate < earliest ? lot.openDate : earliest, lots[0].openDate);
-      return { ticker, lots, dividends: await fetchDividendEvents(ticker, startDate, endDate) };
+      return { ticker, lots, dividends: await dividendHistory(ticker, startDate, endDate, cache) };
     }));
+    const historyAt = Date.now();
 
     // Pay dates for tickers with a dividend recent enough to be unpaid; older ones are paid by now.
     const recentFrom = addDaysToKey(endDate, -payLookupDays);
@@ -221,12 +192,16 @@ async function handleGET(request: Request) {
       ...settled.map(async (item) => {
         if (item.status !== 'fulfilled' || !item.value.dividends.some((dividend) => dividend.date >= recentFrom)) return;
         const { ticker } = item.value;
-        const nasdaq = ticker.endsWith('.T') ? [] : await nasdaqPayDates(ticker, budget);
         const latest = item.value.dividends.at(-1)!.date;
-        const yahoo = nasdaq.some((entry) => Math.abs(Date.parse(entry.exDate) - Date.parse(latest)) <= 3 * 86_400_000) ? [] : await yahooNextPayDate(ticker, budget);
+        const nasdaq = ticker.endsWith('.T') ? [] : await nasdaqPayDates(ticker, latest, budget, cache);
+        const yahoo = nasdaq.some((entry) => Math.abs(Date.parse(entry.exDate) - Date.parse(latest)) <= 3 * 86_400_000) ? [] : await yahooNextPayDate(ticker, latest, budget, cache);
         paySources.set(ticker, { nasdaq, yahoo });
       }),
     ]);
+    const payDatesAt = Date.now();
+    // What was fetched goes to D1 for the next isolate; rows for tickers no longer in the trades are dropped.
+    await cache.save((key) => grouped.has(tickerOfKey(key)));
+    const savedAt = Date.now();
 
     const calculatedEvents: DividendEvent[] = [];
     const failedTickers: string[] = [];
@@ -265,7 +240,9 @@ async function handleGET(request: Request) {
     const waiting = events.filter((event) => !event.credited);
     const cash = { USD: total(credited, 'USD'), JPY: total(credited, 'JPY') };
     const pending = { USD: total(waiting, 'USD'), JPY: total(waiting, 'JPY') };
-    return NextResponse.json({ settings, cash, pending, events, adjustmentCount: Object.keys(adjustments).length, failedTickers, updatedAt: new Date().toISOString(), source: settings.creditOn === 'ex' ? 'Yahoo Finance dividend events; credited on the ex-dividend date' : 'Yahoo Finance dividend events; credited on the pay date (Nasdaq / Yahoo / manual / estimated)' }, { headers: responseHeaders });
+    return NextResponse.json({ settings, cash, pending, events, adjustmentCount: Object.keys(adjustments).length, failedTickers, updatedAt: new Date().toISOString(), source: settings.creditOn === 'ex' ? 'Yahoo Finance dividend events; credited on the ex-dividend date' : 'Yahoo Finance dividend events; credited on the pay date (Nasdaq / Yahoo / manual / estimated)' }, {
+      headers: { ...responseHeaders, 'Server-Timing': serverTiming([['db', readAt - started], ['history', historyAt - readAt], ['paydates', payDatesAt - historyAt], ['save', savedAt - payDatesAt], ['total', Date.now() - started]], cache.stats) },
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : '股息現金目前無法計算' }, { status: 502, headers: responseHeaders });
   }

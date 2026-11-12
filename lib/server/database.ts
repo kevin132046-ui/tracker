@@ -87,17 +87,20 @@ export function getDatabase() {
   return env.DB;
 }
 
-// Set once the tables exist in this isolate: later requests skip the setup and go straight to their own
+// The tables are set up once per isolate: later requests skip the setup and go straight to their own
 // query. Each setup is three round trips to D1 (hundreds of milliseconds from the edge), and the page asks
 // for data from several routes at once, so repeating it on every request made each one several times slower.
-// Concurrent first requests may each run the setup; every statement in it is idempotent.
-let databaseReady = false;
+// Requests that arrive while the setup is still running wait for that same run instead of starting their
+// own; a setup that failed is forgotten, so the next request tries again.
+let setup: Promise<void> | null = null;
 
 export async function ensureDatabase() {
   const db = getDatabase();
-  if (databaseReady) return db;
-  await setUpDatabase(db);
-  databaseReady = true;
+  setup ??= setUpDatabase(db).catch((error: unknown) => {
+    setup = null;
+    throw error;
+  });
+  await setup;
   return db;
 }
 
@@ -144,6 +147,10 @@ async function setUpDatabase(db: D1Database) {
     db.prepare('CREATE INDEX IF NOT EXISTS idx_dcf_scenarios_ticker ON dcf_scenarios(ticker)'),
   ]);
 
+  // Sample trades for a new, empty database, once. Another isolate may be seeding at the same moment
+  // (each has its own `setup`), so the batch decides for itself: it is one transaction, every sample
+  // trade goes in only while the marker is absent, and the marker is written last. Whichever batch runs
+  // second finds the marker and adds nothing, instead of failing on the marker's primary key.
   const seedMarker = await db.prepare("SELECT value FROM app_meta WHERE key = 'seed_trades_v1'").first<{ value: string }>();
   if (!seedMarker) {
     const count = await db.prepare('SELECT COUNT(*) AS count FROM trades').first<{ count: number }>();
@@ -154,14 +161,15 @@ async function setUpDatabase(db: D1Database) {
         type, open_date, expiry_date, close_date, ticker, event, strike, quantity,
         entry_price, current_price, fees, collateral, notes, status, quote_mode,
         source_row, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE NOT EXISTS (SELECT 1 FROM app_meta WHERE key = 'seed_trades_v1')`).bind(
         trade.type, trade.openDate, trade.expiryDate, trade.closeDate, trade.ticker,
         trade.event, trade.strike, trade.quantity, trade.entryPrice, trade.currentPrice,
         trade.fees, trade.collateral, trade.notes, trade.status, trade.quoteMode,
         trade.sourceRow, now, now,
       )));
     }
-    statements.push(db.prepare("INSERT INTO app_meta (key, value) VALUES ('seed_trades_v1', 'complete')"));
+    statements.push(db.prepare("INSERT INTO app_meta (key, value) VALUES ('seed_trades_v1', 'complete') ON CONFLICT(key) DO NOTHING"));
     await db.batch(statements);
   }
 

@@ -57,6 +57,13 @@ export const cashFlowsSetup = [
     )`,
   'CREATE INDEX IF NOT EXISTS idx_cash_flows_date ON cash_flows(date)',
 ];
+/** 每日彙總: one row per US session (lib/server/daily-digest). */
+export const dailyDigestTable = `CREATE TABLE IF NOT EXISTS daily_digest (
+  day TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  data TEXT NOT NULL
+)`;
 export const brokerHubStateTable = `CREATE TABLE IF NOT EXISTS broker_hub_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   enabled INTEGER NOT NULL DEFAULT 0,

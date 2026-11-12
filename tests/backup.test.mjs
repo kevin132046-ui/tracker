@@ -64,6 +64,8 @@ test('restored rows keep only known columns and plain values', () => {
   assert.equal(clean.trades[0].expiry_date, null);
   assert.equal(clean.broker_hub_state[0].enabled, 1);
   assert.throws(() => validBackupTables({ ...tables, cash_flows: undefined }), /cash_flows/);
+  // A backup made before 每日彙總 existed restores with that table empty.
+  assert.deepEqual(validBackupTables({ ...tables, daily_digest: undefined }).daily_digest, []);
   assert.throws(() => validBackupTables({ ...tables, trades: [{ notes: { nested: true } }] }), /notes/);
   assert.throws(() => validBackupTables({ ...tables, trades: ['row'] }), /格式不正確/);
 });

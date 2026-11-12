@@ -29,7 +29,9 @@ const r2Buckets = r2
   : [];
 
 const localBindingConfig = {
-  main: 'vinext/server/app-router-entry',
+  // vinext's app router plus the daily digest's Cron handler.
+  main: './worker/index.ts',
+  triggers: { crons: ['30 21 * * *'] },
   compatibility_flags: ['nodejs_compat'],
   d1_databases: d1Databases,
   r2_buckets: r2Buckets,

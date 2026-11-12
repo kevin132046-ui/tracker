@@ -122,13 +122,17 @@ export async function quotaReport(model: string, tier: UsageTier, scope: UsageSc
     const used = Object.entries(usedByModel).reduce((sum, [name, tokens]) => groupOfModel([group], name) ? sum + tokens : sum, 0);
     return { id: group.id, label: limitLabel(limitFor(group, tier)), limit, used, remaining: Math.max(0, limit - used), models: group.models };
   });
-  let selected: ModelQuota | null = null;
-  if (model) {
-    const group = groupOfModel(list.groups, model);
-    const row = group ? groups.find((candidate) => candidate.id === group.id)! : null;
-    selected = { model, group: row ? { id: row.id, label: row.label, limit: row.limit, models: row.models } : null, used: row?.used ?? 0, remaining: row?.remaining ?? 0, resetsAt: nextUtcMidnight(now) };
-  }
-  return { list, tier, usageAvailable: usageError === null, usageError, usedByModel, groups, selected };
+  const report: QuotaReport = { list, tier, usageAvailable: usageError === null, usageError, usedByModel, groups, selected: null };
+  report.selected = selectQuota(report, model, now);
+  return report;
+}
+
+/** Today's allowance for one model, from a report already made (the other role's model, say). */
+export function selectQuota(report: Pick<QuotaReport, 'list' | 'groups'>, model: string, now = Date.now()): ModelQuota | null {
+  if (!model) return null;
+  const group = groupOfModel(report.list.groups, model);
+  const row = group ? report.groups.find((candidate) => candidate.id === group.id) ?? null : null;
+  return { model, group: row ? { id: row.id, label: row.label, limit: row.limit, models: row.models } : null, used: row?.used ?? 0, remaining: row?.remaining ?? 0, resetsAt: nextUtcMidnight(now) };
 }
 
 /** Whether a call estimated at `estimate` tokens stays inside the model's free allowance. */

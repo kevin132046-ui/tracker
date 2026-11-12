@@ -37,6 +37,7 @@ import type { ClaudeModel } from '@/lib/ai-models';
 import { defaultClaudeModel, loadClaudeModel, requestModel, saveClaudeModel } from '@/lib/ai-models';
 import type { QuotaReport, UsageTier } from '@/lib/openai-free-tier';
 import { loadAccountTier, syncAccountTier, watchAccountTier } from '@/lib/openai-account-tier';
+import { loadModelRoles, saveModelRoles, serverModelRoles, syncModelRoles, watchModelRoles } from '@/lib/ai-model-roles-client';
 import { OPTION_CONTRACT_SIZE, analyzeOptionPosition, calendarDaysBetween, daysToExpiry, optionRightFromEvent, parseStrike, strikeChoices, summarizeOptionRisk } from '@/lib/options';
 import type { OptionPositionAnalytics, OptionRight, OptionRiskItem, OptionRiskSummary } from '@/lib/options';
 import { isDefaultTradeColumns, readStoredTradeColumns, tradeColumns, writeStoredTradeColumns } from '@/lib/trade-columns';
@@ -49,7 +50,7 @@ import type { AiEntryContext } from '@/components/AiTradeEntry';
 import type { Tone, ToneSetting } from '@/lib/wafu/tone';
 import { applyTone, loadToneSetting, resolveTone, saveToneSetting, toneChoices } from '@/lib/wafu/tone';
 import EditableHeroTitle from '@/components/EditableHeroTitle';
-import { freeQuotaLine, freeQuotaOpen } from '@/components/FreeQuota';
+import { freeQuotaLine, freeQuotaOpen, lookupQuota } from '@/components/FreeQuota';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import CrestMark from '@/components/wafu/CrestMark';
 // The opening's controller (its markup ships with the layout: StaticOpening).
@@ -318,7 +319,6 @@ const guideSections = [{ id: 'overview', label: '總覽' }, { id: 'returns', lab
 type BottomNav = 'guide' | 'menu' | 'off';
 const earningsReminderKey = 'optionflow-earnings-reminder';
 const manualEarningsKey = 'optionflow-earnings-manual';
-const openAiModelKey = 'optionflow-openai-model';
 const usdJpyUpdatedAtKey = 'optionflow-usdjpy-updated-at';
 const macroMarketStorageKey = 'optionflow-macro-markets-v2';
 const localBackgroundPattern = /^data:image\/jpeg;base64,/i;
@@ -1213,7 +1213,10 @@ export default function Home() {
   const [filingAnalyses, setFilingAnalyses] = useState<Record<string, FilingAnalysis>>({});
   const [secFilings, setSecFilings] = useState<{ key: string; filings: Record<string, CompanyFilings> } | null>(null);
   const [filingDialogSymbol, setFilingDialogSymbol] = useState<string | null>(null);
-  const [openAiModel, setOpenAiModel] = useState('');
+  // The ChatGPT model for each role (對話 / 自動找資料), shared through the site's database.
+  const modelRoles = useSyncExternalStore(watchModelRoles, loadModelRoles, serverModelRoles);
+  const openAiModel = modelRoles.chat;
+  const lookupModel = modelRoles.lookup;
   const [claudeModel, setClaudeModel] = useState<ClaudeModel>(defaultClaudeModel);
   const [wafuPreference, setWafuPreference] = useState<WafuPreference>(defaultWafuPreference);
   // The server renders 桔梗; the saved choice is applied on load (the boot script already set <html data-wafu>).
@@ -1450,7 +1453,6 @@ export default function Home() {
       const manual = stored && typeof stored === 'object' && !Array.isArray(stored)
         ? pruneManualEarnings(Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => typeof entry[1] === 'string')), Date.now())
         : {};
-      const model = window.localStorage.getItem(openAiModelKey) ?? '';
       const keys = loadAiKeys();
       const provider = loadDefaultProvider();
       const tier = loadUsageTier();
@@ -1470,7 +1472,6 @@ export default function Home() {
       queueMicrotask(() => {
         if (off) setEarningsEnabled(false);
         setManualEarnings(manual);
-        setOpenAiModel(model);
         setAiKeys(keys);
         setDefaultAiProvider(provider);
         setOpenAiTier(tier);
@@ -1533,16 +1534,15 @@ export default function Home() {
     });
   }, []);
 
-  const updateOpenAiModel = useCallback((value: string) => {
-    setOpenAiModel(value);
-    try { window.localStorage.setItem(openAiModelKey, value.trim()); } catch { /* storage unavailable */ }
-  }, []);
+  const updateOpenAiModel = useCallback((value: string) => { void saveModelRoles({ ...loadModelRoles(), chat: value.trim() }); }, []);
+  const updateLookupModel = useCallback((value: string) => { void saveModelRoles({ ...loadModelRoles(), lookup: value.trim() }); }, []);
 
   // The site's database holds the copy every device shares; take it when the settings or the analysis dialog open.
   useEffect(() => {
     if (!aiEnabled || (!settingsOpen && !filingDialogSymbol)) return;
     const controller = new AbortController();
     void syncAccountTier(controller.signal);
+    void syncModelRoles(controller.signal);
     return () => controller.abort();
   }, [aiEnabled, filingDialogSymbol, settingsOpen]);
 
@@ -1553,7 +1553,7 @@ export default function Home() {
     if (!aiEnabled || (!settingsOpen && !filingDialogSymbol)) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      fetch(`/api/ai?model=${encodeURIComponent(openAiModel.trim())}&tier=${openAiTier}`, { cache: 'no-store', headers: aiKeyHeaders(aiKeys), signal: controller.signal })
+      fetch(`/api/ai?model=${encodeURIComponent(openAiModel.trim())}&lookup=${encodeURIComponent(lookupModel.trim())}&tier=${openAiTier}`, { cache: 'no-store', headers: aiKeyHeaders(aiKeys), signal: controller.signal })
         .then(async (response) => {
           const payload = await response.json() as { mode?: 'access' | 'byok'; note?: string | null; providers?: Record<AiProvider, boolean>; openAiModel?: string | null; sec?: boolean; quota?: QuotaReport; error?: string };
           if (!response.ok || !payload.providers) throw new Error(payload.error ?? 'AI 查詢暫時無法使用。');
@@ -1564,7 +1564,7 @@ export default function Home() {
         });
     }, 300);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [accountTier, aiEnabled, aiKeys, filingDialogSymbol, openAiModel, openAiTier, quotaCheck, settingsOpen]);
+  }, [accountTier, aiEnabled, aiKeys, filingDialogSymbol, lookupModel, openAiModel, openAiTier, quotaCheck, settingsOpen]);
 
   const lookupEarningsWithAi = useCallback(async (symbol: string, provider: AiProvider) => {
     const id = `${provider}:${symbol}`;
@@ -1573,7 +1573,7 @@ export default function Home() {
       const response = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...aiKeyHeaders(aiKeys) },
-        body: JSON.stringify({ task: 'earnings-date', symbol, provider, model: requestModel(provider, openAiModel, claudeModel), usageTier: openAiTier }),
+        body: JSON.stringify({ task: 'earnings-date', symbol, provider, model: requestModel(provider, lookupModel, claudeModel), usageTier: openAiTier }),
       });
       const payload = await response.json() as { suggestion?: AiEarningsSuggestion; error?: string };
       if (!response.ok || !payload.suggestion) throw new Error(payload.error ?? '查詢失敗，請稍後再試。');
@@ -1583,7 +1583,7 @@ export default function Home() {
     } finally {
       refreshQuota();
     }
-  }, [aiKeys, claudeModel, openAiModel, openAiTier, refreshQuota]);
+  }, [aiKeys, claudeModel, lookupModel, openAiTier, refreshQuota]);
 
   const dismissAiLookup = useCallback((id: string) => {
     setAiLookups((current) => {
@@ -1629,8 +1629,10 @@ export default function Home() {
     root.dataset.wafuReveal = '1';
     window.setTimeout(() => { delete root.dataset.wafuReveal; }, 1500);
   }, []);
-  // The import dialog's AI entry starts from the AI settings and can pick another model per use.
-  const importAi = useMemo(() => ({ keys: aiKeys, defaultProvider: defaultAiProvider, openAiModel, claudeModel, usageTier: openAiTier, onUsed: refreshQuota }), [aiKeys, claudeModel, defaultAiProvider, openAiModel, openAiTier, refreshQuota]);
+  // The import dialog's AI entry (and the research lookups below) use the 自動找資料 model; the entry can pick another per use.
+  const importAi = useMemo(() => ({ keys: aiKeys, defaultProvider: defaultAiProvider, openAiModel: lookupModel, claudeModel, usageTier: openAiTier, onUsed: refreshQuota }), [aiKeys, claudeModel, defaultAiProvider, lookupModel, openAiTier, refreshQuota]);
+  // The assistant is a conversation: the 對話 model.
+  const chatAi = useMemo(() => ({ ...importAi, openAiModel }), [importAi, openAiModel]);
   // The research drawer's AI lookups (基本面 / DCF) when the usual company data fails.
   const researchAi = aiEnabled ? importAi : null;
   const updateDefaultAiProvider = useCallback((provider: AiProvider) => { setDefaultAiProvider(provider); saveDefaultProvider(provider); }, []);
@@ -3942,7 +3944,7 @@ export default function Home() {
             <Suspense fallback={<div className="settings-card-loading" aria-busy="true" />}><WafuMediaCard theme={wafuTheme} /></Suspense>
             </>}
             {settingsTab === 'ai' && <>
-            <Suspense fallback={<div className="settings-card-loading" aria-busy="true" />}><AiSettingsCard enabled={aiEnabled} onEnabledChange={updateAiEnabled} status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} /></Suspense>
+            <Suspense fallback={<div className="settings-card-loading" aria-busy="true" />}><AiSettingsCard enabled={aiEnabled} onEnabledChange={updateAiEnabled} status={aiStatus} keys={aiKeys} onKeysChange={updateAiKeys} defaultProvider={defaultAiProvider} onDefaultProviderChange={updateDefaultAiProvider} openAiModel={openAiModel} onOpenAiModelChange={updateOpenAiModel} lookupModel={lookupModel} onLookupModelChange={updateLookupModel} claudeModel={claudeModel} onClaudeModelChange={updateClaudeModel} usageTier={openAiTier} onUsageTierChange={updateOpenAiTier} questions={analysisQuestions} onQuestionsChange={updateAnalysisQuestions} /></Suspense>
             <section className={`settings-feature-card assistant-settings-card ${assistantPrefs.enabled ? 'is-enabled' : ''}`}>
               <div className="settings-feature-heading"><span className="settings-feature-icon wafu" aria-hidden="true">談</span><div><p>AI assistant</p><h3>AI 助理</h3></div><span className="settings-feature-status">{assistantPrefs.enabled ? '已開啟' : '已關閉'}</span></div>
               <p>側欄的「AI」可以問關於自己持倉的問題：到期、風險、損益。送出時附上持倉摘要（代號、數量、價格與總額，不含備註），使用「AI 設定」中的金鑰與模型；只提供分析，不會更動交易。</p>
@@ -4051,7 +4053,7 @@ export default function Home() {
                       {aiStatus?.state === 'ok' && (['openai', 'anthropic'] as const).filter((provider) => aiProviderReady(provider)).map((provider) => {
                         const lookup = aiLookups[`${provider}:${symbol}`];
                         const name = provider === 'anthropic' ? 'Claude' : 'ChatGPT';
-                        return <button type="button" key={provider} disabled={lookup?.loading || (provider === 'openai' && !(openAiModel.trim() || (aiStatus?.state === 'ok' && aiStatus.openAiModel))) || (provider === 'openai' && aiStatus?.state === 'ok' && Boolean(aiStatus.quota) && !freeQuotaOpen(aiStatus.quota))} title={provider === 'openai' && aiStatus?.state === 'ok' ? freeQuotaLine(aiStatus.quota) : undefined} onClick={() => lookupEarningsWithAi(symbol, provider)} aria-label={`用 ${name} 查 ${symbol} 財報日`}>{lookup?.loading ? `${name} 查詢中…` : `${name} 查`}</button>;
+                        return <button type="button" key={provider} disabled={lookup?.loading || (provider === 'openai' && !(lookupModel.trim() || (aiStatus?.state === 'ok' && aiStatus.openAiModel))) || (provider === 'openai' && aiStatus?.state === 'ok' && Boolean(aiStatus.quota) && !freeQuotaOpen(lookupQuota(aiStatus.quota)))} title={provider === 'openai' && aiStatus?.state === 'ok' ? freeQuotaLine(lookupQuota(aiStatus.quota)) : undefined} onClick={() => lookupEarningsWithAi(symbol, provider)} aria-label={`用 ${name} 查 ${symbol} 財報日`}>{lookup?.loading ? `${name} 查詢中…` : `${name} 查`}</button>;
                       })}
                     </span>}
                     {(['anthropic', 'openai'] as const).map((provider) => {
@@ -4330,7 +4332,7 @@ export default function Home() {
         onValuation={() => openValuation(drilledTicker ?? undefined)}
         background={{ label: backgroundSaving ? '保存中' : backgroundImage ? '換背景圖片' : '背景圖片', busy: backgroundSaving, pick: () => backgroundInputRef.current?.click() }}
       />}</ActiveSection>}
-      {assistantOpen && assistantOn && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={importAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}
+      {assistantOpen && assistantOn && <Suspense fallback={null}><AssistantPanel theme={wafuTheme} voice={assistantPrefs.voice} ai={chatAi} snapshot={buildAssistantSnapshot} onClose={closeAssistant} /></Suspense>}
       {intro && <WafuOpening key={`${intro.theme}-${String(intro.reduced)}`} theme={intro.theme} reduced={intro.reduced} ready={!loading} onDone={finishIntro} onReveal={revealAfterIntro} />}
     </main>
   );

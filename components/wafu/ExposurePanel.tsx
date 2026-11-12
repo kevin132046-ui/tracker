@@ -8,6 +8,7 @@ import {
   buildPositions, cashLikeGroup, concentration, defaultGroupMode, eventWindowDays, exposureEventsKey, exposureGroups, exposureOpenKey,
   exposureThemesKey, maxEventLabelLength, maxThemeLength, optionTools, sanitizeCustomEvents, sanitizeThemes, scenarioLoss, stressScenarios, upcomingEvents,
 } from '@/lib/exposure';
+import { exposurePrefsChanged, pushExposurePrefs } from '@/lib/exposure-prefs-client';
 
 type Props = {
   inputs: ExposureInput[];
@@ -66,13 +67,21 @@ function ExposurePanel({ inputs, earnings, cashLike, unrealized, todayKey, color
   const [visible, setVisible] = useState(false);
 
   // Stored choices load after the first paint so the server render and the first client render agree.
+  // Themes and events are read again when the site's database had a newer copy (lib/exposure-prefs-client).
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try { setOpen(window.localStorage.getItem(exposureOpenKey) === '1'); } catch { /* storage refused */ }
+    const loadShared = () => {
       setThemes(sanitizeThemes(readJson(exposureThemesKey)));
       setCustomEvents(sanitizeCustomEvents(readJson(exposureEventsKey), todayKey));
+    };
+    const timer = window.setTimeout(() => {
+      try { setOpen(window.localStorage.getItem(exposureOpenKey) === '1'); } catch { /* storage refused */ }
+      loadShared();
     }, 0);
-    return () => window.clearTimeout(timer);
+    window.addEventListener(exposurePrefsChanged, loadShared);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener(exposurePrefsChanged, loadShared);
+    };
   }, [todayKey]);
 
   // Sectors are fetched only once the panel is near the screen.
@@ -139,6 +148,7 @@ function ExposurePanel({ inputs, earnings, cashLike, unrealized, todayKey, color
   const saveThemes = (next: Record<string, string>) => {
     setThemes(next);
     writeValue(exposureThemesKey, Object.keys(next).length ? JSON.stringify(next) : null);
+    void pushExposurePrefs({ themes: next });
   };
   const assignTheme = (ticker: string, theme: string | null) => {
     const next = { ...themes };
@@ -153,6 +163,7 @@ function ExposurePanel({ inputs, earnings, cashLike, unrealized, todayKey, color
     const clean = sanitizeCustomEvents(next, todayKey);
     setCustomEvents(clean);
     writeValue(exposureEventsKey, clean.length ? JSON.stringify(clean) : null);
+    void pushExposurePrefs({ events: clean });
   };
   const addEvent = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

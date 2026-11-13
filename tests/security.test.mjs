@@ -63,3 +63,25 @@ test('with Access configured a request without a token is turned away', async ()
   assert.equal((await response.json()).code, 'access-required');
   reset();
 });
+
+test('the Content-Security-Policy keeps everything on the site except the two font hosts', async () => {
+  const { default: config } = await import('../next.config.ts');
+  const rules = await config.headers();
+  // Both the page itself and every path under it carry the policy.
+  assert.deepEqual(rules.map((rule) => rule.source), ['/', '/:path*']);
+  for (const rule of rules) {
+    const policy = rule.headers.find((header) => header.key === 'Content-Security-Policy').value;
+    const directives = Object.fromEntries(policy.split('; ').map((part) => [part.split(' ')[0], part.split(' ').slice(1)]));
+    // Nothing may be sent or fetched anywhere but this origin.
+    assert.deepEqual(directives['connect-src'], ["'self'"]);
+    assert.deepEqual(directives['default-src'], ["'self'"]);
+    assert.deepEqual(directives['form-action'], ["'self'"]);
+    assert.deepEqual(directives['object-src'], ["'none'"]);
+    assert.deepEqual(directives['frame-ancestors'], ["'self'"]);
+    assert.ok(!directives['script-src'].includes("'unsafe-eval'"));
+    // The only other hosts in the whole policy are Google's font hosts.
+    const hosts = policy.match(/https?:\/\/[^\s;]+/g) ?? [];
+    assert.deepEqual(hosts.sort(), ['https://fonts.googleapis.com', 'https://fonts.gstatic.com']);
+    assert.ok(!/(^|\s)(\*|https:|http:|ws:|wss:)(\s|;|$)/.test(policy));
+  }
+});

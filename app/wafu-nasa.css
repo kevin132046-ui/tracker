@@ -213,6 +213,8 @@
 :root[data-wafu][data-tone='nasa'] .macro-market-card { background: var(--nasa-hull); border: 0; box-shadow: inset 0 0 0 1px var(--nasa-seam); }
 :root[data-wafu][data-tone='nasa'] .settings-panel > header { background: var(--nasa-stripe) 0 0 / 100% 7px no-repeat, var(--nasa-white); box-shadow: inset 0 -1px 0 var(--nasa-seam); backdrop-filter: none; -webkit-backdrop-filter: none; }
 :root[data-wafu][data-tone='nasa'] .eyebrow { white-space: nowrap; }
+/* …except on phones, where a long label (市場定調's) would run past the panel and scroll the page sideways. */
+@media (max-width: 720px) { :root[data-wafu][data-tone='nasa'] .eyebrow { white-space: normal; } }
 :root[data-wafu][data-tone='nasa'] .hero > div:first-child { padding-bottom: 46px; }
 
 /* 持倉風險: the switch reads like the other segmented controls; cards and the toolbox sit on the hull. */

@@ -117,8 +117,15 @@
 :root[data-tone='washi'] .hero .as-of { padding: 10px 14px; background: rgb(251 246 236 / .82); border-radius: 12px; backdrop-filter: blur(6px); }
 :root[data-tone='washi'] .hero .as-of, :root[data-tone='washi'] .hero .as-of p, :root[data-tone='washi'] .clock-stack-heading > span { color: var(--wa-ink-2); }
 :root[data-tone='washi'] .hero-sub, :root[data-tone='washi'] .wafu-hero-sub { color: var(--wa-ink-2); text-shadow: 0 1px 0 rgb(255 255 255 / .6); }
-/* Jumps (cards, rail) land below the sticky top bar. */
-:root[data-wafu] #positions, :root[data-wafu] #allocation, :root[data-wafu] #returns, :root[data-wafu] #overview { scroll-margin-top: 96px; }
+/* Jumps (cards, rail) land below the sticky top bar; on phones also below the section rail that sticks
+   under it (together 144px). The panels sit in the dashboard, which 大／特大 zoom, and the margin is
+   zoomed with them, hence one phone value per text size. */
+:root[data-wafu] :is(#positions, #allocation, #returns, #overview, #market-regime, #six-metrics, #exposure) { scroll-margin-top: 96px; }
+@media (max-width: 720px) {
+  :root[data-wafu] :is(#positions, #allocation, #returns, #overview, #market-regime, #six-metrics, #exposure) { scroll-margin-top: 152px; }
+  :root[data-wafu][data-text-scale='large'] :is(#positions, #allocation, #returns, #overview, #market-regime, #six-metrics, #exposure) { scroll-margin-top: 127px; }
+  :root[data-wafu][data-text-scale='xlarge'] :is(#positions, #allocation, #returns, #overview, #market-regime, #six-metrics, #exposure) { scroll-margin-top: 116px; }
+}
 
 /* Placeholder while a settings card's code loads (first open only). */
 .settings-card-loading { min-height: 140px; border-radius: var(--wa-r-lg, 14px); background: linear-gradient(90deg, var(--wa-raise), rgb(var(--wa-raise-rgb) / .09), var(--wa-raise)) 0 0 / 200% 100%; animation: settings-card-shimmer 1.2s linear infinite; }

@@ -935,3 +935,41 @@
   .wafu-regime-advice { font-size: 14px; }
 }
 .wafu-regime-fund > .wafu-regime-note { margin-top: 10px; }
+
+/* ---------- Wrapping and overflow ----------
+   大／特大 zoom the dashboard (wafu-tone.css), so it is narrower than the media queries think. These
+   rules follow the content rather than the screen width. */
+
+/* 交易與持倉 toolbar: the title and each button keep to one line. When the row is full, the actions move
+   under the title and wrap among themselves, and the search keeps a usable width. */
+@media (min-width: 721px) {
+  :root[data-wafu] .positions-toolbar { flex-wrap: wrap; row-gap: 14px; }
+  :root[data-wafu] .positions-toolbar > div:first-child { flex: none; }
+  :root[data-wafu] .positions-toolbar h2 { white-space: nowrap; }
+  :root[data-wafu] .toolbar-actions { flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; row-gap: 10px; width: auto; min-width: 0; }
+  :root[data-wafu] .toolbar-actions > * { flex: none; }
+  :root[data-wafu] .toolbar-actions button { white-space: nowrap; }
+  :root[data-wafu] .toolbar-actions > .search { flex: 1 1 220px; width: auto; min-width: 200px; max-width: 390px; }
+}
+/* Phones: the four view tabs stay one word each (a narrow screen at 特大 scrolls them sideways), and the
+   未平倉 · 現金 | 歷史紀錄 row wraps instead of hiding 歷史紀錄 and 欄位 past the edge. */
+@media (max-width: 720px) {
+  :root[data-wafu] .view-switch { overflow-x: auto; scrollbar-width: none; }
+  :root[data-wafu] .view-switch button { flex: 1 0 auto; padding-inline: 8px; white-space: nowrap; }
+  :root[data-wafu] .filter-row { flex-wrap: wrap; row-gap: 6px; overflow-x: visible; }
+  :root[data-wafu] .filter-row .filter-sep { display: none; }
+  /* 匯入 · 匯出 CSV · 手動報價 fit one row at 大 down to 360px; past that they wrap instead of overflowing. */
+  :root[data-wafu] .toolbar-io { flex-wrap: wrap; }
+  :root[data-wafu] .toolbar-io-button { padding-inline: 8px; }
+  /* 宏觀行情: the 日 週 月 年 switch goes under the heading instead of past the panel's edge. */
+  :root[data-wafu] .macro-panel .panel-heading { flex-wrap: wrap; row-gap: 12px; }
+}
+
+/* 持倉配置: the donut asks for 290px, which is wider than a phone's panel at 大; the column no longer
+   grows to fit it (its max-width: 88% then applies), so the legend's percentages stay on screen. */
+:root[data-wafu] .allocation-content { grid-template-columns: minmax(0, 1fr); }
+
+/* The vertical title's highlighted words were an inline box as wide as the font's full ascent and
+   descent, a few pixels past the right edge of the page (a sideways scroll). As a block they take
+   only the width of their characters; nothing moves on screen. */
+:root[data-wafu] .hero .hero-title-accent { display: inline-block; }

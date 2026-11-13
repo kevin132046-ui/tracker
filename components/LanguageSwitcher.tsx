@@ -2,6 +2,7 @@
 
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
+import { createPendingChanges } from '@/lib/i18n-changes';
 
 type Language = 'zh-TW' | 'ja-JP' | 'en';
 
@@ -432,32 +433,38 @@ function retranslate(current: string, record: { source: string; written: string 
   return { source, next };
 }
 
+const translatedAttributes = ['placeholder', 'aria-label', 'title'] as const;
+
+function translateText(node: Text, language: Language) {
+  const current = node.nodeValue ?? '';
+  if (skipElement(node.parentElement) || !current.trim()) return;
+  const { source, next } = retranslate(current, originals.get(node), language);
+  if (next === source) originals.delete(node);
+  else originals.set(node, { source, written: next });
+  if (next !== current) node.nodeValue = next;
+}
+
+function translateAttributes(element: Element, language: Language) {
+  if (skipElement(element)) return;
+  translatedAttributes.forEach((attribute) => {
+    const current = element.getAttribute(attribute);
+    if (!current) return;
+    const records = attributeOriginals.get(element);
+    const { source, next } = retranslate(current, records?.get(attribute), language);
+    if (next === source) records?.delete(attribute);
+    else if (records) records.set(attribute, { source, written: next });
+    else attributeOriginals.set(element, new Map([[attribute, { source, written: next }]]));
+    if (next !== current) element.setAttribute(attribute, next);
+  });
+}
+
+/** Every text node and translated attribute under `root` (the whole page on a language switch). */
 function translateRoot(root: Element, language: Language) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];
   while (walker.nextNode()) nodes.push(walker.currentNode as Text);
-  nodes.forEach((node) => {
-    const current = node.nodeValue ?? '';
-    if (skipElement(node.parentElement) || !current.trim()) return;
-    const { source, next } = retranslate(current, originals.get(node), language);
-    if (next === source) originals.delete(node);
-    else originals.set(node, { source, written: next });
-    if (next !== current) node.nodeValue = next;
-  });
-  const elements = [root, ...root.querySelectorAll('*')];
-  elements.forEach((element) => {
-    if (skipElement(element)) return;
-    ['placeholder', 'aria-label', 'title'].forEach((attribute) => {
-      const current = element.getAttribute(attribute);
-      if (!current) return;
-      const records = attributeOriginals.get(element);
-      const { source, next } = retranslate(current, records?.get(attribute), language);
-      if (next === source) records?.delete(attribute);
-      else if (records) records.set(attribute, { source, written: next });
-      else attributeOriginals.set(element, new Map([[attribute, { source, written: next }]]));
-      if (next !== current) element.setAttribute(attribute, next);
-    });
-  });
+  nodes.forEach((node) => translateText(node, language));
+  [root, ...root.querySelectorAll('*')].forEach((element) => translateAttributes(element, language));
 }
 
 const globe = <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.6 2.6 3.9 5.6 3.9 9s-1.3 6.4-3.9 9c-2.6-2.6-3.9-5.6-3.9-9s1.3-6.4 3.9-9Z" /></svg>;
@@ -480,16 +487,27 @@ export default function LanguageSwitcher() {
   useEffect(() => {
     document.documentElement.lang = language;
     window.localStorage.setItem(storageKey, language);
+    // The whole page once; after that only what changes (lib/i18n-changes.ts), on the next frame.
+    translateRoot(document.body, language);
     let frame = 0;
+    const pending = createPendingChanges<Node>();
     const apply = () => {
       frame = 0;
-      translateRoot(document.body, language);
+      const changed = pending.take();
+      if (changed.whole) translateRoot(document.body, language);
+      else {
+        changed.texts.forEach((node) => translateText(node as Text, language));
+        changed.subtrees.forEach((node) => translateRoot(node as Element, language));
+        changed.attributes.forEach((node) => translateAttributes(node as Element, language));
+      }
+      // The writes above are changes too; they are already translated, so they are not read again.
+      observer.takeRecords();
     };
-    apply();
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver((records) => {
+      pending.add(records);
       if (!frame) frame = window.requestAnimationFrame(apply);
     });
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['placeholder', 'aria-label', 'title'] });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: [...translatedAttributes] });
     return () => {
       observer.disconnect();
       if (frame) window.cancelAnimationFrame(frame);
